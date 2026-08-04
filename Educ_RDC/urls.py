@@ -59,6 +59,7 @@ urlpatterns = [
         admin_views.vue_structure_formulaire,
         name='structure_nouvelle',
     ),
+    path('utilisateurs/', admin_views.vue_utilisateurs, name='utilisateurs'),
 
     # API JWT
     path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain'),

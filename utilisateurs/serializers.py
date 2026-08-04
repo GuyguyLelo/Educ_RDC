@@ -6,16 +6,42 @@ from .models import Utilisateur
 
 class UtilisateurSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
+    province_administrative_nom = serializers.CharField(
+        source='province_administrative.nom', read_only=True, allow_null=True, default=None,
+    )
+    province_educationnelle_nom = serializers.CharField(
+        source='province_educationnelle.nom', read_only=True, allow_null=True, default=None,
+    )
+    antenne_nom = serializers.CharField(
+        source='antenne.nom', read_only=True, allow_null=True, default=None,
+    )
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Utilisateur
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
             'role', 'role_display', 'telephone',
-            'province_administrative', 'province_educationnelle', 'antenne',
-            'is_active', 'date_creation',
+            'province_administrative', 'province_administrative_nom',
+            'province_educationnelle', 'province_educationnelle_nom',
+            'antenne', 'antenne_nom',
+            'is_active', 'date_creation', 'password',
         ]
         read_only_fields = ['date_creation']
+
+    def validate_password(self, value):
+        if value:
+            validate_password(value)
+        return value
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
 
 class UtilisateurCreateSerializer(serializers.ModelSerializer):
@@ -27,6 +53,7 @@ class UtilisateurCreateSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'role', 'telephone',
             'province_administrative', 'province_educationnelle', 'antenne',
+            'is_active',
         ]
 
     def create(self, validated_data):

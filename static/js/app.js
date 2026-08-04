@@ -1720,6 +1720,238 @@ const EducRDC = (() => {
         });
     }
 
+    /* ---------- Utilisateurs ---------- */
+    let pageUtilisateurs = 1;
+    let cacheUtilisateurs = [];
+    let cacheUserPA = [];
+    let cacheUserPE = [];
+    let cacheUserAntennes = [];
+
+    async function chargerOptionsUtilisateur() {
+        const [pas, pes, ants] = await Promise.all([
+            api(`${API}/provinces-administratives/?page_size=500`),
+            api(`${API}/provinces-educationnelles/?page_size=500`),
+            api(`${API}/antennes/?page_size=500`),
+        ]);
+        cacheUserPA = pas.results || pas;
+        cacheUserPE = pes.results || pes;
+        cacheUserAntennes = ants.results || ants;
+        syncSelectsUtilisateur();
+    }
+
+    function syncSelectsUtilisateur(selected = {}) {
+        const selPA = document.getElementById('selectUserPA');
+        const selPE = document.getElementById('selectUserPE');
+        const selAnt = document.getElementById('selectUserAntenne');
+        if (!selPA || !selPE || !selAnt) return;
+
+        const paId = selected.province_administrative || selPA.value || '';
+        const peId = selected.province_educationnelle || selPE.value || '';
+        const antId = selected.antenne || selAnt.value || '';
+
+        selPA.innerHTML = `<option value="">— Aucune —</option>${
+            cacheUserPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)} (${escapeHtml(p.code)})</option>`).join('')
+        }`;
+        selPA.value = paId ? String(paId) : '';
+
+        const peFiltered = selPA.value
+            ? cacheUserPE.filter((p) => String(p.province_administrative) === String(selPA.value))
+            : cacheUserPE;
+        selPE.innerHTML = `<option value="">— Aucune —</option>${
+            peFiltered.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)} (${escapeHtml(p.code)})</option>`).join('')
+        }`;
+        selPE.value = peId && peFiltered.some((p) => String(p.id) === String(peId)) ? String(peId) : '';
+
+        const antFiltered = selPE.value
+            ? cacheUserAntennes.filter((a) => String(a.province_educationnelle) === String(selPE.value))
+            : (selPA.value
+                ? cacheUserAntennes.filter((a) => String(a.province_administrative_id) === String(selPA.value))
+                : cacheUserAntennes);
+        selAnt.innerHTML = `<option value="">— Aucune —</option>${
+            antFiltered.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)} (${escapeHtml(a.code)})</option>`).join('')
+        }`;
+        selAnt.value = antId && antFiltered.some((a) => String(a.id) === String(antId)) ? String(antId) : '';
+    }
+
+    function rattachementLabel(u) {
+        const parts = [
+            u.antenne_nom,
+            u.province_educationnelle_nom,
+            u.province_administrative_nom,
+        ].filter(Boolean);
+        return parts.length ? parts.join(' · ') : '—';
+    }
+
+    async function chargerUtilisateurs(page = 1) {
+        pageUtilisateurs = page;
+        const q = document.getElementById('searchUtilisateurs')?.value || '';
+        const role = document.getElementById('filtreRoleUtilisateurs')?.value || '';
+        let url = `${API}/utilisateurs/?page=${page}`;
+        if (q) url += `&q=${encodeURIComponent(q)}`;
+        if (role) url += `&role=${encodeURIComponent(role)}`;
+        const data = await api(url);
+        const rows = data.results || data;
+        cacheUtilisateurs = rows;
+        setCount('countUtilisateurs', data.count ?? rows.length);
+        const tbody = document.querySelector('#tableUtilisateurs tbody');
+        tbody.innerHTML = rows.length ? rows.map((u) => {
+            const nom = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username;
+            return `
+            <tr>
+                <td data-label="Utilisateur">
+                    <div class="entity-cell">
+                        <div class="entity-avatar">${escapeHtml(initials(nom))}</div>
+                        <div class="entity-meta">
+                            <strong title="${escapeHtml(nom)}">${escapeHtml(nom)}</strong>
+                            <span>${escapeHtml(u.email || u.telephone || 'Contact non renseigné')}</span>
+                        </div>
+                    </div>
+                </td>
+                <td data-label="Identifiant"><span class="code-chip">${escapeHtml(u.username)}</span></td>
+                <td data-label="Rôle">${escapeHtml(u.role_display || u.role)}</td>
+                <td data-label="Rattachement">
+                    <div class="entity-meta">
+                        <strong title="${escapeHtml(rattachementLabel(u))}">${escapeHtml(rattachementLabel(u))}</strong>
+                    </div>
+                </td>
+                <td data-label="Statut"><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Actif' : 'Inactif'}</span></td>
+                <td data-label="Actions"><div class="actions-inline">
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-user="${u.id}">Modifier</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-del-user="${u.id}">Supprimer</button>
+                </div></td>
+            </tr>`;
+        }).join('') : emptyRow(6, 'Aucun utilisateur trouvé', 'Ajoutez un compte ou affinez la recherche.');
+
+        tbody.querySelectorAll('[data-edit-user]').forEach((btn) => {
+            btn.addEventListener('click', () => ouvrirModalUtilisateur(cacheUtilisateurs.find((x) => String(x.id) === String(btn.dataset.editUser))));
+        });
+        tbody.querySelectorAll('[data-del-user]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Supprimer cet utilisateur ?')) return;
+                try {
+                    await api(`${API}/utilisateurs/${btn.dataset.delUser}/`, { method: 'DELETE' });
+                    toast('Utilisateur supprimé.', 'success');
+                    await chargerUtilisateurs(pageUtilisateurs);
+                } catch (err) { toast(err.message, 'error'); }
+            });
+        });
+        renderPagination(
+            'paginationUtilisateurs',
+            pageUtilisateurs,
+            data.count ? Math.ceil(data.count / 20) : 1,
+            chargerUtilisateurs,
+        );
+    }
+
+    function setModePasswordUtilisateur(edition) {
+        const input = document.getElementById('inputPasswordUtilisateur');
+        const label = document.getElementById('labelPasswordUtilisateur');
+        const hint = document.getElementById('hintPasswordUtilisateur');
+        if (!input || !label || !hint) return;
+        if (edition) {
+            input.required = false;
+            label.innerHTML = 'Nouveau mot de passe';
+            hint.textContent = 'Laisser vide pour conserver le mot de passe actuel.';
+        } else {
+            input.required = true;
+            label.innerHTML = 'Mot de passe <span class="req">*</span>';
+            hint.textContent = 'Obligatoire à la création.';
+        }
+    }
+
+    function ouvrirModalUtilisateur(user = null) {
+        const form = document.getElementById('formUtilisateur');
+        const titre = document.getElementById('titreModalUtilisateur');
+        if (!form || !titre) return;
+        form.reset();
+        document.getElementById('utilisateurId').value = user?.id || '';
+        setModePasswordUtilisateur(Boolean(user));
+        if (user) {
+            titre.textContent = "Modifier l'utilisateur";
+            form.username.value = user.username || '';
+            form.email.value = user.email || '';
+            form.first_name.value = user.first_name || '';
+            form.last_name.value = user.last_name || '';
+            form.telephone.value = user.telephone || '';
+            form.role.value = user.role || 'agent_antenne';
+            document.getElementById('utilisateurActif').checked = user.is_active !== false;
+            syncSelectsUtilisateur({
+                province_administrative: user.province_administrative || '',
+                province_educationnelle: user.province_educationnelle || '',
+                antenne: user.antenne || '',
+            });
+        } else {
+            titre.textContent = 'Nouvel utilisateur';
+            document.getElementById('utilisateurActif').checked = true;
+            syncSelectsUtilisateur({});
+        }
+        openModal('modalUtilisateur');
+    }
+
+    function initUtilisateurs() {
+        bindModalClosers();
+        chargerOptionsUtilisateur().catch((e) => toast(e.message, 'error'));
+        chargerUtilisateurs(1).catch((e) => toast(e.message, 'error'));
+
+        document.getElementById('btnSearchUtilisateurs')?.addEventListener('click', () => chargerUtilisateurs(1));
+        document.getElementById('filtreRoleUtilisateurs')?.addEventListener('change', () => chargerUtilisateurs(1));
+        document.getElementById('searchUtilisateurs')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') chargerUtilisateurs(1);
+        });
+        document.getElementById('btnNouvelUtilisateur')?.addEventListener('click', () => ouvrirModalUtilisateur());
+
+        document.getElementById('selectUserPA')?.addEventListener('change', () => syncSelectsUtilisateur());
+        document.getElementById('selectUserPE')?.addEventListener('change', () => syncSelectsUtilisateur());
+
+        document.getElementById('formUtilisateur')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const id = document.getElementById('utilisateurId').value;
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            const password = (form.password.value || '').trim();
+            if (!id && !password) {
+                toast('Le mot de passe est obligatoire à la création.', 'warning');
+                return;
+            }
+            const payload = {
+                username: form.username.value.trim(),
+                email: form.email.value.trim(),
+                first_name: form.first_name.value.trim(),
+                last_name: form.last_name.value.trim(),
+                telephone: form.telephone.value.trim(),
+                role: form.role.value,
+                is_active: document.getElementById('utilisateurActif')?.checked !== false,
+                province_administrative: form.province_administrative.value || null,
+                province_educationnelle: form.province_educationnelle.value || null,
+                antenne: form.antenne.value || null,
+            };
+            if (password) payload.password = password;
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                if (id) {
+                    await api(`${API}/utilisateurs/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                    toast('Utilisateur mis à jour.', 'success');
+                } else {
+                    await api(`${API}/utilisateurs/`, { method: 'POST', body: JSON.stringify(payload) });
+                    toast('Utilisateur créé.', 'success');
+                }
+                closeModal('modalUtilisateur');
+                form.reset();
+                await chargerUtilisateurs(1);
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    }
+
     return {
         chargerDashboard,
         initEcoles,
@@ -1730,6 +1962,7 @@ const EducRDC = (() => {
         initCartes,
         initRapports,
         initParametres,
+        initUtilisateurs,
         toast,
         api,
     };

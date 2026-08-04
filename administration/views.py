@@ -128,6 +128,13 @@ def vue_parametres(request):
 
 @login_required
 @ensure_csrf_cookie
+def vue_utilisateurs(request):
+    """Gestion des utilisateurs et des rôles."""
+    return render(request, 'utilisateurs.html', {'page': 'utilisateurs'})
+
+
+@login_required
+@ensure_csrf_cookie
 @require_http_methods(['GET', 'POST'])
 def vue_structure_formulaire(request):
     """Formulaire unique StructureOrganisationnelle (héritage PA / PE / Antenne)."""
