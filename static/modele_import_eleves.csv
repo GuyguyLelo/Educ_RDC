@@ -1,0 +1,3 @@
+matricule;nom;postnom;prenom;date_naissance;sexe;classe;ecole_code;lieu_naissance;adresse;nom_tuteur;telephone_tuteur
+ELV-2026-DEMO-001;KABONGO;MUTOMBO;Jean;2015-03-12;M;6ème Primaire;7-136755;Kinshasa;Av. de la Libération;Maman Kabongo;+243810000001
+ELV-2026-DEMO-002;MUKENDI;;Marie;2016-07-21;F;5ème Primaire;7-136755;Kinshasa;C/Gombe;Papa Mukendi;+243810000002

@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
+from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
 from eleves.models import Eleve
@@ -22,6 +23,7 @@ def journaliser(utilisateur, action, details='', request=None):
     )
 
 
+@ensure_csrf_cookie
 @require_http_methods(['GET', 'POST'])
 def vue_login(request):
     if request.user.is_authenticated:
@@ -59,6 +61,25 @@ def vue_ecoles(request):
 
 
 @login_required
+def vue_ecole_detail(request, ecole_id):
+    """Page détail d'une école (identification, effectifs, élèves)."""
+    from ecoles.models import Ecole
+    ecole = get_object_or_404(
+        Ecole.objects.select_related(
+            'province_educationnelle',
+            'province_educationnelle__province_administrative',
+            'antenne',
+        ),
+        pk=ecole_id,
+    )
+    return render(request, 'ecole_detail.html', {
+        'page': 'ecoles',
+        'ecole_id': ecole.id,
+        'ecole': ecole,
+    })
+
+
+@login_required
 def vue_eleves(request):
     return render(request, 'eleves.html', {'page': 'eleves'})
 
@@ -68,7 +89,11 @@ def vue_eleve_detail(request, eleve_id):
     """Page détail d'un élève (photo, identité, scolarité, cartes)."""
     eleve = get_object_or_404(
         Eleve.objects.select_related(
-            'ecole', 'ecole__province', 'ecole__antenne', 'biometrie',
+            'ecole',
+            'ecole__province_educationnelle',
+            'ecole__province_educationnelle__province_administrative',
+            'ecole__antenne',
+            'biometrie',
         ),
         pk=eleve_id,
     )
@@ -95,6 +120,42 @@ def vue_rapports(request):
 
 
 @login_required
+@ensure_csrf_cookie
 def vue_parametres(request):
-    """Gestion des données référentielles (provinces, antennes)."""
+    """Gestion des données référentielles (provinces admin/éduc, antennes)."""
     return render(request, 'parametres.html', {'page': 'parametres'})
+
+
+@login_required
+@ensure_csrf_cookie
+@require_http_methods(['GET', 'POST'])
+def vue_structure_formulaire(request):
+    """Formulaire unique StructureOrganisationnelle (héritage PA / PE / Antenne)."""
+    from ecoles.forms import StructureOrganisationnelleForm
+
+    if request.method == 'POST':
+        form = StructureOrganisationnelleForm(request.POST)
+        if form.is_valid():
+            obj = form.save()
+            type_label = dict(StructureOrganisationnelleForm.TYPE_CHOICES).get(
+                form.cleaned_data['type_structure'], 'Structure'
+            )
+            messages.success(
+                request,
+                f'{type_label} « {obj.nom} » ({obj.code}) créée avec succès.',
+            )
+            journaliser(
+                request.user,
+                'Création structure',
+                f'{type_label}: {obj.nom} ({obj.code})',
+                request=request,
+            )
+            return redirect('parametres')
+    else:
+        initial_type = request.GET.get('type', StructureOrganisationnelleForm.TYPE_PA)
+        form = StructureOrganisationnelleForm(initial={'type_structure': initial_type})
+
+    return render(request, 'structure_formulaire.html', {
+        'page': 'parametres',
+        'form': form,
+    })

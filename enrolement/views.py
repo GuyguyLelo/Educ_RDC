@@ -24,8 +24,8 @@ class EnrolementViewSet(viewsets.ModelViewSet):
         if statut:
             qs = qs.filter(statut=statut)
         user = self.request.user
-        if user.role == 'agent_provincial' and user.province_id:
-            qs = qs.filter(eleve__ecole__province_id=user.province_id)
+        if user.role == 'agent_provincial' and user.province_educationnelle_id:
+            qs = qs.filter(eleve__ecole__province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
             qs = qs.filter(eleve__ecole__antenne_id=user.antenne_id)
         return qs

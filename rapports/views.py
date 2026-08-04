@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
-from ecoles.models import Ecole, Province
+from ecoles.models import Ecole, ProvinceEducationnelle
 from eleves.models import Eleve
 from cartes.models import Carte
 from enrolement.models import Enrolement
@@ -27,11 +27,12 @@ def statistiques_dashboard(request):
     cartes_qs = Carte.objects.filter(statut=Carte.Statut.ACTIVE)
     enrolements_qs = Enrolement.objects.all()
 
-    if user.role == 'agent_provincial' and user.province_id:
-        ecoles_qs = ecoles_qs.filter(province_id=user.province_id)
-        eleves_qs = eleves_qs.filter(ecole__province_id=user.province_id)
-        cartes_qs = cartes_qs.filter(eleve__ecole__province_id=user.province_id)
-        enrolements_qs = enrolements_qs.filter(eleve__ecole__province_id=user.province_id)
+    if user.role == 'agent_provincial' and user.province_educationnelle_id:
+        pe = user.province_educationnelle_id
+        ecoles_qs = ecoles_qs.filter(province_educationnelle_id=pe)
+        eleves_qs = eleves_qs.filter(ecole__province_educationnelle_id=pe)
+        cartes_qs = cartes_qs.filter(eleve__ecole__province_educationnelle_id=pe)
+        enrolements_qs = enrolements_qs.filter(eleve__ecole__province_educationnelle_id=pe)
     elif user.role == 'agent_antenne' and user.antenne_id:
         ecoles_qs = ecoles_qs.filter(antenne_id=user.antenne_id)
         eleves_qs = eleves_qs.filter(ecole__antenne_id=user.antenne_id)
@@ -39,7 +40,7 @@ def statistiques_dashboard(request):
         enrolements_qs = enrolements_qs.filter(eleve__ecole__antenne_id=user.antenne_id)
 
     par_province = list(
-        Province.objects.annotate(
+        ProvinceEducationnelle.objects.annotate(
             nb_ecoles=Count('ecoles', filter=Q(ecoles__active=True)),
             nb_eleves=Count('ecoles__eleves', filter=Q(ecoles__eleves__actif=True)),
         ).values('nom', 'nb_ecoles', 'nb_eleves')[:10]

@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+
+{% block title %}Nouvelle structure{% endblock %}
+{% block page_title %}Nouvelle structure organisationnelle{% endblock %}
+{% block page_subtitle %}Formulaire unique avec héritage — PA, PE ou Antenne{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <div class="detail-card" style="margin-bottom:1rem">
+        <p class="form-hint" style="margin:0">
+            Le modèle de base <strong>StructureOrganisationnelle</strong> fournit nom, code et statut.
+            Selon le type choisi, une spécialisation est créée par héritage
+            (<code>ProvinceAdministrative</code>, <code>ProvinceEducationnelle</code> ou <code>Antenne</code>).
+        </p>
+    </div>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Créer une structure</h2>
+                <p>Choisissez le type puis renseignez les champs</p>
+            </div>
+            <a href="{% url 'parametres' %}" class="btn btn-ghost">← Retour paramètres</a>
+        </div>
+
+        <form method="post" id="formStructure" novalidate class="structure-form">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div class="alert alert-error">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Type (héritage)</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label for="{{ form.type_structure.id_for_label }}">
+                                Type de structure <span class="req">*</span>
+                            </label>
+                            {{ form.type_structure }}
+                            {% if form.type_structure.errors %}
+                            <p class="form-hint" style="color:var(--rouge)">{{ form.type_structure.errors|striptags }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="{{ form.nom.id_for_label }}">Nom <span class="req">*</span></label>
+                            {{ form.nom }}
+                            {% if form.nom.errors %}
+                            <p class="form-hint" style="color:var(--rouge)">{{ form.nom.errors|striptags }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.code.id_for_label }}">Code <span class="req">*</span></label>
+                            {{ form.code }}
+                            {% if form.code.errors %}
+                            <p class="form-hint" style="color:var(--rouge)">{{ form.code.errors|striptags }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.actif.id_for_label }}">{{ form.actif }} Actif</label>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" id="blocPE" hidden>
+                    <h4 class="form-section-title">Rattachement — Province éduc.</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label for="{{ form.province_administrative.id_for_label }}">
+                                Province administrative <span class="req">*</span>
+                            </label>
+                            {{ form.province_administrative }}
+                            {% if form.province_administrative.errors %}
+                            <p class="form-hint" style="color:var(--rouge)">{{ form.province_administrative.errors|striptags }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" id="blocAntenne" hidden>
+                    <h4 class="form-section-title">Rattachement — Antenne</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label for="{{ form.province_educationnelle.id_for_label }}">
+                                Province éducationnelle <span class="req">*</span>
+                            </label>
+                            {{ form.province_educationnelle }}
+                            {% if form.province_educationnelle.errors %}
+                            <p class="form-hint" style="color:var(--rouge)">{{ form.province_educationnelle.errors|striptags }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="form-group full">
+                            <label for="{{ form.adresse.id_for_label }}">Adresse</label>
+                            {{ form.adresse }}
+                        </div>
+                        <div class="form-group">
+                            <label for="{{ form.telephone.id_for_label }}">Téléphone</label>
+                            {{ form.telephone }}
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div class="modal-actions" style="padding:1rem 0 0; border-top:1px solid var(--line); margin-top:1rem">
+                <a href="{% url 'parametres' %}" class="btn btn-ghost">Annuler</a>
+                <button type="submit" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const typeSelect = document.getElementById('id_type_structure');
+    const blocPE = document.getElementById('blocPE');
+    const blocAntenne = document.getElementById('blocAntenne');
+
+    function sync() {
+        const t = typeSelect?.value;
+        if (blocPE) blocPE.hidden = t !== 'province_educationnelle';
+        if (blocAntenne) blocAntenne.hidden = t !== 'antenne';
+    }
+
+    typeSelect?.addEventListener('change', sync);
+    sync();
+})();
+</script>
+{% endblock %}

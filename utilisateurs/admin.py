@@ -5,12 +5,25 @@ from .models import Utilisateur
 
 @admin.register(Utilisateur)
 class UtilisateurAdmin(UserAdmin):
-    list_display = ('username', 'email', 'role', 'province', 'antenne', 'is_active')
-    list_filter = ('role', 'is_active', 'province')
+    list_display = (
+        'username', 'email', 'role',
+        'province_administrative', 'province_educationnelle', 'antenne', 'is_active',
+    )
+    list_filter = ('role', 'is_active', 'province_administrative', 'province_educationnelle')
     search_fields = ('username', 'first_name', 'last_name', 'email')
     fieldsets = UserAdmin.fieldsets + (
-        ('Educ_RDC', {'fields': ('role', 'telephone', 'province', 'antenne')}),
+        ('Educ_RDC', {
+            'fields': (
+                'role', 'telephone',
+                'province_administrative', 'province_educationnelle', 'antenne',
+            ),
+        }),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (
-        ('Educ_RDC', {'fields': ('role', 'telephone', 'province', 'antenne')}),
+        ('Educ_RDC', {
+            'fields': (
+                'role', 'telephone',
+                'province_administrative', 'province_educationnelle', 'antenne',
+            ),
+        }),
     )

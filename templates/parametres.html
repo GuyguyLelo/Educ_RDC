@@ -2,46 +2,101 @@
 
 {% block title %}Paramètres{% endblock %}
 {% block page_title %}Paramètres{% endblock %}
-{% block page_subtitle %}Données référentielles nationales{% endblock %}
+{% block page_subtitle %}Données référentielles — hiérarchie territoriale{% endblock %}
 
 {% block content %}
 <div class="list-shell" id="parametresApp">
+    <div class="detail-card" style="margin-bottom:0.75rem; display:flex; flex-wrap:wrap; gap:0.75rem; align-items:center; justify-content:space-between">
+        <p class="form-hint" style="margin:0">
+            Hiérarchie : <strong>Province administrative</strong>
+            → <strong>Province éducationnelle</strong>
+            → <strong>Antenne</strong>
+            (modèle de base commun avec héritage)
+        </p>
+        <a href="{% url 'structure_nouvelle' %}" class="btn btn-primary">+ Nouvelle structure</a>
+    </div>
+
     <nav class="tabs-bar" role="tablist">
-        <button type="button" class="tab-btn active" data-tab="provinces" role="tab" aria-selected="true">Provinces</button>
+        <button type="button" class="tab-btn active" data-tab="organigramme" role="tab" aria-selected="true">Organigramme</button>
+        <button type="button" class="tab-btn" data-tab="pa" role="tab" aria-selected="false">Provinces administratives</button>
+        <button type="button" class="tab-btn" data-tab="pe" role="tab" aria-selected="false">Provinces éducationnelles</button>
         <button type="button" class="tab-btn" data-tab="antennes" role="tab" aria-selected="false">Antennes</button>
         <button type="button" class="tab-btn" data-tab="references" role="tab" aria-selected="false">Références système</button>
     </nav>
 
-    <!-- Onglet Provinces -->
-    <div class="tab-panel active" id="tab-provinces" role="tabpanel">
+    <!-- Organigramme hiérarchique -->
+    <div class="tab-panel active" id="tab-organigramme" role="tabpanel">
         <section class="toolbar">
             <div class="search-box">
                 <div class="search-field">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                    <input type="search" id="searchProvinces" placeholder="Rechercher une province…">
+                    <input type="search" id="searchOrganigramme" placeholder="Filtrer PA, PE ou antenne…">
                 </div>
-                <button class="btn btn-ghost" id="btnSearchProvinces" type="button">Rechercher</button>
+                <button class="btn btn-ghost" id="btnSearchOrganigramme" type="button">Filtrer</button>
             </div>
             <div class="toolbar-actions">
-                <button class="btn btn-primary" id="btnNouvelleProvince" type="button">+ Nouvelle province</button>
+                <button class="btn btn-ghost" id="btnOrgExpand" type="button">Tout déplier</button>
+                <button class="btn btn-ghost" id="btnOrgCollapse" type="button">Tout replier</button>
+                <button class="btn btn-secondary" id="btnOrgRefresh" type="button">Actualiser</button>
             </div>
         </section>
 
         <section class="list-panel">
             <div class="list-panel-header">
                 <div>
-                    <h2>Provinces</h2>
-                    <p>Découpage territorial de référence</p>
+                    <h2>Organigramme territorial</h2>
+                    <p>Province administrative → Province éducationnelle → Antenne</p>
                 </div>
-                <span class="list-count" id="countProvinces">— résultats</span>
+                <span class="list-count" id="countOrganigramme">— structures</span>
+            </div>
+
+            <div class="org-legend" aria-hidden="true">
+                <span class="org-legend-item org-level-pa"><i></i> Province administrative</span>
+                <span class="org-legend-item org-level-pe"><i></i> Province éducationnelle</span>
+                <span class="org-legend-item org-level-ant"><i></i> Antenne</span>
+            </div>
+
+            <div class="org-summary" id="orgSummary">
+                <div class="org-summary-item"><strong id="orgCountPA">0</strong><span>Provinces admin.</span></div>
+                <div class="org-summary-item"><strong id="orgCountPE">0</strong><span>Provinces éduc.</span></div>
+                <div class="org-summary-item"><strong id="orgCountAnt">0</strong><span>Antennes</span></div>
+            </div>
+
+            <div class="org-tree" id="organigrammeTree" aria-live="polite">
+                <p class="empty-state">Chargement de l'organigramme…</p>
+            </div>
+        </section>
+    </div>
+
+    <!-- Provinces administratives -->
+    <div class="tab-panel" id="tab-pa" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchPA" placeholder="Rechercher une province administrative…">
+                </div>
+                <button class="btn btn-ghost" id="btnSearchPA" type="button">Rechercher</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" id="btnNouveauPA" type="button">+ Nouvelle province admin.</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Provinces administratives</h2>
+                    <p>Découpage territorial de l'État</p>
+                </div>
+                <span class="list-count" id="countPA">— résultats</span>
             </div>
             <div class="table-responsive">
-                <table class="data-table" id="tableProvinces">
+                <table class="data-table" id="tablePA">
                     <thead>
                         <tr>
                             <th>Nom</th>
                             <th>Code</th>
-                            <th>Création</th>
+                            <th>Statut</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -49,13 +104,62 @@
                 </table>
             </div>
             <div class="list-footer">
-                <span class="list-footer-info">Les provinces sont utilisées par les antennes et les écoles</span>
-                <div class="pagination" id="paginationProvinces"></div>
+                <span class="list-footer-info">Niveau 1 de la hiérarchie</span>
+                <div class="pagination" id="paginationPA"></div>
             </div>
         </section>
     </div>
 
-    <!-- Onglet Antennes -->
+    <!-- Provinces éducationnelles -->
+    <div class="tab-panel" id="tab-pe" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchPE" placeholder="Rechercher une province éducationnelle…">
+                </div>
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                    <select id="filtrePAforPE">
+                        <option value="">Toutes les provinces admin.</option>
+                    </select>
+                </div>
+                <button class="btn btn-ghost" id="btnSearchPE" type="button">Filtrer</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" id="btnNouveauPE" type="button">+ Nouvelle province éduc.</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Provinces éducationnelles</h2>
+                    <p>Rattachées à une province administrative</p>
+                </div>
+                <span class="list-count" id="countPE">— résultats</span>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table" id="tablePE">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Code</th>
+                            <th>Province administrative</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="list-footer">
+                <span class="list-footer-info">Niveau 2 de la hiérarchie</span>
+                <div class="pagination" id="paginationPE"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Antennes -->
     <div class="tab-panel" id="tab-antennes" role="tabpanel" hidden>
         <section class="toolbar">
             <div class="search-box">
@@ -65,8 +169,8 @@
                 </div>
                 <div class="search-field">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-                    <select id="filtreProvinceAntenne">
-                        <option value="">Toutes les provinces</option>
+                    <select id="filtrePEforAntenne">
+                        <option value="">Toutes les provinces éduc.</option>
                     </select>
                 </div>
                 <button class="btn btn-ghost" id="btnSearchAntennes" type="button">Filtrer</button>
@@ -75,12 +179,11 @@
                 <button class="btn btn-primary" id="btnNouvelleAntenne" type="button">+ Nouvelle antenne</button>
             </div>
         </section>
-
         <section class="list-panel">
             <div class="list-panel-header">
                 <div>
                     <h2>Antennes</h2>
-                    <p>Antennes provinciales / sous-divisions</p>
+                    <p>Rattachées à une province éducationnelle</p>
                 </div>
                 <span class="list-count" id="countAntennes">— résultats</span>
             </div>
@@ -90,8 +193,8 @@
                         <tr>
                             <th>Antenne</th>
                             <th>Code</th>
-                            <th>Province</th>
-                            <th>Contact</th>
+                            <th>Province éduc.</th>
+                            <th>Province admin.</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -99,13 +202,12 @@
                 </table>
             </div>
             <div class="list-footer">
-                <span class="list-footer-info">Chaque école est rattachée à une antenne</span>
+                <span class="list-footer-info">Niveau 3 — les écoles s'y rattachent</span>
                 <div class="pagination" id="paginationAntennes"></div>
             </div>
         </section>
     </div>
 
-    <!-- Onglet références système -->
     <div class="tab-panel" id="tab-references" role="tabpanel" hidden>
         <section class="detail-card">
             <div class="detail-card-grid refs-grid">
@@ -136,31 +238,31 @@
                     </ul>
                 </div>
                 <div>
-                    <h3 class="detail-card-title">Statuts d'enrôlement</h3>
+                    <h3 class="detail-card-title">Héritage modèle</h3>
                     <ul class="ref-list">
-                        <li><span class="badge badge-warning">en_attente</span> En attente</li>
-                        <li><span class="badge badge-success">valide</span> Validé</li>
-                        <li><span class="badge badge-danger">rejete</span> Rejeté</li>
+                        <li><span class="code-chip">base</span> StructureOrganisationnelle</li>
+                        <li><span class="code-chip">fille</span> ProvinceAdministrative</li>
+                        <li><span class="code-chip">fille</span> ProvinceEducationnelle</li>
+                        <li><span class="code-chip">fille</span> Antenne</li>
                     </ul>
                 </div>
             </div>
-            <p class="form-hint" style="margin-top:0.85rem">Ces valeurs sont définies dans le système. Les provinces et antennes se gèrent dans les onglets dédiés.</p>
         </section>
     </div>
 </div>
 
-<!-- Modal Province -->
-<div class="modal" id="modalProvince" hidden>
+<!-- Modal PA -->
+<div class="modal" id="modalPA" hidden>
     <div class="modal-dialog">
         <div class="modal-header">
             <div class="modal-header-text">
-                <h3 id="titreModalProvince">Nouvelle province</h3>
-                <p>Référentiel territorial</p>
+                <h3 id="titreModalPA">Nouvelle province administrative</h3>
+                <p>Niveau 1 — découpage de l'État</p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
-        <form id="formProvince" novalidate>
-            <input type="hidden" name="id" id="provinceId">
+        <form id="formPA" novalidate>
+            <input type="hidden" id="paId">
             <div class="form-sections">
                 <section class="form-section">
                     <h4 class="form-section-title">Identification</h4>
@@ -171,8 +273,46 @@
                         </div>
                         <div class="form-group">
                             <label>Code <span class="req">*</span></label>
-                            <input name="code" required placeholder="Ex: KIN" maxlength="10">
-                            <span class="form-hint">Code unique (max. 10 caractères)</span>
+                            <input name="code" required placeholder="Ex: KIN" maxlength="20">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal PE -->
+<div class="modal" id="modalPE" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalPE">Nouvelle province éducationnelle</h3>
+                <p>Niveau 2 — rattachée à une province administrative</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formPE" novalidate>
+            <input type="hidden" id="peId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: PE Kinshasa">
+                        </div>
+                        <div class="form-group">
+                            <label>Code <span class="req">*</span></label>
+                            <input name="code" required placeholder="Ex: PE-KIN">
+                        </div>
+                        <div class="form-group full">
+                            <label>Province administrative <span class="req">*</span></label>
+                            <select name="province_administrative" id="selectPAforPE" required></select>
                         </div>
                     </div>
                 </section>
@@ -191,12 +331,12 @@
         <div class="modal-header">
             <div class="modal-header-text">
                 <h3 id="titreModalAntenne">Nouvelle antenne</h3>
-                <p>Antenne rattachée à une province</p>
+                <p>Niveau 3 — rattachée à une province éducationnelle</p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
         <form id="formAntenne" novalidate>
-            <input type="hidden" name="id" id="antenneId">
+            <input type="hidden" id="antenneId">
             <div class="form-sections">
                 <section class="form-section">
                     <h4 class="form-section-title">Identification</h4>
@@ -210,8 +350,8 @@
                             <input name="code" required placeholder="Ex: ANT-GOM">
                         </div>
                         <div class="form-group">
-                            <label>Province <span class="req">*</span></label>
-                            <select name="province" id="selectProvinceAntenneForm" required></select>
+                            <label>Province éducationnelle <span class="req">*</span></label>
+                            <select name="province_educationnelle" id="selectPEforAntenne" required></select>
                         </div>
                         <div class="form-group full">
                             <label>Adresse</label>

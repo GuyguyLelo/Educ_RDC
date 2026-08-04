@@ -9,7 +9,13 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from utilisateurs.views import UtilisateurViewSet, CustomTokenObtainPairView
-from ecoles.views import ProvinceViewSet, AntenneViewSet, EcoleViewSet
+from ecoles.views import (
+    ProvinceAdministrativeViewSet,
+    ProvinceEducationnelleViewSet,
+    AntenneViewSet,
+    EcoleViewSet,
+    PersonnelEcoleViewSet,
+)
 from eleves.views import EleveViewSet
 from biometrie.views import BiometrieViewSet
 from enrolement.views import EnrolementViewSet
@@ -21,9 +27,12 @@ from administration import views as admin_views
 # Router API REST
 router = DefaultRouter()
 router.register(r'utilisateurs', UtilisateurViewSet, basename='utilisateur')
-router.register(r'provinces', ProvinceViewSet, basename='province')
+router.register(r'provinces-administratives', ProvinceAdministrativeViewSet, basename='province-administrative')
+router.register(r'provinces-educationnelles', ProvinceEducationnelleViewSet, basename='province-educationnelle')
+router.register(r'provinces', ProvinceAdministrativeViewSet, basename='province')  # alias
 router.register(r'antennes', AntenneViewSet, basename='antenne')
 router.register(r'ecoles', EcoleViewSet, basename='ecole')
+router.register(r'personnels', PersonnelEcoleViewSet, basename='personnel')
 router.register(r'eleves', EleveViewSet, basename='eleve')
 router.register(r'biometrie', BiometrieViewSet, basename='biometrie')
 router.register(r'enrolements', EnrolementViewSet, basename='enrolement')
@@ -38,12 +47,18 @@ urlpatterns = [
     path('logout/', admin_views.vue_logout, name='logout'),
     path('dashboard/', admin_views.vue_dashboard, name='dashboard'),
     path('ecoles/', admin_views.vue_ecoles, name='ecoles'),
+    path('ecoles/<int:ecole_id>/', admin_views.vue_ecole_detail, name='ecole_detail'),
     path('eleves/', admin_views.vue_eleves, name='eleves'),
     path('eleves/<int:eleve_id>/', admin_views.vue_eleve_detail, name='eleve_detail'),
     path('enrolement/', admin_views.vue_enrolement, name='enrolement'),
     path('cartes/', admin_views.vue_cartes, name='cartes'),
     path('rapports/', admin_views.vue_rapports, name='rapports'),
     path('parametres/', admin_views.vue_parametres, name='parametres'),
+    path(
+        'parametres/structure/nouvelle/',
+        admin_views.vue_structure_formulaire,
+        name='structure_nouvelle',
+    ),
 
     # API JWT
     path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain'),

@@ -7,8 +7,11 @@ class EleveSerializer(serializers.ModelSerializer):
     nom_complet = serializers.CharField(read_only=True)
     ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
     ecole_code = serializers.CharField(source='ecole.code', read_only=True)
-    province_nom = serializers.CharField(source='ecole.province.nom', read_only=True)
+    province_nom = serializers.CharField(source='ecole.province_educationnelle.nom', read_only=True)
     antenne_nom = serializers.CharField(source='ecole.antenne.nom', read_only=True)
+    province_administrative_nom = serializers.CharField(
+        source='ecole.province_administrative.nom', read_only=True,
+    )
     sexe_display = serializers.CharField(source='get_sexe_display', read_only=True)
     photo_url = serializers.SerializerMethodField()
     a_photo = serializers.SerializerMethodField()
@@ -18,7 +21,8 @@ class EleveSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'matricule', 'nom', 'postnom', 'prenom', 'nom_complet',
             'date_naissance', 'lieu_naissance', 'sexe', 'sexe_display',
-            'ecole', 'ecole_nom', 'ecole_code', 'province_nom', 'antenne_nom',
+            'ecole', 'ecole_nom', 'ecole_code',
+            'province_nom', 'province_administrative_nom', 'antenne_nom',
             'classe', 'adresse', 'nom_tuteur', 'telephone_tuteur',
             'photo', 'photo_url', 'a_photo', 'actif', 'date_inscription',
         ]

@@ -21,13 +21,21 @@ class Utilisateur(AbstractUser):
         verbose_name='Rôle',
     )
     telephone = models.CharField(max_length=20, blank=True, verbose_name='Téléphone')
-    province = models.ForeignKey(
-        'ecoles.Province',
+    province_administrative = models.ForeignKey(
+        'ecoles.ProvinceAdministrative',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='agents',
-        verbose_name='Province',
+        verbose_name='Province administrative',
+    )
+    province_educationnelle = models.ForeignKey(
+        'ecoles.ProvinceEducationnelle',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='agents',
+        verbose_name='Province éducationnelle',
     )
     antenne = models.ForeignKey(
         'ecoles.Antenne',
@@ -46,6 +54,11 @@ class Utilisateur(AbstractUser):
 
     def __str__(self):
         return f'{self.get_full_name() or self.username} ({self.get_role_display()})'
+
+    @property
+    def province(self):
+        """Compatibilité : province éducationnelle prioritaire."""
+        return self.province_educationnelle
 
     @property
     def est_admin(self):

@@ -15,6 +15,7 @@
             <button class="btn btn-ghost" id="btnSearchEleves" type="button">Rechercher</button>
         </div>
         <div class="toolbar-actions">
+            <button class="btn btn-secondary" id="btnImporterEleves" type="button">Importer</button>
             <button class="btn btn-primary" id="btnNouvelEleve" type="button">+ Nouvel élève</button>
         </div>
     </section>
@@ -51,7 +52,7 @@
 </div>
 
 <div class="modal" id="modalEleve" hidden>
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-wide">
         <div class="modal-header">
             <div class="modal-header-text">
                 <h3>Nouvel élève</h3>
@@ -147,6 +148,65 @@
             <div class="modal-actions">
                 <button type="button" class="btn btn-ghost" data-close>Annuler</button>
                 <button type="submit" class="btn btn-primary">Enregistrer l'élève</button>
+            </div>
+        </form>
+    </div>
+</div>
+<div class="modal" id="modalImportEleves" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Importer des élèves</h3>
+                <p>Fichier CSV — mise à jour si le matricule existe déjà</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formImportEleves" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Fichier</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label class="file-drop" for="importElevesFile">
+                                <input type="file" name="fichier" id="importElevesFile" accept=".csv,.txt,.tsv,text/csv,text/plain" required>
+                                <span class="file-drop-title">Déposer un CSV ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">.csv / .txt — séparateur ; ou ,</span>
+                            </label>
+                        </div>
+                        <div class="form-group full">
+                            <label>École par défaut</label>
+                            <select name="ecole" id="selectEcoleImportEleves">
+                                <option value="">— Utiliser le code école du fichier —</option>
+                            </select>
+                            <span class="form-hint">Utilisée si la colonne <code>ecole_code</code> est vide ou absente.</span>
+                        </div>
+                        <div class="form-group full">
+                            <label class="checkbox-inline" for="importUpdateExisting">
+                                <input type="checkbox" name="update_existing" id="importUpdateExisting" value="1" checked>
+                                <span>Mettre à jour les élèves déjà connus (même matricule)</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Format attendu</h4>
+                    <p class="form-hint" style="margin:0 0 0.75rem">
+                        Colonnes obligatoires :
+                        <code>matricule</code>, <code>nom</code>, <code>prenom</code>,
+                        <code>date_naissance</code>, <code>sexe</code> (M/F), <code>classe</code>.
+                        Optionnelles : <code>postnom</code>, <code>ecole_code</code>,
+                        <code>lieu_naissance</code>, <code>adresse</code>,
+                        <code>nom_tuteur</code>, <code>telephone_tuteur</code>.
+                    </p>
+                    <a class="btn btn-ghost btn-sm" href="/static/modele_import_eleves.csv" download>
+                        Télécharger le modèle CSV
+                    </a>
+                    <div id="importElevesResult" class="form-hint" hidden style="margin-top:0.85rem"></div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitImportEleves">Lancer l'import</button>
             </div>
         </form>
     </div>

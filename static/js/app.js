@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Educ_RDC — Frontend JavaScript (Fetch API)
  * Gestion formulaires, validation, notifications, pagination
  */
@@ -8,8 +8,31 @@ const EducRDC = (() => {
     const API = '/api';
 
     function getCookie(name) {
-        const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-        return match ? decodeURIComponent(match[2]) : null;
+        const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+        return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function getCsrfToken() {
+        const input = document.querySelector('input[name="csrfmiddlewaretoken"]');
+        if (input?.value) return input.value;
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        if (meta?.content) return meta.content;
+        return getCookie('csrftoken');
+    }
+
+    function formatApiError(data) {
+        if (!data) return 'Une erreur est survenue.';
+        if (typeof data === 'string') return data.slice(0, 300);
+        if (data.detail) return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
+        if (data.error) return data.error;
+        if (typeof data === 'object') {
+            const parts = Object.entries(data).map(([field, msgs]) => {
+                const text = Array.isArray(msgs) ? msgs.join(' ') : String(msgs);
+                return field === 'non_field_errors' ? text : `${field} : ${text}`;
+            });
+            if (parts.length) return parts.join(' · ');
+        }
+        return 'Une erreur est survenue.';
     }
 
     function toast(message, type = 'info') {
@@ -23,11 +46,11 @@ const EducRDC = (() => {
     }
 
     async function api(url, options = {}) {
-        const headers = options.headers || {};
+        const headers = { ...(options.headers || {}) };
         if (!(options.body instanceof FormData)) {
             headers['Content-Type'] = headers['Content-Type'] || 'application/json';
         }
-        const csrf = getCookie('csrftoken');
+        const csrf = getCsrfToken();
         if (csrf) headers['X-CSRFToken'] = csrf;
 
         const response = await fetch(url, {
@@ -44,20 +67,18 @@ const EducRDC = (() => {
             : await response.text();
 
         if (!response.ok) {
-            let msg = 'Une erreur est survenue.';
-            if (typeof data === 'object' && data) {
-                msg = data.detail || data.error || JSON.stringify(data);
-            } else if (typeof data === 'string' && data) {
-                msg = data.slice(0, 200);
-            }
-            throw new Error(msg);
+            throw new Error(formatApiError(data));
         }
         return data;
     }
 
     function openModal(id) {
         const modal = document.getElementById(id);
-        if (modal) modal.hidden = false;
+        if (!modal) return;
+        if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
+        }
+        modal.hidden = false;
     }
 
     function closeModal(id) {
@@ -253,36 +274,114 @@ const EducRDC = (() => {
 
     /* ---------- Écoles ---------- */
     let pageEcoles = 1;
+    let cacheEcolesPA = [];
+    let cacheEcolesPE = [];
+    let cacheEcolesAntennes = [];
 
-    async function chargerProvincesAntennes() {
-        const [provinces, antennes] = await Promise.all([
-            api(`${API}/provinces/?page_size=100`),
-            api(`${API}/antennes/?page_size=100`),
+    async function chargerHierarchieEcole() {
+        const [pas, pes, antennes] = await Promise.all([
+            api(`${API}/provinces-administratives/?page_size=200`),
+            api(`${API}/provinces-educationnelles/?page_size=200`),
+            api(`${API}/antennes/?page_size=200`),
         ]);
-        const selP = document.getElementById('selectProvince');
+        cacheEcolesPA = pas.results || pas;
+        cacheEcolesPE = pes.results || pes;
+        cacheEcolesAntennes = antennes.results || antennes;
+
+        // Filtres liste
+        const fPA = document.getElementById('filtreEcolePA');
+        const fPE = document.getElementById('filtreEcolePE');
+        const fAnt = document.getElementById('filtreEcoleAntenne');
+        if (fPA) {
+            const cur = fPA.value;
+            fPA.innerHTML = `<option value="">Toutes les prov. admin.</option>` +
+                cacheEcolesPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+            if (cur) fPA.value = cur;
+        }
+        syncFiltresEcolesPE();
+        syncFiltresEcolesAntenne();
+
+        // Formulaire modal création
+        const selPA = document.getElementById('selectProvinceAdmin');
+        const selPE = document.getElementById('selectProvinceEduc');
         const selA = document.getElementById('selectAntenne');
-        if (!selP || !selA) return;
+        if (!selPA || !selPE || !selA) return;
 
-        const provList = provinces.results || provinces;
-        const antList = antennes.results || antennes;
+        selPA.innerHTML = cacheEcolesPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
 
-        selP.innerHTML = provList.map((p) => `<option value="${p.id}">${p.nom}</option>`).join('');
-        const fillAntennes = () => {
-            const pid = selP.value;
-            selA.innerHTML = antList
-                .filter((a) => String(a.province) === String(pid))
-                .map((a) => `<option value="${a.id}">${a.nom}</option>`)
-                .join('');
+        const fillPE = () => {
+            const paId = selPA.value;
+            const filtered = cacheEcolesPE.filter((p) => String(p.province_administrative) === String(paId));
+            selPE.innerHTML = filtered.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+            fillAntennes();
         };
-        selP.addEventListener('change', fillAntennes);
-        fillAntennes();
+        const fillAntennes = () => {
+            const peId = selPE.value;
+            const filtered = cacheEcolesAntennes.filter((a) => String(a.province_educationnelle) === String(peId));
+            selA.innerHTML = filtered.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)}</option>`).join('');
+        };
+
+        selPA.addEventListener('change', fillPE);
+        selPE.addEventListener('change', fillAntennes);
+        fillPE();
+    }
+
+    function syncFiltresEcolesPE() {
+        const fPA = document.getElementById('filtreEcolePA');
+        const fPE = document.getElementById('filtreEcolePE');
+        if (!fPE) return;
+        const paId = fPA?.value || '';
+        const cur = fPE.value;
+        const list = paId
+            ? cacheEcolesPE.filter((p) => String(p.province_administrative) === String(paId))
+            : cacheEcolesPE;
+        fPE.innerHTML = `<option value="">Toutes les prov. éduc.</option>` +
+            list.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+        if (cur && list.some((p) => String(p.id) === String(cur))) fPE.value = cur;
+        syncFiltresEcolesAntenne();
+    }
+
+    function syncFiltresEcolesAntenne() {
+        const fPE = document.getElementById('filtreEcolePE');
+        const fPA = document.getElementById('filtreEcolePA');
+        const fAnt = document.getElementById('filtreEcoleAntenne');
+        if (!fAnt) return;
+        const peId = fPE?.value || '';
+        const paId = fPA?.value || '';
+        const cur = fAnt.value;
+        let list = cacheEcolesAntennes;
+        if (peId) {
+            list = list.filter((a) => String(a.province_educationnelle) === String(peId));
+        } else if (paId) {
+            const peIds = new Set(
+                cacheEcolesPE
+                    .filter((p) => String(p.province_administrative) === String(paId))
+                    .map((p) => String(p.id)),
+            );
+            list = list.filter((a) => peIds.has(String(a.province_educationnelle)));
+        }
+        fAnt.innerHTML = `<option value="">Toutes les antennes</option>` +
+            list.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)}</option>`).join('');
+        if (cur && list.some((a) => String(a.id) === String(cur))) fAnt.value = cur;
     }
 
     async function chargerEcoles(page = 1) {
         pageEcoles = page;
         const q = document.getElementById('searchEcoles')?.value || '';
+        const pa = document.getElementById('filtreEcolePA')?.value || '';
+        const pe = document.getElementById('filtreEcolePE')?.value || '';
+        const antenne = document.getElementById('filtreEcoleAntenne')?.value || '';
+        const typeEcole = document.getElementById('filtreEcoleType')?.value || '';
+        const niveau = document.getElementById('filtreEcoleNiveau')?.value || '';
+
         let url = `${API}/ecoles/?page=${page}`;
         if (q) url += `&search=${encodeURIComponent(q)}`;
+        if (pa) url += `&province_administrative=${encodeURIComponent(pa)}`;
+        if (pe) url += `&province_educationnelle=${encodeURIComponent(pe)}`;
+        if (antenne) url += `&antenne=${encodeURIComponent(antenne)}`;
+        if (typeEcole) url += `&type_ecole=${encodeURIComponent(typeEcole)}`;
+        if (niveau) url += `&niveau=${encodeURIComponent(niveau)}`;
+
         const data = await api(url);
         const rows = data.results || data;
         const tbody = document.querySelector('#tableEcoles tbody');
@@ -295,24 +394,30 @@ const EducRDC = (() => {
                     <div class="entity-cell">
                         <div class="entity-avatar school">${escapeHtml(initials(e.nom))}</div>
                         <div class="entity-meta">
-                            <strong title="${escapeHtml(e.nom)}">${escapeHtml(e.nom)}</strong>
+                            <strong title="${escapeHtml(e.nom)}">
+                                <a class="entity-link" href="/ecoles/${e.id}/">${escapeHtml(e.nom)}</a>
+                            </strong>
                             <span>${escapeHtml(e.directeur || 'Directeur non renseigné')}</span>
                         </div>
                     </div>
                 </td>
                 <td data-label="Code"><span class="code-chip">${escapeHtml(e.code)}</span></td>
+                <td data-label="N° agrément">${escapeHtml(e.numero_agrement || '—')}</td>
                 <td data-label="Type"><span class="badge badge-neutral">${escapeHtml(e.type_display || e.type_ecole)}</span></td>
                 <td data-label="Niveau">${escapeHtml(e.niveau_display || e.niveau)}</td>
                 <td data-label="Localisation">
                     <div class="entity-meta">
-                        <strong>${escapeHtml(e.province_nom || '—')}</strong>
-                        <span>${escapeHtml(e.antenne_nom || '')}</span>
+                        <strong>${escapeHtml(e.province_educationnelle_nom || e.province_nom || '—')}</strong>
+                        <span>${escapeHtml(e.province_administrative_nom || '')} · ${escapeHtml(e.antenne_nom || '')}</span>
                     </div>
                 </td>
-                <td data-label="Élèves"><strong>${e.nombre_eleves ?? 0}</strong></td>
+                <td data-label="MAT">${e.effectif_mat ?? 0}</td>
+                <td data-label="PRIM">${e.effectif_prim ?? 0}</td>
+                <td data-label="SEC">${e.effectif_sec ?? 0}</td>
+                <td data-label="Effectifs"><strong>${e.effectifs ?? ((e.effectif_mat || 0) + (e.effectif_prim || 0) + (e.effectif_sec || 0))}</strong></td>
                 <td data-label="Statut"><span class="badge ${e.active ? 'badge-success' : 'badge-danger'}">${e.active ? 'Active' : 'Inactive'}</span></td>
             </tr>
-        `).join('') : emptyRow(7, 'Aucune école trouvée', 'Modifiez la recherche ou créez une nouvelle école.');
+        `).join('') : emptyRow(11, 'Aucune école trouvée', 'Modifiez les filtres ou créez une nouvelle école.');
 
         const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
         renderPagination('paginationEcoles', pageEcoles, totalPages, chargerEcoles);
@@ -321,13 +426,39 @@ const EducRDC = (() => {
 
     function initEcoles() {
         bindModalClosers();
-        chargerProvincesAntennes().catch((e) => toast(e.message, 'error'));
-        chargerEcoles().catch((e) => toast(e.message, 'error'));
+        chargerHierarchieEcole()
+            .then(() => chargerEcoles())
+            .catch((e) => toast(e.message, 'error'));
 
         document.getElementById('btnNouvelleEcole')?.addEventListener('click', () => openModal('modalEcole'));
         document.getElementById('btnSearchEcoles')?.addEventListener('click', () => chargerEcoles(1));
         document.getElementById('searchEcoles')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') chargerEcoles(1);
+        });
+
+        document.getElementById('filtreEcolePA')?.addEventListener('change', () => {
+            syncFiltresEcolesPE();
+            chargerEcoles(1).catch((e) => toast(e.message, 'error'));
+        });
+        document.getElementById('filtreEcolePE')?.addEventListener('change', () => {
+            syncFiltresEcolesAntenne();
+            chargerEcoles(1).catch((e) => toast(e.message, 'error'));
+        });
+        ['filtreEcoleAntenne', 'filtreEcoleType', 'filtreEcoleNiveau'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('change', () => {
+                chargerEcoles(1).catch((e) => toast(e.message, 'error'));
+            });
+        });
+        document.getElementById('btnResetFiltresEcoles')?.addEventListener('click', () => {
+            const search = document.getElementById('searchEcoles');
+            if (search) search.value = '';
+            ['filtreEcolePA', 'filtreEcolePE', 'filtreEcoleAntenne', 'filtreEcoleType', 'filtreEcoleNiveau']
+                .forEach((id) => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            syncFiltresEcolesPE();
+            chargerEcoles(1).catch((e) => toast(e.message, 'error'));
         });
 
         document.getElementById('formEcole')?.addEventListener('submit', async (e) => {
@@ -339,14 +470,14 @@ const EducRDC = (() => {
                 return;
             }
             const payload = Object.fromEntries(new FormData(form).entries());
-            payload.province = Number(payload.province);
+            payload.province_educationnelle = Number(payload.province_educationnelle);
             payload.antenne = Number(payload.antenne);
             try {
                 await api(`${API}/ecoles/`, { method: 'POST', body: JSON.stringify(payload) });
                 toast('École créée avec succès.', 'success');
                 form.reset();
                 closeModal('modalEcole');
-                await chargerProvincesAntennes();
+                await chargerHierarchieEcole();
                 await chargerEcoles(1);
             } catch (err) {
                 toast(err.message, 'error');
@@ -354,15 +485,206 @@ const EducRDC = (() => {
         });
     }
 
+    /* ---------- Détail école ---------- */
+    async function chargerEcolePersonnels(ecoleId) {
+        const data = await api(`${API}/personnels/?ecole=${ecoleId}&page_size=100`);
+        const rows = data.results || data;
+        setCount('countEcolePersonnels', data.count ?? rows.length);
+        const chip = document.getElementById('detailEcolePersonnels');
+        if (chip) {
+            const n = data.count ?? rows.length;
+            chip.textContent = `${n} personnel${n > 1 ? 's' : ''}`;
+        }
+        const tbody = document.querySelector('#tableEcolePersonnels tbody');
+        if (!tbody) return;
+        tbody.innerHTML = rows.length ? rows.map((p) => `
+            <tr>
+                <td data-label="Nom"><strong>${escapeHtml(p.nom_complet)}</strong></td>
+                <td data-label="Matricule"><span class="code-chip">${escapeHtml(p.matricule || '—')}</span></td>
+                <td data-label="Fonction"><span class="badge badge-neutral">${escapeHtml(p.fonction_display || p.fonction)}</span></td>
+                <td data-label="Sexe">${escapeHtml(p.sexe_display || p.sexe || '—')}</td>
+                <td data-label="Téléphone">${escapeHtml(p.telephone || '—')}</td>
+                <td data-label="Statut"><span class="badge ${p.actif ? 'badge-success' : 'badge-danger'}">${p.actif ? 'Actif' : 'Inactif'}</span></td>
+                <td data-label="Actions">
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">Modifier</button>
+                </td>
+            </tr>
+        `).join('') : emptyRow(7, 'Aucun personnel identifié', 'Cliquez sur « Identifier » pour enregistrer un agent.');
+
+        tbody.querySelectorAll('[data-edit-personnel]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                try {
+                    const p = await api(`${API}/personnels/${btn.dataset.editPersonnel}/`);
+                    ouvrirModalPersonnel(p);
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            });
+        });
+    }
+
+    function ouvrirModalPersonnel(personnel = null) {
+        const form = document.getElementById('formPersonnel');
+        if (!form) return;
+        form.reset();
+        document.getElementById('personnelId').value = personnel?.id || '';
+        document.getElementById('titreModalPersonnel').textContent = personnel
+            ? 'Modifier le personnel'
+            : 'Identifier un agent';
+        if (personnel) {
+            form.nom.value = personnel.nom || '';
+            form.postnom.value = personnel.postnom || '';
+            form.prenom.value = personnel.prenom || '';
+            form.sexe.value = personnel.sexe || 'M';
+            form.matricule.value = personnel.matricule || '';
+            form.fonction.value = personnel.fonction || 'enseignant';
+            form.telephone.value = personnel.telephone || '';
+            form.email.value = personnel.email || '';
+            form.date_naissance.value = personnel.date_naissance || '';
+            form.date_prise_service.value = personnel.date_prise_service || '';
+        }
+        openModal('modalPersonnel');
+    }
+
+    async function chargerEcoleDetail() {
+        const root = document.getElementById('ecoleDetail');
+        if (!root) return;
+        const id = root.dataset.ecoleId;
+        const ecole = await api(`${API}/ecoles/${id}/`);
+
+        document.getElementById('detailEcoleCode').textContent = ecole.code || '—';
+        document.getElementById('detailEcoleNom').textContent = ecole.nom || '—';
+        document.getElementById('detailEcoleSousTitre').textContent =
+            `${ecole.antenne_nom || '—'} · ${ecole.province_educationnelle_nom || ecole.province_nom || '—'}`;
+        document.getElementById('detailEcoleType').textContent = ecole.type_display || ecole.type_ecole || '—';
+        document.getElementById('detailEcoleNiveau').textContent = ecole.niveau_display || ecole.niveau || '—';
+
+        const statut = document.getElementById('detailEcoleStatut');
+        statut.textContent = ecole.active ? 'Active' : 'Inactive';
+        statut.className = `badge ${ecole.active ? 'badge-success' : 'badge-danger'}`;
+
+        const eff = ecole.effectifs ?? 0;
+        document.getElementById('detailEcoleEffectifs').textContent = `${eff} élève${eff > 1 ? 's' : ''}`;
+
+        const avatar = document.getElementById('detailEcoleAvatar');
+        if (avatar) avatar.textContent = initials(ecole.nom);
+
+        fillDetailList('blocEcoleIdentite', [
+            ['Nom', ecole.nom],
+            ['Code école', ecole.code],
+            ["N° d'agrément", ecole.numero_agrement],
+            ['Type', ecole.type_display || ecole.type_ecole],
+            ['Niveau', ecole.niveau_display || ecole.niveau],
+            ['Directeur', ecole.directeur],
+        ]);
+
+        fillDetailList('blocEcoleLocalisation', [
+            ['Province administrative', ecole.province_administrative_nom],
+            ['Province éducationnelle', ecole.province_educationnelle_nom || ecole.province_nom],
+            ['Antenne', ecole.antenne_nom],
+            ['Adresse', ecole.adresse],
+        ]);
+
+        fillDetailList('blocEcoleContact', [
+            ['Téléphone', ecole.telephone],
+            ['Email', ecole.email],
+            ['Créée le', (ecole.date_creation || '').slice(0, 10)],
+        ]);
+
+        fillDetailList('blocEcoleEffectifs', [
+            ['MAT', String(ecole.effectif_mat ?? 0)],
+            ['PRIM', String(ecole.effectif_prim ?? 0)],
+            ['SEC', String(ecole.effectif_sec ?? 0)],
+            ['EFFECTIFS', String(eff)],
+            ['Élèves enregistrés', String(ecole.nombre_eleves ?? 0)],
+            ['Personnels identifiés', String(ecole.nombre_personnels ?? 0)],
+        ]);
+
+        await chargerEcolePersonnels(id);
+
+        const elevesData = await api(`${API}/eleves/?ecole=${id}&page_size=50`);
+        const eleves = elevesData.results || elevesData;
+        setCount('countEcoleEleves', elevesData.count ?? eleves.length);
+        const tbody = document.querySelector('#tableEcoleEleves tbody');
+        tbody.innerHTML = eleves.length ? eleves.map((el) => `
+            <tr>
+                <td data-label="Élève">
+                    <a class="entity-link" href="/eleves/${el.id}/">${escapeHtml(el.nom_complet || `${el.nom} ${el.postnom || ''} ${el.prenom || ''}`.trim())}</a>
+                </td>
+                <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule || '—')}</span></td>
+                <td data-label="Sexe">${escapeHtml(el.sexe_display || el.sexe || '—')}</td>
+                <td data-label="Classe">${escapeHtml(el.classe || '—')}</td>
+                <td data-label="Statut"><span class="badge ${el.actif ? 'badge-success' : 'badge-danger'}">${el.actif ? 'Actif' : 'Inactif'}</span></td>
+            </tr>
+        `).join('') : emptyRow(5, 'Aucun élève enregistré', 'Les élèves inscrits dans cette école apparaîtront ici.');
+    }
+
+    function initEcoleDetail() {
+        bindModalClosers();
+        const root = document.getElementById('ecoleDetail');
+        const ecoleId = root?.dataset.ecoleId;
+
+        const goPersonnel = () => {
+            document.getElementById('sectionPersonnelEcole')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        document.getElementById('btnPersonnelEcole')?.addEventListener('click', goPersonnel);
+        document.getElementById('btnNouveauPersonnel')?.addEventListener('click', () => ouvrirModalPersonnel());
+        document.getElementById('btnNouveauPersonnel2')?.addEventListener('click', () => ouvrirModalPersonnel());
+
+        document.getElementById('formPersonnel')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            const id = document.getElementById('personnelId').value;
+            const payload = Object.fromEntries(new FormData(form).entries());
+            payload.ecole = Number(ecoleId);
+            payload.actif = true;
+            if (!payload.date_naissance) delete payload.date_naissance;
+            if (!payload.date_prise_service) delete payload.date_prise_service;
+            try {
+                if (id) {
+                    await api(`${API}/personnels/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
+                    toast('Personnel mis à jour.', 'success');
+                } else {
+                    await api(`${API}/personnels/`, { method: 'POST', body: JSON.stringify(payload) });
+                    toast('Personnel identifié avec succès.', 'success');
+                }
+                closeModal('modalPersonnel');
+                form.reset();
+                await chargerEcolePersonnels(ecoleId);
+                const ecole = await api(`${API}/ecoles/${ecoleId}/`);
+                fillDetailList('blocEcoleEffectifs', [
+                    ['MAT', String(ecole.effectif_mat ?? 0)],
+                    ['PRIM', String(ecole.effectif_prim ?? 0)],
+                    ['SEC', String(ecole.effectif_sec ?? 0)],
+                    ['EFFECTIFS', String(ecole.effectifs ?? 0)],
+                    ['Élèves enregistrés', String(ecole.nombre_eleves ?? 0)],
+                    ['Personnels identifiés', String(ecole.nombre_personnels ?? 0)],
+                ]);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        chargerEcoleDetail().catch((err) => toast(err.message, 'error'));
+    }
+
     /* ---------- Élèves ---------- */
     let pageEleves = 1;
 
-    async function chargerSelectEcoles(selectId) {
+    async function chargerSelectEcoles(selectId, { placeholder = '' } = {}) {
         const data = await api(`${API}/ecoles/?page_size=200`);
         const list = data.results || data;
         const sel = document.getElementById(selectId);
         if (!sel) return;
-        sel.innerHTML = list.map((e) => `<option value="${e.id}">${e.nom} (${e.code})</option>`).join('');
+        const opts = list.map((e) => `<option value="${e.id}">${escapeHtml(e.nom)} (${escapeHtml(e.code)})</option>`).join('');
+        sel.innerHTML = placeholder
+            ? `<option value="">${escapeHtml(placeholder)}</option>${opts}`
+            : opts;
     }
 
     async function chargerEleves(page = 1) {
@@ -413,10 +735,22 @@ const EducRDC = (() => {
     function initEleves() {
         bindModalClosers();
         bindFileDropPreview('elevePhoto');
+        bindFileDropPreview('importElevesFile');
         chargerSelectEcoles('selectEcoleEleve').catch((e) => toast(e.message, 'error'));
+        chargerSelectEcoles('selectEcoleImportEleves', {
+            placeholder: '— Utiliser le code école du fichier —',
+        }).catch((e) => toast(e.message, 'error'));
         chargerEleves().catch((e) => toast(e.message, 'error'));
 
         document.getElementById('btnNouvelEleve')?.addEventListener('click', () => openModal('modalEleve'));
+        document.getElementById('btnImporterEleves')?.addEventListener('click', () => {
+            const result = document.getElementById('importElevesResult');
+            if (result) {
+                result.hidden = true;
+                result.textContent = '';
+            }
+            openModal('modalImportEleves');
+        });
         document.getElementById('btnSearchEleves')?.addEventListener('click', () => chargerEleves(1));
         document.getElementById('searchEleves')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') chargerEleves(1);
@@ -445,6 +779,69 @@ const EducRDC = (() => {
                 await chargerEleves(1);
             } catch (err) {
                 toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('formImportEleves')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const fileInput = document.getElementById('importElevesFile');
+            const fichier = fileInput?.files?.[0];
+            if (!fichier) {
+                toast('Choisissez un fichier CSV à importer.', 'warning');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('fichier', fichier);
+            const ecole = form.ecole?.value;
+            if (ecole) fd.append('ecole', ecole);
+            fd.append(
+                'update_existing',
+                document.getElementById('importUpdateExisting')?.checked ? '1' : '0',
+            );
+
+            const btn = document.getElementById('btnSubmitImportEleves');
+            const resultEl = document.getElementById('importElevesResult');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Import en cours…';
+            }
+            try {
+                const data = await api(`${API}/eleves/import/`, { method: 'POST', body: fd, headers: {} });
+                toast(data.detail || 'Import terminé.', data.errors_count ? 'warning' : 'success');
+                if (resultEl) {
+                    let html = escapeHtml(data.detail || '');
+                    if (data.errors?.length) {
+                        html += '<ul style="margin:0.5rem 0 0;padding-left:1.1rem">';
+                        data.errors.slice(0, 8).forEach((err) => {
+                            html += `<li>Ligne ${escapeHtml(err.ligne)} : ${escapeHtml(err.message)}</li>`;
+                        });
+                        if (data.errors_count > 8) {
+                            html += `<li>… et ${data.errors_count - 8} autre(s)</li>`;
+                        }
+                        html += '</ul>';
+                    }
+                    resultEl.innerHTML = html;
+                    resultEl.hidden = false;
+                }
+                await chargerEleves(1);
+                if (!data.errors_count) {
+                    form.reset();
+                    const title = form.querySelector('.file-drop-title');
+                    if (title) title.textContent = 'Déposer un CSV ou cliquer pour parcourir';
+                    closeModal('modalImportEleves');
+                }
+            } catch (err) {
+                toast(err.message, 'error');
+                if (resultEl) {
+                    resultEl.textContent = err.message;
+                    resultEl.hidden = false;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Lancer l'import";
+                }
             }
         });
     }
@@ -519,7 +916,8 @@ const EducRDC = (() => {
             ['École', eleve.ecole_nom],
             ['Code école', eleve.ecole_code],
             ['Classe', eleve.classe],
-            ['Province', eleve.province_nom],
+            ['Province admin.', eleve.province_administrative_nom],
+            ['Province éduc.', eleve.province_nom],
             ['Antenne', eleve.antenne_nom],
             ['Inscription', (eleve.date_inscription || '').slice(0, 10)],
         ]);
@@ -854,11 +1252,15 @@ const EducRDC = (() => {
 
     document.addEventListener('DOMContentLoaded', initNavigationMobile);
 
-    /* ---------- Paramètres (référentiels) ---------- */
-    let pageProvinces = 1;
+
+    /* ---------- Paramètres (hiérarchie référentielle) ---------- */
+    let pagePA = 1;
+    let pagePE = 1;
     let pageAntennes = 1;
-    let cacheProvinces = [];
+    let cachePA = [];
+    let cachePE = [];
     let cacheAntennes = [];
+    let orgData = { pas: [], pes: [], antennes: [] };
 
     function activerOnglet(tabName) {
         document.querySelectorAll('.tab-btn').forEach((btn) => {
@@ -873,82 +1275,288 @@ const EducRDC = (() => {
         });
     }
 
-    async function chargerOptionsProvinces() {
-        const data = await api(`${API}/provinces/?page_size=200`);
-        const list = data.results || data;
-        const filtre = document.getElementById('filtreProvinceAntenne');
-        const formSel = document.getElementById('selectProvinceAntenneForm');
-        const options = list.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
-        if (filtre) {
-            const current = filtre.value;
-            filtre.innerHTML = `<option value="">Toutes les provinces</option>${options}`;
-            filtre.value = current;
-        }
-        if (formSel) formSel.innerHTML = options;
-        return list;
+    function matchOrgQuery(item, q) {
+        if (!q) return true;
+        const hay = `${item.nom || ''} ${item.code || ''} ${item.adresse || ''}`.toLowerCase();
+        return hay.includes(q);
     }
 
-    async function chargerProvinces(page = 1) {
-        pageProvinces = page;
-        const q = document.getElementById('searchProvinces')?.value || '';
-        let url = `${API}/provinces/?page=${page}`;
+    function renderOrganigramme(filter = '') {
+        const root = document.getElementById('organigrammeTree');
+        if (!root) return;
+        const q = filter.trim().toLowerCase();
+        const { pas, pes, antennes } = orgData;
+
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = String(value);
+        };
+        setText('orgCountPA', pas.length);
+        setText('orgCountPE', pes.length);
+        setText('orgCountAnt', antennes.length);
+        setCount('countOrganigramme', pas.length + pes.length + antennes.length, 'structure');
+
+        const pesByPA = new Map();
+        pes.forEach((pe) => {
+            const key = String(pe.province_administrative);
+            if (!pesByPA.has(key)) pesByPA.set(key, []);
+            pesByPA.get(key).push(pe);
+        });
+        const antsByPE = new Map();
+        antennes.forEach((a) => {
+            const key = String(a.province_educationnelle);
+            if (!antsByPE.has(key)) antsByPE.set(key, []);
+            antsByPE.get(key).push(a);
+        });
+
+        const nodes = [];
+        pas.forEach((pa) => {
+            const peList = (pesByPA.get(String(pa.id)) || []).slice().sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+            const peNodes = [];
+            peList.forEach((pe) => {
+                const antList = (antsByPE.get(String(pe.id)) || []).slice().sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+                const antMatch = antList.filter((a) => matchOrgQuery(a, q));
+                const peMatch = matchOrgQuery(pe, q);
+                if (q && !peMatch && !antMatch.length) return;
+                const shownAnts = q && !peMatch ? antMatch : antList;
+                peNodes.push({ pe, ants: shownAnts, forceOpen: Boolean(q && antMatch.length) });
+            });
+            const paMatch = matchOrgQuery(pa, q);
+            if (q && !paMatch && !peNodes.length) return;
+            nodes.push({ pa, pes: peNodes, forceOpen: Boolean(q && (peNodes.length || paMatch)) });
+        });
+
+        if (!nodes.length) {
+            root.innerHTML = `<p class="empty-state">${q ? 'Aucune structure ne correspond au filtre.' : 'Aucune structure enregistrée. Créez une province administrative pour commencer.'}</p>`;
+            return;
+        }
+
+        root.innerHTML = nodes.map(({ pa, pes: peNodes, forceOpen }) => {
+            const totalAnt = peNodes.reduce((n, x) => n + x.ants.length, 0);
+            const peHtml = peNodes.length ? `
+                <ul class="org-children">
+                    ${peNodes.map(({ pe, ants, forceOpen: peOpen }) => {
+                        const antHtml = ants.length ? `
+                            <ul class="org-children">
+                                ${ants.map((a) => `
+                                    <li class="org-node org-node-ant">
+                                        <div class="org-row">
+                                            <button type="button" class="org-toggle" disabled aria-hidden="true">·</button>
+                                            <div class="org-card">
+                                                <div class="org-card-main">
+                                                    <strong title="${escapeHtml(a.nom)}">${escapeHtml(a.nom)}</strong>
+                                                    <span>${escapeHtml(a.adresse || 'Adresse non renseignée')}</span>
+                                                </div>
+                                                <div class="org-card-meta">
+                                                    <span class="org-chip org-chip-ant">Antenne</span>
+                                                    <span class="code-chip">${escapeHtml(a.code)}</span>
+                                                    <span class="badge ${a.actif !== false ? 'badge-success' : 'badge-danger'}">${a.actif !== false ? 'Actif' : 'Inactif'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </li>`).join('')}
+                            </ul>` : '';
+                        return `
+                            <li class="org-node org-node-pe${peOpen ? '' : ''}" data-org-node>
+                                <div class="org-row">
+                                    <button type="button" class="org-toggle" data-org-toggle aria-expanded="true" ${ants.length ? '' : 'disabled'}>${ants.length ? '−' : '·'}</button>
+                                    <div class="org-card">
+                                        <div class="org-card-main">
+                                            <strong title="${escapeHtml(pe.nom)}">${escapeHtml(pe.nom)}</strong>
+                                            <span>${ants.length} antenne${ants.length > 1 ? 's' : ''}</span>
+                                        </div>
+                                        <div class="org-card-meta">
+                                            <span class="org-chip org-chip-pe">PE</span>
+                                            <span class="code-chip">${escapeHtml(pe.code)}</span>
+                                            <span class="badge ${pe.actif !== false ? 'badge-success' : 'badge-danger'}">${pe.actif !== false ? 'Actif' : 'Inactif'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                ${antHtml}
+                            </li>`;
+                    }).join('')}
+                </ul>` : '';
+
+            return `
+                <div class="org-node org-node-pa${forceOpen ? '' : ''}" data-org-node>
+                    <div class="org-row">
+                        <button type="button" class="org-toggle" data-org-toggle aria-expanded="true" ${peNodes.length ? '' : 'disabled'}>${peNodes.length ? '−' : '·'}</button>
+                        <div class="org-card">
+                            <div class="org-card-main">
+                                <strong title="${escapeHtml(pa.nom)}">${escapeHtml(pa.nom)}</strong>
+                                <span>${peNodes.length} PE · ${totalAnt} antenne${totalAnt > 1 ? 's' : ''}</span>
+                            </div>
+                            <div class="org-card-meta">
+                                <span class="org-chip org-chip-pa">PA</span>
+                                <span class="code-chip">${escapeHtml(pa.code)}</span>
+                                <span class="badge ${pa.actif !== false ? 'badge-success' : 'badge-danger'}">${pa.actif !== false ? 'Actif' : 'Inactif'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    ${peHtml}
+                </div>`;
+        }).join('');
+
+        root.querySelectorAll('[data-org-toggle]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const node = btn.closest('[data-org-node]');
+                if (!node || btn.disabled) return;
+                const collapsed = node.classList.toggle('is-collapsed');
+                btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                btn.textContent = collapsed ? '+' : '−';
+            });
+        });
+    }
+
+    async function chargerOrganigramme() {
+        const root = document.getElementById('organigrammeTree');
+        if (root) root.innerHTML = '<p class="empty-state">Chargement de l\'organigramme…</p>';
+        const [pas, pes, antennes] = await Promise.all([
+            api(`${API}/provinces-administratives/?page_size=500`),
+            api(`${API}/provinces-educationnelles/?page_size=500`),
+            api(`${API}/antennes/?page_size=500`),
+        ]);
+        orgData = {
+            pas: (pas.results || pas).slice().sort((a, b) => a.nom.localeCompare(b.nom, 'fr')),
+            pes: pes.results || pes,
+            antennes: antennes.results || antennes,
+        };
+        renderOrganigramme(document.getElementById('searchOrganigramme')?.value || '');
+    }
+
+    function setOrgExpanded(expanded) {
+        document.querySelectorAll('#organigrammeTree [data-org-node]').forEach((node) => {
+            const btn = node.querySelector(':scope > .org-row > [data-org-toggle]');
+            if (!btn || btn.disabled) return;
+            node.classList.toggle('is-collapsed', !expanded);
+            btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+            btn.textContent = expanded ? '−' : '+';
+        });
+    }
+
+    async function chargerOptionsHierarchie() {
+        const [pas, pes] = await Promise.all([
+            api(`${API}/provinces-administratives/?page_size=200`),
+            api(`${API}/provinces-educationnelles/?page_size=200`),
+        ]);
+        const paList = pas.results || pas;
+        const peList = pes.results || pes;
+        const filtrePA = document.getElementById('filtrePAforPE');
+        const selectPA = document.getElementById('selectPAforPE');
+        const filtrePE = document.getElementById('filtrePEforAntenne');
+        const selectPE = document.getElementById('selectPEforAntenne');
+        const paOpts = paList.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+        const peOpts = peList.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+        if (filtrePA) { const cur = filtrePA.value; filtrePA.innerHTML = `<option value="">Toutes les provinces admin.</option>${paOpts}`; filtrePA.value = cur; }
+        if (selectPA) selectPA.innerHTML = paOpts;
+        if (filtrePE) { const cur = filtrePE.value; filtrePE.innerHTML = `<option value="">Toutes les provinces éduc.</option>${peOpts}`; filtrePE.value = cur; }
+        if (selectPE) selectPE.innerHTML = peOpts;
+        return { paList, peList };
+    }
+
+    async function chargerPA(page = 1) {
+        pagePA = page;
+        const q = document.getElementById('searchPA')?.value || '';
+        let url = `${API}/provinces-administratives/?page=${page}`;
         if (q) url += `&search=${encodeURIComponent(q)}`;
         const data = await api(url);
         const rows = data.results || data;
-        cacheProvinces = rows;
-        setCount('countProvinces', data.count ?? rows.length);
-        const tbody = document.querySelector('#tableProvinces tbody');
+        cachePA = rows;
+        setCount('countPA', data.count ?? rows.length);
+        const tbody = document.querySelector('#tablePA tbody');
         tbody.innerHTML = rows.length ? rows.map((p) => `
             <tr>
                 <td data-label="Nom"><strong>${escapeHtml(p.nom)}</strong></td>
                 <td data-label="Code"><span class="code-chip">${escapeHtml(p.code)}</span></td>
-                <td data-label="Création">${escapeHtml((p.date_creation || '').slice(0, 10))}</td>
-                <td data-label="Actions">
-                    <div class="actions-inline">
-                        <button type="button" class="btn btn-ghost btn-sm" data-edit-province="${p.id}">Modifier</button>
-                        <button type="button" class="btn btn-danger btn-sm" data-del-province="${p.id}">Supprimer</button>
-                    </div>
-                </td>
-            </tr>
-        `).join('') : emptyRow(4, 'Aucune province', 'Ajoutez une province de référence.');
-
-        tbody.querySelectorAll('[data-edit-province]').forEach((btn) => {
+                <td data-label="Statut"><span class="badge ${p.actif !== false ? 'badge-success' : 'badge-danger'}">${p.actif !== false ? 'Actif' : 'Inactif'}</span></td>
+                <td data-label="Actions"><div class="actions-inline">
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pa="${p.id}">Modifier</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-del-pa="${p.id}">Supprimer</button>
+                </div></td>
+            </tr>`).join('') : emptyRow(4, 'Aucune province administrative', 'Ajoutez le niveau 1 de la hiérarchie.');
+        tbody.querySelectorAll('[data-edit-pa]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const p = cacheProvinces.find((x) => String(x.id) === String(btn.dataset.editProvince));
+                const p = cachePA.find((x) => String(x.id) === String(btn.dataset.editPa));
                 if (!p) return;
-                document.getElementById('titreModalProvince').textContent = 'Modifier la province';
-                document.getElementById('provinceId').value = p.id;
-                const form = document.getElementById('formProvince');
-                form.nom.value = p.nom;
-                form.code.value = p.code;
-                openModal('modalProvince');
+                document.getElementById('titreModalPA').textContent = 'Modifier la province administrative';
+                document.getElementById('paId').value = p.id;
+                const form = document.getElementById('formPA');
+                form.nom.value = p.nom; form.code.value = p.code;
+                openModal('modalPA');
             });
         });
-        tbody.querySelectorAll('[data-del-province]').forEach((btn) => {
+        tbody.querySelectorAll('[data-del-pa]').forEach((btn) => {
             btn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cette province ?')) return;
+                if (!confirm('Supprimer cette province administrative ?')) return;
                 try {
-                    await api(`${API}/provinces/${btn.dataset.delProvince}/`, { method: 'DELETE' });
-                    toast('Province supprimée.', 'success');
-                    await chargerProvinces(pageProvinces);
-                    await chargerOptionsProvinces();
-                } catch (err) {
-                    toast(err.message, 'error');
-                }
+                    await api(`${API}/provinces-administratives/${btn.dataset.delPa}/`, { method: 'DELETE' });
+                    toast('Province administrative supprimée.', 'success');
+                    await chargerPA(pagePA);
+                    await chargerOptionsHierarchie();
+                    await chargerOrganigramme().catch(() => {});
+                } catch (err) { toast(err.message, 'error'); }
             });
         });
+        renderPagination('paginationPA', pagePA, data.count ? Math.ceil(data.count / 20) : 1, chargerPA);
+    }
 
-        const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
-        renderPagination('paginationProvinces', pageProvinces, totalPages, chargerProvinces);
+    async function chargerPE(page = 1) {
+        pagePE = page;
+        const q = document.getElementById('searchPE')?.value || '';
+        const pa = document.getElementById('filtrePAforPE')?.value || '';
+        let url = `${API}/provinces-educationnelles/?page=${page}`;
+        if (q) url += `&search=${encodeURIComponent(q)}`;
+        if (pa) url += `&province_administrative=${encodeURIComponent(pa)}`;
+        const data = await api(url);
+        const rows = data.results || data;
+        cachePE = rows;
+        setCount('countPE', data.count ?? rows.length);
+        const tbody = document.querySelector('#tablePE tbody');
+        tbody.innerHTML = rows.length ? rows.map((p) => `
+            <tr>
+                <td data-label="Nom"><strong>${escapeHtml(p.nom)}</strong></td>
+                <td data-label="Code"><span class="code-chip">${escapeHtml(p.code)}</span></td>
+                <td data-label="Province admin.">${escapeHtml(p.province_administrative_nom || '')}</td>
+                <td data-label="Statut"><span class="badge ${p.actif !== false ? 'badge-success' : 'badge-danger'}">${p.actif !== false ? 'Actif' : 'Inactif'}</span></td>
+                <td data-label="Actions"><div class="actions-inline">
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pe="${p.id}">Modifier</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-del-pe="${p.id}">Supprimer</button>
+                </div></td>
+            </tr>`).join('') : emptyRow(5, 'Aucune province éducationnelle', 'Créez une PE rattachée à une province administrative.');
+        tbody.querySelectorAll('[data-edit-pe]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const p = cachePE.find((x) => String(x.id) === String(btn.dataset.editPe));
+                if (!p) return;
+                document.getElementById('titreModalPE').textContent = 'Modifier la province éducationnelle';
+                document.getElementById('peId').value = p.id;
+                const form = document.getElementById('formPE');
+                form.nom.value = p.nom; form.code.value = p.code;
+                form.province_administrative.value = p.province_administrative;
+                openModal('modalPE');
+            });
+        });
+        tbody.querySelectorAll('[data-del-pe]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                if (!confirm('Supprimer cette province éducationnelle ?')) return;
+                try {
+                    await api(`${API}/provinces-educationnelles/${btn.dataset.delPe}/`, { method: 'DELETE' });
+                    toast('Province éducationnelle supprimée.', 'success');
+                    await chargerPE(pagePE);
+                    await chargerOptionsHierarchie();
+                    await chargerOrganigramme().catch(() => {});
+                } catch (err) { toast(err.message, 'error'); }
+            });
+        });
+        renderPagination('paginationPE', pagePE, data.count ? Math.ceil(data.count / 20) : 1, chargerPE);
     }
 
     async function chargerAntennes(page = 1) {
         pageAntennes = page;
         const q = document.getElementById('searchAntennes')?.value || '';
-        const province = document.getElementById('filtreProvinceAntenne')?.value || '';
+        const pe = document.getElementById('filtrePEforAntenne')?.value || '';
         let url = `${API}/antennes/?page=${page}`;
         if (q) url += `&search=${encodeURIComponent(q)}`;
-        if (province) url += `&province=${encodeURIComponent(province)}`;
+        if (pe) url += `&province_educationnelle=${encodeURIComponent(pe)}`;
         const data = await api(url);
         const rows = data.results || data;
         cacheAntennes = rows;
@@ -956,36 +1564,25 @@ const EducRDC = (() => {
         const tbody = document.querySelector('#tableAntennes tbody');
         tbody.innerHTML = rows.length ? rows.map((a) => `
             <tr>
-                <td data-label="Antenne">
-                    <div class="entity-meta">
-                        <strong>${escapeHtml(a.nom)}</strong>
-                        <span>${escapeHtml(a.adresse || 'Adresse non renseignée')}</span>
-                    </div>
-                </td>
+                <td data-label="Antenne"><div class="entity-meta"><strong>${escapeHtml(a.nom)}</strong><span>${escapeHtml(a.adresse || 'Adresse non renseignée')}</span></div></td>
                 <td data-label="Code"><span class="code-chip">${escapeHtml(a.code)}</span></td>
-                <td data-label="Province">${escapeHtml(a.province_nom || '')}</td>
-                <td data-label="Contact">${escapeHtml(a.telephone || '—')}</td>
-                <td data-label="Actions">
-                    <div class="actions-inline">
-                        <button type="button" class="btn btn-ghost btn-sm" data-edit-antenne="${a.id}">Modifier</button>
-                        <button type="button" class="btn btn-danger btn-sm" data-del-antenne="${a.id}">Supprimer</button>
-                    </div>
-                </td>
-            </tr>
-        `).join('') : emptyRow(5, 'Aucune antenne', 'Créez une antenne rattachée à une province.');
-
+                <td data-label="Province éduc.">${escapeHtml(a.province_educationnelle_nom || '')}</td>
+                <td data-label="Province admin.">${escapeHtml(a.province_administrative_nom || '')}</td>
+                <td data-label="Actions"><div class="actions-inline">
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-antenne="${a.id}">Modifier</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-del-antenne="${a.id}">Supprimer</button>
+                </div></td>
+            </tr>`).join('') : emptyRow(5, 'Aucune antenne', 'Créez une antenne rattachée à une province éducationnelle.');
         tbody.querySelectorAll('[data-edit-antenne]').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const a = cacheAntennes.find((x) => String(x.id) === String(btn.dataset.editAntenne));
                 if (!a) return;
-                document.getElementById('titreModalAntenne').textContent = 'Modifier l\'antenne';
+                document.getElementById('titreModalAntenne').textContent = "Modifier l'antenne";
                 document.getElementById('antenneId').value = a.id;
                 const form = document.getElementById('formAntenne');
-                form.nom.value = a.nom;
-                form.code.value = a.code;
-                form.province.value = a.province;
-                form.adresse.value = a.adresse || '';
-                form.telephone.value = a.telephone || '';
+                form.nom.value = a.nom; form.code.value = a.code;
+                form.province_educationnelle.value = a.province_educationnelle;
+                form.adresse.value = a.adresse || ''; form.telephone.value = a.telephone || '';
                 openModal('modalAntenne');
             });
         });
@@ -996,114 +1593,130 @@ const EducRDC = (() => {
                     await api(`${API}/antennes/${btn.dataset.delAntenne}/`, { method: 'DELETE' });
                     toast('Antenne supprimée.', 'success');
                     await chargerAntennes(pageAntennes);
-                } catch (err) {
-                    toast(err.message, 'error');
-                }
+                    await chargerOrganigramme().catch(() => {});
+                } catch (err) { toast(err.message, 'error'); }
             });
         });
-
-        const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
-        renderPagination('paginationAntennes', pageAntennes, totalPages, chargerAntennes);
+        renderPagination('paginationAntennes', pageAntennes, data.count ? Math.ceil(data.count / 20) : 1, chargerAntennes);
     }
 
     function initParametres() {
         bindModalClosers();
-
         document.querySelectorAll('.tab-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
                 activerOnglet(btn.dataset.tab);
-                if (btn.dataset.tab === 'antennes') {
-                    chargerAntennes(1).catch((e) => toast(e.message, 'error'));
-                }
+                if (btn.dataset.tab === 'organigramme') chargerOrganigramme().catch((e) => toast(e.message, 'error'));
+                if (btn.dataset.tab === 'pa') chargerPA(1).catch((e) => toast(e.message, 'error'));
+                if (btn.dataset.tab === 'pe') chargerPE(1).catch((e) => toast(e.message, 'error'));
+                if (btn.dataset.tab === 'antennes') chargerAntennes(1).catch((e) => toast(e.message, 'error'));
             });
         });
+        chargerOrganigramme().catch((e) => toast(e.message, 'error'));
+        chargerOptionsHierarchie().catch((e) => toast(e.message, 'error'));
 
-        chargerOptionsProvinces()
-            .then(() => chargerProvinces(1))
-            .catch((e) => toast(e.message, 'error'));
-
-        document.getElementById('btnSearchProvinces')?.addEventListener('click', () => chargerProvinces(1));
-        document.getElementById('searchProvinces')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') chargerProvinces(1);
+        const applyOrgFilter = () => renderOrganigramme(document.getElementById('searchOrganigramme')?.value || '');
+        document.getElementById('btnSearchOrganigramme')?.addEventListener('click', applyOrgFilter);
+        document.getElementById('searchOrganigramme')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyOrgFilter();
         });
-        document.getElementById('btnNouvelleProvince')?.addEventListener('click', () => {
-            document.getElementById('titreModalProvince').textContent = 'Nouvelle province';
-            document.getElementById('formProvince').reset();
-            document.getElementById('provinceId').value = '';
-            openModal('modalProvince');
+        document.getElementById('searchOrganigramme')?.addEventListener('input', () => {
+            if (!(document.getElementById('searchOrganigramme')?.value || '').trim()) applyOrgFilter();
+        });
+        document.getElementById('btnOrgExpand')?.addEventListener('click', () => setOrgExpanded(true));
+        document.getElementById('btnOrgCollapse')?.addEventListener('click', () => setOrgExpanded(false));
+        document.getElementById('btnOrgRefresh')?.addEventListener('click', () => {
+            chargerOrganigramme().catch((e) => toast(e.message, 'error'));
         });
 
-        document.getElementById('formProvince')?.addEventListener('submit', async (e) => {
+        document.getElementById('btnSearchPA')?.addEventListener('click', () => chargerPA(1));
+        document.getElementById('searchPA')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') chargerPA(1); });
+        document.getElementById('btnNouveauPA')?.addEventListener('click', () => {
+            document.getElementById('titreModalPA').textContent = 'Nouvelle province administrative';
+            document.getElementById('formPA').reset();
+            document.getElementById('paId').value = '';
+            openModal('modalPA');
+        });
+        document.getElementById('formPA')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
-            if (!form.checkValidity()) {
+            const nomInput = form.elements.namedItem('nom');
+            const codeInput = form.elements.namedItem('code');
+            const nom = (nomInput?.value || '').trim();
+            const code = (codeInput?.value || '').trim().toUpperCase();
+            if (!nom || !code) {
+                toast('Veuillez renseigner le nom et le code.', 'warning');
                 form.reportValidity();
                 return;
             }
-            const id = document.getElementById('provinceId').value;
-            const payload = {
-                nom: form.nom.value.trim(),
-                code: form.code.value.trim().toUpperCase(),
-            };
+            const id = document.getElementById('paId').value;
+            const payload = { nom, code, actif: true };
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
             try {
                 if (id) {
-                    await api(`${API}/provinces/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
-                    toast('Province mise à jour.', 'success');
+                    await api(`${API}/provinces-administratives/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
                 } else {
-                    await api(`${API}/provinces/`, { method: 'POST', body: JSON.stringify(payload) });
-                    toast('Province créée.', 'success');
+                    await api(`${API}/provinces-administratives/`, { method: 'POST', body: JSON.stringify(payload) });
                 }
-                closeModal('modalProvince');
+                toast(id ? 'Province administrative mise à jour.' : 'Province administrative créée.', 'success');
+                closeModal('modalPA');
                 form.reset();
-                await chargerOptionsProvinces();
-                await chargerProvinces(1);
+                document.getElementById('paId').value = '';
+                await chargerPA(1);
+                await chargerOptionsHierarchie().catch(() => {});
+                await chargerOrganigramme().catch(() => {});
             } catch (err) {
                 toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
             }
+        });
+
+        document.getElementById('btnSearchPE')?.addEventListener('click', () => chargerPE(1));
+        document.getElementById('filtrePAforPE')?.addEventListener('change', () => chargerPE(1));
+        document.getElementById('btnNouveauPE')?.addEventListener('click', async () => {
+            await chargerOptionsHierarchie();
+            document.getElementById('titreModalPE').textContent = 'Nouvelle province éducationnelle';
+            document.getElementById('formPE').reset(); document.getElementById('peId').value = '';
+            openModal('modalPE');
+        });
+        document.getElementById('formPE')?.addEventListener('submit', async (e) => {
+            e.preventDefault(); const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const id = document.getElementById('peId').value;
+            const payload = { nom: form.nom.value.trim(), code: form.code.value.trim().toUpperCase(), province_administrative: Number(form.province_administrative.value) };
+            try {
+                if (id) await api(`${API}/provinces-educationnelles/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
+                else await api(`${API}/provinces-educationnelles/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Province éducationnelle mise à jour.' : 'Province éducationnelle créée.', 'success');
+                closeModal('modalPE'); form.reset();
+                await chargerOptionsHierarchie();
+                await chargerPE(1);
+                await chargerOrganigramme().catch(() => {});
+            } catch (err) { toast(err.message, 'error'); }
         });
 
         document.getElementById('btnSearchAntennes')?.addEventListener('click', () => chargerAntennes(1));
-        document.getElementById('searchAntennes')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') chargerAntennes(1);
-        });
-        document.getElementById('filtreProvinceAntenne')?.addEventListener('change', () => chargerAntennes(1));
+        document.getElementById('filtrePEforAntenne')?.addEventListener('change', () => chargerAntennes(1));
         document.getElementById('btnNouvelleAntenne')?.addEventListener('click', async () => {
-            await chargerOptionsProvinces();
+            await chargerOptionsHierarchie();
             document.getElementById('titreModalAntenne').textContent = 'Nouvelle antenne';
-            document.getElementById('formAntenne').reset();
-            document.getElementById('antenneId').value = '';
+            document.getElementById('formAntenne').reset(); document.getElementById('antenneId').value = '';
             openModal('modalAntenne');
         });
-
         document.getElementById('formAntenne')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const form = e.target;
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
-            }
+            e.preventDefault(); const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
             const id = document.getElementById('antenneId').value;
-            const payload = {
-                nom: form.nom.value.trim(),
-                code: form.code.value.trim().toUpperCase(),
-                province: Number(form.province.value),
-                adresse: form.adresse.value.trim(),
-                telephone: form.telephone.value.trim(),
-            };
+            const payload = { nom: form.nom.value.trim(), code: form.code.value.trim().toUpperCase(), province_educationnelle: Number(form.province_educationnelle.value), adresse: form.adresse.value.trim(), telephone: form.telephone.value.trim() };
             try {
-                if (id) {
-                    await api(`${API}/antennes/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
-                    toast('Antenne mise à jour.', 'success');
-                } else {
-                    await api(`${API}/antennes/`, { method: 'POST', body: JSON.stringify(payload) });
-                    toast('Antenne créée.', 'success');
-                }
-                closeModal('modalAntenne');
-                form.reset();
+                if (id) await api(`${API}/antennes/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
+                else await api(`${API}/antennes/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Antenne mise à jour.' : 'Antenne créée.', 'success');
+                closeModal('modalAntenne'); form.reset();
                 await chargerAntennes(1);
-            } catch (err) {
-                toast(err.message, 'error');
-            }
+                await chargerOrganigramme().catch(() => {});
+            } catch (err) { toast(err.message, 'error'); }
         });
     }
 
@@ -1112,6 +1725,7 @@ const EducRDC = (() => {
         initEcoles,
         initEleves,
         initEleveDetail,
+        initEcoleDetail,
         initEnrolement,
         initCartes,
         initRapports,

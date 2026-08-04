@@ -11,7 +11,8 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         model = Utilisateur
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name',
-            'role', 'role_display', 'telephone', 'province', 'antenne',
+            'role', 'role_display', 'telephone',
+            'province_administrative', 'province_educationnelle', 'antenne',
             'is_active', 'date_creation',
         ]
         read_only_fields = ['date_creation']
@@ -24,7 +25,8 @@ class UtilisateurCreateSerializer(serializers.ModelSerializer):
         model = Utilisateur
         fields = [
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
-            'role', 'telephone', 'province', 'antenne',
+            'role', 'telephone',
+            'province_administrative', 'province_educationnelle', 'antenne',
         ]
 
     def create(self, validated_data):
