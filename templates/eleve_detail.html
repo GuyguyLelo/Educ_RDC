@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Détail élève{% endblock %}
+{% block page_title %}Fiche élève{% endblock %}
+{% block page_subtitle %}Identité, photo et dossiers associés{% endblock %}
+
+{% block content %}
+<div class="detail-shell" id="eleveDetail" data-eleve-id="{{ eleve_id }}">
+    <section class="detail-hero">
+        <div class="detail-photo-wrap">
+            <img id="detailPhoto" class="detail-photo" alt="Photo de l'élève" hidden>
+            <div id="detailPhotoFallback" class="detail-photo-fallback">—</div>
+        </div>
+
+        <div class="detail-hero-info">
+            <div class="detail-hero-top">
+                <div>
+                    <p class="detail-kicker" id="detailMatricule">—</p>
+                    <h2 id="detailNom">Chargement…</h2>
+                    <p class="detail-sub" id="detailSousTitre">—</p>
+                </div>
+                <div class="detail-hero-actions">
+                    <a href="{% url 'eleves' %}" class="btn btn-ghost btn-sm">← Liste</a>
+                    <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">Changer photo</label>
+                    <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
+                </div>
+            </div>
+            <div class="detail-chips">
+                <span class="badge badge-info" id="detailSexe">—</span>
+                <span class="badge badge-neutral" id="detailClasse">—</span>
+                <span class="badge" id="detailStatut">—</span>
+                <span class="badge" id="detailBadgePhoto">Sans photo</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="detail-card">
+        <div class="detail-card-grid">
+            <div>
+                <h3 class="detail-card-title">Identité</h3>
+                <dl class="detail-list compact" id="blocIdentite"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Scolarité</h3>
+                <dl class="detail-list compact" id="blocScolarite"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Tuteur</h3>
+                <dl class="detail-list compact" id="blocTuteur"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Biométrie</h3>
+                <dl class="detail-list compact" id="blocBiometrie"></dl>
+            </div>
+        </div>
+    </section>
+
+    <section class="detail-card">
+        <div class="detail-split">
+            <div>
+                <h3 class="detail-card-title">Enrôlements</h3>
+                <div class="table-responsive">
+                    <table class="data-table compact" id="tableDetailEnrolements">
+                        <thead>
+                            <tr>
+                                <th>Année</th>
+                                <th>Statut</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Cartes scolaires</h3>
+                <div class="table-responsive">
+                    <table class="data-table compact" id="tableDetailCartes">
+                        <thead>
+                            <tr>
+                                <th>N° Carte</th>
+                                <th>Statut</th>
+                                <th>Expiration</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initEleveDetail());
+</script>
+{% endblock %}

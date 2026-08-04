@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Tableau de bord{% endblock %}
+{% block page_title %}Tableau de bord{% endblock %}
+{% block page_subtitle %}Vue d'ensemble nationale — suivi en temps réel{% endblock %}
+
+{% block content %}
+<section class="stats-grid" id="statsGrid">
+    <article class="stat-card">
+        <span class="stat-label">Élèves inscrits</span>
+        <strong class="stat-value" id="statEleves">—</strong>
+        <div class="stat-hint">Population scolaire active</div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-label">Écoles</span>
+        <strong class="stat-value" id="statEcoles">—</strong>
+        <div class="stat-hint">Établissements identifiés</div>
+    </article>
+    <article class="stat-card accent">
+        <span class="stat-label">Cartes produites</span>
+        <strong class="stat-value" id="statCartes">—</strong>
+        <div class="stat-hint">Cartes scolaires actives</div>
+    </article>
+    <article class="stat-card">
+        <span class="stat-label">En attente</span>
+        <strong class="stat-value" id="statAttente">—</strong>
+        <div class="stat-hint">Enrôlements à valider</div>
+    </article>
+</section>
+
+<div class="dashboard-grid">
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Répartition par province</h2>
+            <p>Élèves actifs</p>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="chartProvinces" width="800" height="320"></canvas>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Processus métier</h2>
+            <p>Parcours d'enrôlement</p>
+        </div>
+        <ol class="workflow">
+            <li>Créer une école</li>
+            <li>Ajouter un élève</li>
+            <li>Lancer l'enrôlement</li>
+            <li>Capturer la photo biométrique</li>
+            <li>Valider le dossier</li>
+            <li>Générer la carte scolaire</li>
+        </ol>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.chargerDashboard());
+</script>
+{% endblock %}

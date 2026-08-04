@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block title %}Rapports{% endblock %}
+{% block page_title %}Rapports administratifs{% endblock %}
+{% block page_subtitle %}Statistiques et exports PDF{% endblock %}
+
+{% block content %}
+<section class="stats-grid" id="statsRapports">
+    <article class="stat-card">
+        <span class="stat-label">Élèves</span>
+        <strong class="stat-value" id="rEleves">—</strong>
+    </article>
+    <article class="stat-card">
+        <span class="stat-label">Écoles</span>
+        <strong class="stat-value" id="rEcoles">—</strong>
+    </article>
+    <article class="stat-card accent">
+        <span class="stat-label">Cartes</span>
+        <strong class="stat-value" id="rCartes">—</strong>
+    </article>
+    <article class="stat-card">
+        <span class="stat-label">Enrôlements validés</span>
+        <strong class="stat-value" id="rValides">—</strong>
+    </article>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Exports</h2>
+        <p>Documents administratifs</p>
+    </div>
+    <div class="export-actions">
+        <a href="/api/rapports/pdf/" class="btn btn-primary" target="_blank">Exporter le rapport PDF</a>
+        <button class="btn btn-ghost" id="btnRefreshStats">Actualiser les statistiques</button>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-header">
+        <h2>Répartition provinciale</h2>
+        <p>Écoles par province</p>
+    </div>
+    <div class="chart-wrap">
+        <canvas id="chartRapports" width="800" height="320"></canvas>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initRapports());
+</script>
+{% endblock %}

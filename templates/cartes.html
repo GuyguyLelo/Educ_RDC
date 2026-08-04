@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+
+{% block title %}Cartes scolaires{% endblock %}
+{% block page_title %}Cartes scolaires{% endblock %}
+{% block page_subtitle %}Production, QR code et export PDF{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="search" id="searchCartes" placeholder="N° carte, matricule, nom…">
+            </div>
+            <button class="btn btn-ghost" id="btnSearchCartes" type="button">Rechercher</button>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Cartes produites</h2>
+                <p>Cartes scolaires générées après validation d'enrôlement</p>
+            </div>
+            <span class="list-count" id="countCartes">— résultats</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableCartes">
+                <thead>
+                    <tr>
+                        <th>Carte</th>
+                        <th>Élève</th>
+                        <th>École</th>
+                        <th>Émission</th>
+                        <th>Expiration</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="list-footer-info">Export PDF et QR code disponibles par carte</span>
+            <div class="pagination" id="paginationCartes"></div>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initCartes());
+</script>
+{% endblock %}

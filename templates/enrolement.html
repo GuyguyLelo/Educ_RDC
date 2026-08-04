@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+
+{% block title %}Enrôlement{% endblock %}
+{% block page_title %}Enrôlement des élèves{% endblock %}
+{% block page_subtitle %}Biométrie, validation et génération de carte{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                <select id="filtreStatut">
+                    <option value="">Tous les statuts</option>
+                    <option value="en_attente">En attente</option>
+                    <option value="valide">Validé</option>
+                    <option value="rejete">Rejeté</option>
+                </select>
+            </div>
+            <button class="btn btn-ghost" id="btnFiltrerEnrolement" type="button">Filtrer</button>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-primary" id="btnNouvelEnrolement" type="button">+ Nouvel enrôlement</button>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Dossiers d'enrôlement</h2>
+                <p>Suivi du workflow jusqu'à la carte scolaire</p>
+            </div>
+            <span class="list-count" id="countEnrolements">— résultats</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableEnrolements">
+                <thead>
+                    <tr>
+                        <th>Élève</th>
+                        <th>Matricule</th>
+                        <th>Année</th>
+                        <th>Statut</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="list-footer-info">Validez uniquement après capture biométrique</span>
+            <div class="pagination" id="paginationEnrolements"></div>
+        </div>
+    </section>
+</div>
+
+<div class="modal" id="modalEnrolement" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Nouvel enrôlement</h3>
+                <p>Ouvrir un dossier pour un élève existant</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formEnrolement" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Dossier</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Élève <span class="req">*</span></label>
+                            <select name="eleve" id="selectEleveEnrolement" required></select>
+                            <span class="form-hint">Sélectionnez l'élève déjà enregistré dans le système</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Année scolaire <span class="req">*</span></label>
+                            <input name="annee_scolaire" value="2025-2026" required>
+                        </div>
+                        <div class="form-group full">
+                            <label>Observations</label>
+                            <textarea name="observations" rows="3" placeholder="Informations complémentaires (optionnel)"></textarea>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary">Créer l'enrôlement</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalBiometrie" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Capture biométrique</h3>
+                <p>Photo obligatoire avant validation du dossier</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formBiometrie" enctype="multipart/form-data" novalidate>
+            <input type="hidden" name="eleve" id="bioEleveId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Photo & empreinte</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Photo de l'élève <span class="req">*</span></label>
+                            <div class="file-drop">
+                                <input type="file" name="photo" id="bioPhoto" accept="image/*" required>
+                                <span class="file-drop-title">Déposer une photo ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">Formats acceptés : JPG, PNG — fond uni recommandé</span>
+                            </div>
+                        </div>
+                        <div class="form-group full">
+                            <label>Empreinte (simulation)</label>
+                            <input name="empreinte_hash" placeholder="Laisser vide pour génération automatique">
+                            <span class="form-hint">En production, ce champ serait alimenté par un lecteur biométrique</span>
+                        </div>
+                        <div class="form-group full">
+                            <label>Observations</label>
+                            <textarea name="observations" rows="2" placeholder="Qualité de capture, remarques…"></textarea>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer biométrie</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initEnrolement());
+</script>
+{% endblock %}

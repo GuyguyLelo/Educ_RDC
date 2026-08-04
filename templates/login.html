@@ -1,0 +1,69 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Connexion — Educ_RDC</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body class="login-page">
+    <section class="login-hero">
+        <div class="login-hero-brand">
+            <div class="brand-mark large">RDC</div>
+            <h1 class="brand-wordmark">Educ_<span>RDC</span></h1>
+            <p>La plateforme nationale d'identification des écoles, d'enrôlement des élèves et de production des cartes scolaires.</p>
+            <div class="login-hero-stats">
+                <div>
+                    <strong>National</strong>
+                    <span>Couverture RDC</span>
+                </div>
+                <div>
+                    <strong>Sécurisé</strong>
+                    <span>Accès par rôle</span>
+                </div>
+                <div>
+                    <strong>Opérationnel</strong>
+                    <span>Province & antenne</span>
+                </div>
+            </div>
+        </div>
+        <div class="login-hero-footer">
+            Ministère de l'Éducation nationale · République Démocratique du Congo
+        </div>
+    </section>
+
+    <aside class="login-aside">
+        <div class="login-panel">
+            <div class="login-panel-header">
+                <h2>Connexion</h2>
+                <p>Accédez à votre espace de travail Educ_RDC.</p>
+            </div>
+
+            {% if messages %}
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+
+            <form method="post" class="login-form" novalidate>
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="username">Identifiant</label>
+                    <input type="text" id="username" name="username" required autocomplete="username" placeholder="Votre identifiant">
+                </div>
+                <div class="form-group">
+                    <label for="password">Mot de passe</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Accéder à la plateforme</button>
+            </form>
+
+            <p class="login-hint">Compte démo : <strong>admin</strong> / <strong>admin123</strong></p>
+        </div>
+    </aside>
+</body>
+</html>

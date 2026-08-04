@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+
+{% block title %}Écoles{% endblock %}
+{% block page_title %}Gestion des écoles{% endblock %}
+{% block page_subtitle %}Identification et suivi des établissements scolaires{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="search" id="searchEcoles" placeholder="Rechercher par nom, code, directeur…">
+            </div>
+            <button class="btn btn-ghost" id="btnSearchEcoles" type="button">Rechercher</button>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-primary" id="btnNouvelleEcole" type="button">+ Nouvelle école</button>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Liste des écoles</h2>
+                <p>Établissements identifiés sur le territoire national</p>
+            </div>
+            <span class="list-count" id="countEcoles">— résultats</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableEcoles">
+                <thead>
+                    <tr>
+                        <th>École</th>
+                        <th>Code</th>
+                        <th>Type</th>
+                        <th>Niveau</th>
+                        <th>Localisation</th>
+                        <th>Élèves</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="list-footer-info">Utilisez la recherche pour filtrer rapidement</span>
+            <div class="pagination" id="paginationEcoles"></div>
+        </div>
+    </section>
+</div>
+
+<div class="modal" id="modalEcole" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Nouvelle école</h3>
+                <p>Enregistrer un établissement dans le référentiel national</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formEcole" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Nom de l'école <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: EP Boyoma">
+                        </div>
+                        <div class="form-group">
+                            <label>Code école <span class="req">*</span></label>
+                            <input name="code" required placeholder="Ex: ECO-KIN-001">
+                            <span class="form-hint">Identifiant unique national</span>
+                        </div>
+                        <div class="form-group">
+                            <label>Directeur</label>
+                            <input name="directeur" placeholder="Nom du directeur">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Classification</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select name="type_ecole">
+                                <option value="publique">Publique</option>
+                                <option value="privee">Privée</option>
+                                <option value="conventionnee">Conventionnée</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Niveau</label>
+                            <select name="niveau">
+                                <option value="maternelle">Maternelle</option>
+                                <option value="primaire" selected>Primaire</option>
+                                <option value="secondaire">Secondaire</option>
+                                <option value="mixte">Mixte</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Localisation & contact</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Province <span class="req">*</span></label>
+                            <select name="province" id="selectProvince" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Antenne <span class="req">*</span></label>
+                            <select name="antenne" id="selectAntenne" required></select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Adresse <span class="req">*</span></label>
+                            <input name="adresse" required placeholder="Avenue, commune, ville">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone" type="tel" placeholder="+243 …">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer l'école</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initEcoles());
+</script>
+{% endblock %}

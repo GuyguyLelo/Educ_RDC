@@ -1,0 +1,160 @@
+{% extends 'base.html' %}
+
+{% block title %}Élèves{% endblock %}
+{% block page_title %}Gestion des élèves{% endblock %}
+{% block page_subtitle %}Enregistrement et recherche des élèves{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="search" id="searchEleves" placeholder="Matricule, nom, postnom, prénom…">
+            </div>
+            <button class="btn btn-ghost" id="btnSearchEleves" type="button">Rechercher</button>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-primary" id="btnNouvelEleve" type="button">+ Nouvel élève</button>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Liste des élèves</h2>
+                <p>Dossiers scolaires enregistrés</p>
+            </div>
+            <span class="list-count" id="countEleves">— résultats</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableEleves">
+                <thead>
+                    <tr>
+                        <th>Élève</th>
+                        <th>Matricule</th>
+                        <th>Sexe</th>
+                        <th>Naissance</th>
+                        <th>École / Classe</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="list-footer-info">Recherche multi-critères disponible</span>
+            <div class="pagination" id="paginationEleves"></div>
+        </div>
+    </section>
+</div>
+
+<div class="modal" id="modalEleve" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Nouvel élève</h3>
+                <p>Créer un dossier d'identification scolaire</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formEleve" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identité</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Matricule <span class="req">*</span></label>
+                            <input name="matricule" required placeholder="ELV-2026-000">
+                        </div>
+                        <div class="form-group">
+                            <label>Sexe <span class="req">*</span></label>
+                            <select name="sexe" required>
+                                <option value="M">Masculin</option>
+                                <option value="F">Féminin</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Nom de famille">
+                        </div>
+                        <div class="form-group">
+                            <label>Postnom</label>
+                            <input name="postnom" placeholder="Postnom">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom <span class="req">*</span></label>
+                            <input name="prenom" required placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Date de naissance <span class="req">*</span></label>
+                            <input type="date" name="date_naissance" required>
+                        </div>
+                        <div class="form-group full">
+                            <label>Lieu de naissance</label>
+                            <input name="lieu_naissance" placeholder="Ville / territoire">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Photo</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Photo de l'élève</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo" id="elevePhoto" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">JPG ou PNG — portrait recommandé</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Scolarité</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>École <span class="req">*</span></label>
+                            <select name="ecole" id="selectEcoleEleve" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Classe <span class="req">*</span></label>
+                            <input name="classe" required placeholder="Ex: 5ème primaire">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Tuteur & contact</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Nom du tuteur</label>
+                            <input name="nom_tuteur" placeholder="Nom complet du tuteur">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone tuteur</label>
+                            <input name="telephone_tuteur" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group full">
+                            <label>Adresse</label>
+                            <input name="adresse" placeholder="Adresse de résidence">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
+                <button type="submit" class="btn btn-primary">Enregistrer l'élève</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initEleves());
+</script>
+{% endblock %}
