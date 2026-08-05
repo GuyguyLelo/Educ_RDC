@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Écoles{% endblock %}
 {% block page_title %}Gestion des écoles{% endblock %}
 {% block page_subtitle %}Identification et suivi des établissements scolaires{% endblock %}
@@ -34,11 +35,11 @@
                 <option value="secondaire">Secondaire</option>
                 <option value="mixte">Mixte</option>
             </select>
-            <button class="btn btn-ghost btn-sm" id="btnSearchEcoles" type="button">Filtrer</button>
-            <button class="btn btn-ghost btn-sm" id="btnResetFiltresEcoles" type="button">Réinitialiser</button>
+            <button class="btn btn-ghost btn-sm" id="btnSearchEcoles" type="button">{% ico 'filter' %}Filtrer</button>
+            <button class="btn btn-ghost btn-sm" id="btnResetFiltresEcoles" type="button">{% ico 'reset' %}Réinitialiser</button>
         </div>
         <div class="toolbar-actions">
-            <button class="btn btn-primary" id="btnNouvelleEcole" type="button">+ Nouvelle école</button>
+            <button class="btn btn-primary" id="btnNouvelleEcole" type="button">{% ico 'plus' %}Nouvelle école</button>
         </div>
     </section>
 
@@ -161,8 +162,8 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer l'école</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer l'école</button>
             </div>
         </form>
     </div>

@@ -57,6 +57,12 @@ def vue_dashboard(request):
 
 @login_required
 def vue_ecoles(request):
+    user = request.user
+    if getattr(user, 'est_enseignant', False):
+        messages.warning(request, "Accès réservé aux administratifs de l'école.")
+        return redirect('eleves')
+    if user.role == 'admin_ecole' and user.ecole_id:
+        return redirect('ecole_detail', ecole_id=user.ecole_id)
     return render(request, 'ecoles.html', {'page': 'ecoles'})
 
 
@@ -64,6 +70,13 @@ def vue_ecoles(request):
 def vue_ecole_detail(request, ecole_id):
     """Page détail d'une école (identification, effectifs, élèves)."""
     from ecoles.models import Ecole
+    user = request.user
+    if getattr(user, 'est_enseignant', False):
+        messages.warning(request, "Accès réservé aux administratifs de l'école.")
+        return redirect('eleves')
+    if user.role == 'admin_ecole' and user.ecole_id and user.ecole_id != ecole_id:
+        messages.warning(request, "Vous n'avez accès qu'à votre école.")
+        return redirect('ecole_detail', ecole_id=user.ecole_id)
     ecole = get_object_or_404(
         Ecole.objects.select_related(
             'province_educationnelle',
@@ -72,8 +85,9 @@ def vue_ecole_detail(request, ecole_id):
         ),
         pk=ecole_id,
     )
+    page = 'ecole_detail' if user.role == 'admin_ecole' else 'ecoles'
     return render(request, 'ecole_detail.html', {
-        'page': 'ecoles',
+        'page': page,
         'ecole_id': ecole.id,
         'ecole': ecole,
     })
@@ -105,11 +119,6 @@ def vue_eleve_detail(request, eleve_id):
 
 
 @login_required
-def vue_enrolement(request):
-    return render(request, 'enrolement.html', {'page': 'enrolement'})
-
-
-@login_required
 def vue_cartes(request):
     return render(request, 'cartes.html', {'page': 'cartes'})
 
@@ -123,6 +132,9 @@ def vue_rapports(request):
 @ensure_csrf_cookie
 def vue_parametres(request):
     """Gestion des données référentielles (provinces admin/éduc, antennes)."""
+    if not getattr(request.user, 'est_national', False):
+        messages.warning(request, 'Accès réservé aux agents nationaux.')
+        return redirect('dashboard')
     return render(request, 'parametres.html', {'page': 'parametres'})
 
 
@@ -130,6 +142,9 @@ def vue_parametres(request):
 @ensure_csrf_cookie
 def vue_utilisateurs(request):
     """Gestion des utilisateurs et des rôles."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé aux administrateurs.')
+        return redirect('dashboard')
     return render(request, 'utilisateurs.html', {'page': 'utilisateurs'})
 
 

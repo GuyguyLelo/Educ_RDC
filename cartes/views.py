@@ -12,7 +12,7 @@ from .services import generer_qr_code, generer_pdf_carte
 
 
 class CarteViewSet(viewsets.ModelViewSet):
-    queryset = Carte.objects.select_related('eleve', 'eleve__ecole', 'enrolement').all()
+    queryset = Carte.objects.select_related('eleve', 'eleve__ecole').all()
     serializer_class = CarteSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     search_fields = ['numero_carte', 'eleve__matricule', 'eleve__nom']
@@ -24,7 +24,15 @@ class CarteViewSet(viewsets.ModelViewSet):
         if statut:
             qs = qs.filter(statut=statut)
         user = self.request.user
-        if user.role == 'agent_provincial' and user.province_educationnelle_id:
+        if getattr(user, 'est_enseignant', False) and user.ecole_id:
+            qs = qs.filter(eleve__ecole_id=user.ecole_id)
+            if user.classe_id:
+                qs = qs.filter(eleve__classe_id=user.classe_id)
+            else:
+                qs = qs.none()
+        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            qs = qs.filter(eleve__ecole_id=user.ecole_id)
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(eleve__ecole__province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
             qs = qs.filter(eleve__ecole__antenne_id=user.antenne_id)

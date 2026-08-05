@@ -1,9 +1,9 @@
 """
-Importer des élèves depuis un CSV.
+Importer des élèves depuis un Excel (.xlsx) ou CSV.
 
 Exemple :
-  python manage.py import_eleves --file eleves/data/modele_import_eleves.csv
-  python manage.py import_eleves --file eleves.csv --ecole-code ECO-KIN-001
+  python manage.py import_eleves --file eleves.xlsx
+  python manage.py import_eleves --file eleves/data/modele_import_eleves.csv --ecole-code 7-136755
 """
 from pathlib import Path
 
@@ -13,11 +13,11 @@ from eleves.import_utils import importer_eleves
 
 
 class Command(BaseCommand):
-    help = 'Importe des élèves depuis un fichier CSV (matricule unique).'
+    help = 'Importe des élèves depuis un fichier Excel ou CSV (matricule unique).'
 
     def add_arguments(self, parser):
-        parser.add_argument('--file', required=True, help='Chemin du fichier CSV')
-        parser.add_argument('--ecole-code', default='', help='Code école par défaut si absent du CSV')
+        parser.add_argument('--file', required=True, help='Chemin du fichier .xlsx ou .csv')
+        parser.add_argument('--ecole-code', default='', help='Code école par défaut si absent du fichier')
         parser.add_argument('--ecole-id', type=int, default=None, help='ID école par défaut')
         parser.add_argument(
             '--no-update',
@@ -36,6 +36,7 @@ class Command(BaseCommand):
                 contenu,
                 ecole_id=options.get('ecole_id'),
                 ecole_code=options.get('ecole_code') or None,
+                filename=path.name,
                 update_existing=not options['no_update'],
             )
         except ValueError as exc:

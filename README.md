@@ -5,7 +5,7 @@ Plateforme nationale d'identification scolaire — République Démocratique du 
 ## Fonctionnalités
 
 - Identification des écoles (province / antenne)
-- Enrôlement des élèves
+- Gestion des élèves
 - Capture biométrique (photo + empreinte simulée)
 - Génération de cartes scolaires avec QR code
 - Dashboard statistique
@@ -45,4 +45,4 @@ Ouvrir : http://127.0.0.1:8000/
 
 - JWT : `POST /api/auth/token/`
 - Refresh : `POST /api/auth/refresh/`
-- Endpoints : `/api/ecoles/`, `/api/eleves/`, `/api/enrolements/`, `/api/cartes/`, `/api/stats/`, etc.
+- Endpoints : `/api/ecoles/`, `/api/eleves/`, `/api/cartes/`, `/api/stats/`, etc.

@@ -47,7 +47,12 @@ const EducRDC = (() => {
 
     async function api(url, options = {}) {
         const headers = { ...(options.headers || {}) };
-        if (!(options.body instanceof FormData)) {
+        const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+        if (isFormData) {
+            // Laisser le navigateur définir le boundary multipart
+            delete headers['Content-Type'];
+            delete headers['content-type'];
+        } else {
             headers['Content-Type'] = headers['Content-Type'] || 'application/json';
         }
         const csrf = getCsrfToken();
@@ -105,6 +110,14 @@ const EducRDC = (() => {
             .replace(/"/g, '&quot;');
     }
 
+    function ico(name) {
+        return `<svg class="btn-ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+    }
+
+    function btnLabel(iconName, text) {
+        return `${ico(iconName)}${escapeHtml(text)}`;
+    }
+
     function initials(text) {
         const parts = String(text || '').trim().split(/\s+/).filter(Boolean);
         if (!parts.length) return '—';
@@ -154,16 +167,74 @@ const EducRDC = (() => {
         addBtn('›', Math.min(totalPages, page + 1), page === totalPages);
     }
 
+    function fileMatchesAccept(file, accept) {
+        const rules = (accept || '').trim();
+        if (!rules || rules === '*/*') return true;
+        return rules.split(',').some((rule) => {
+            const r = rule.trim();
+            if (!r) return false;
+            if (r === 'image/*') return file.type.startsWith('image/');
+            if (r.endsWith('/*')) return file.type.startsWith(r.replace('/*', '/'));
+            if (r.startsWith('.')) return file.name.toLowerCase().endsWith(r.toLowerCase());
+            return file.type === r;
+        });
+    }
+
     function bindFileDropPreview(inputId) {
         const input = document.getElementById(inputId);
-        if (!input) return;
+        if (!input || input.dataset.dropBound === '1') return;
         const drop = input.closest('.file-drop');
         if (!drop) return;
+        input.dataset.dropBound = '1';
         const title = drop.querySelector('.file-drop-title');
-        input.addEventListener('change', () => {
-            if (input.files && input.files[0] && title) {
-                title.textContent = input.files[0].name;
+        const defaultTitle = title?.textContent || 'Déposer un fichier ou cliquer pour parcourir';
+        const allowMultiple = input.hasAttribute('multiple');
+
+        const showFileName = () => {
+            const files = input.files ? Array.from(input.files) : [];
+            if (title) {
+                if (!files.length) {
+                    title.textContent = defaultTitle;
+                } else if (files.length === 1) {
+                    title.textContent = files[0].name;
+                } else {
+                    title.textContent = `${files.length} fichiers sélectionnés`;
+                }
             }
+            drop.classList.toggle('has-file', files.length > 0);
+        };
+
+        input.addEventListener('change', showFileName);
+
+        ['dragenter', 'dragover'].forEach((evt) => {
+            drop.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                drop.classList.add('is-dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach((evt) => {
+            drop.addEventListener(evt, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (evt === 'dragleave') drop.classList.remove('is-dragover');
+            });
+        });
+        drop.addEventListener('drop', (e) => {
+            drop.classList.remove('is-dragover');
+            const dropped = e.dataTransfer?.files;
+            if (!dropped || !dropped.length) return;
+            const accept = (input.accept || '').trim();
+            const matched = Array.from(dropped).filter((f) => fileMatchesAccept(f, accept));
+            if (!matched.length) {
+                toast('Type de fichier non accepté.', 'warning');
+                return;
+            }
+            const dt = new DataTransfer();
+            const chosen = allowMultiple ? matched : [matched[0]];
+            chosen.forEach((f) => dt.items.add(f));
+            input.files = dt.files;
+            showFileName();
         });
     }
 
@@ -251,17 +322,113 @@ const EducRDC = (() => {
     }
 
     /* ---------- Dashboard ---------- */
+    function renderDashCards(cards) {
+        const grid = document.getElementById('statsGrid');
+        if (!grid || !Array.isArray(cards)) return;
+        cards.forEach((card, i) => {
+            let el = grid.querySelector(`[data-card-slot="${i}"]`);
+            if (!el) {
+                el = document.createElement('article');
+                el.className = 'stat-card';
+                el.dataset.cardSlot = String(i);
+                el.innerHTML = '<span class="stat-label"></span><strong class="stat-value"></strong><div class="stat-hint"></div>';
+                grid.appendChild(el);
+            }
+            el.classList.toggle('accent', !!card.accent);
+            el.hidden = false;
+            const label = el.querySelector('.stat-label');
+            const value = el.querySelector('.stat-value');
+            const hint = el.querySelector('.stat-hint');
+            if (label) label.textContent = card.label || '';
+            if (value) value.textContent = card.value ?? '—';
+            if (hint) hint.textContent = card.hint || '';
+        });
+        grid.querySelectorAll('[data-card-slot]').forEach((el) => {
+            const idx = Number(el.dataset.cardSlot);
+            if (idx >= cards.length) el.hidden = true;
+        });
+    }
+
+    function renderDashActions(actions) {
+        const wrap = document.getElementById('dashActions');
+        if (!wrap) return;
+        if (!actions || !actions.length) {
+            wrap.innerHTML = '';
+            return;
+        }
+        wrap.innerHTML = actions.map((a) => {
+            const cls = a.style === 'primary' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+            const url = a.url || '';
+            let icon = 'eye';
+            if (url.includes('/eleves')) icon = 'users';
+            else if (url.includes('/cartes')) icon = 'pdf';
+            else if (url.includes('/ecoles')) icon = 'school';
+            else if (url.includes('/rapports')) icon = 'pdf';
+            else if (url.includes('/utilisateurs')) icon = 'user';
+            return `<a class="${cls}" href="${escapeHtml(url || '#')}">${ico(icon)}${escapeHtml(a.label || '')}</a>`;
+        }).join('');
+    }
+
+    function renderDashWorkflow(items) {
+        const ol = document.getElementById('dashWorkflow');
+        if (!ol) return;
+        ol.innerHTML = (items || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+    }
+
     async function chargerDashboard() {
         try {
             const stats = await api(`${API}/stats/`);
-            setText('statEleves', stats.nb_eleves);
-            setText('statEcoles', stats.nb_ecoles);
-            setText('statCartes', stats.nb_cartes);
-            setText('statAttente', stats.enrolements_en_attente);
 
-            const labels = (stats.par_province || []).map((p) => p.nom);
-            const values = (stats.par_province || []).map((p) => p.nb_eleves);
-            drawBarChart('chartProvinces', labels, values);
+            const subtitle = document.querySelector('.topbar-title p');
+            if (subtitle && stats.scope_label) subtitle.textContent = stats.scope_label;
+
+            const banner = document.getElementById('dashBanner');
+            if (banner) {
+                banner.hidden = false;
+                setText('dashRoleBadge', stats.role_display || stats.role || '—');
+                setText('dashScopeLabel', stats.scope_label || '—');
+                const welcome = document.getElementById('dashWelcome');
+                if (welcome) {
+                    const who = stats.ecole_nom
+                        ? `Tableau de bord — ${stats.ecole_nom}`
+                        : `Tableau de bord ${stats.role_display || ''}`.trim();
+                    welcome.textContent = who;
+                }
+            }
+
+            if (stats.cards) {
+                renderDashCards(stats.cards);
+            } else {
+                // Fallback ancien format
+                renderDashCards([
+                    { key: 'eleves', label: 'Élèves inscrits', value: stats.nb_eleves, hint: 'Population scolaire active' },
+                    { key: 'ecoles', label: 'Écoles', value: stats.nb_ecoles, hint: 'Établissements identifiés' },
+                    { key: 'cartes', label: 'Cartes produites', value: stats.nb_cartes, hint: 'Cartes scolaires actives', accent: true },
+                    { key: 'biometries', label: 'Biométries', value: stats.biometries_validees, hint: 'Captures validées' },
+                ]);
+            }
+
+            const chart = stats.chart || {};
+            setText('chartTitle', chart.title || 'Répartition');
+            setText('chartSubtitle', chart.subtitle || '');
+            const series = chart.series || (stats.par_province || []).map((p) => ({
+                nom: p.nom,
+                valeur: p.nb_eleves,
+            }));
+            drawBarChart(
+                'chartProvinces',
+                series.map((s) => s.nom),
+                series.map((s) => s.valeur),
+            );
+
+            renderDashActions(stats.actions || []);
+            renderDashWorkflow(stats.workflow || []);
+            setText(
+                'workflowTitle',
+                stats.scope === 'classe' ? 'Priorités classe'
+                    : (stats.scope === 'ecole' ? 'Priorités école' : 'Processus métier'),
+            );
+            setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -472,6 +639,11 @@ const EducRDC = (() => {
             const payload = Object.fromEntries(new FormData(form).entries());
             payload.province_educationnelle = Number(payload.province_educationnelle);
             payload.antenne = Number(payload.antenne);
+            if (!payload.email) payload.email = '';
+            if (payload.latitude === '' || payload.latitude == null) payload.latitude = null;
+            else payload.latitude = Number(payload.latitude);
+            if (payload.longitude === '' || payload.longitude == null) payload.longitude = null;
+            else payload.longitude = Number(payload.longitude);
             try {
                 await api(`${API}/ecoles/`, { method: 'POST', body: JSON.stringify(payload) });
                 toast('École créée avec succès.', 'success');
@@ -486,6 +658,83 @@ const EducRDC = (() => {
     }
 
     /* ---------- Détail école ---------- */
+    async function chargerEcoleClasses(ecoleId) {
+        const tbody = document.querySelector('#tableEcoleClasses tbody');
+        if (!tbody) return;
+        try {
+            const data = await api(`${API}/classes/?ecole=${ecoleId}&page_size=200`);
+            const rows = data.results || data;
+            setCount('countEcoleClasses', data.count ?? rows.length, 'classe');
+            tbody.innerHTML = rows.length ? rows.map((c) => `
+                <tr>
+                    <td data-label="Classe"><strong>${escapeHtml(c.nom)}</strong></td>
+                    <td data-label="Code"><span class="code-chip">${escapeHtml(c.code || '—')}</span></td>
+                    <td data-label="Élèves">${c.nb_eleves ?? 0}</td>
+                    <td data-label="Statut"><span class="badge ${c.active ? 'badge-success' : 'badge-danger'}">${c.active ? 'Active' : 'Inactive'}</span></td>
+                    <td data-label="Actions"><div class="actions-inline">
+                        <button type="button" class="btn btn-ghost btn-sm" data-edit-classe="${c.id}">${ico('edit')}Modifier</button>
+                    </div></td>
+                </tr>
+            `).join('') : emptyRow(5, 'Aucune classe', 'Créez les classes de l\'école avant d\'y rattacher élèves et enseignants.');
+
+            tbody.querySelectorAll('[data-edit-classe]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const c = rows.find((x) => String(x.id) === String(btn.dataset.editClasse));
+                    if (c) ouvrirModalClasseEcole(c);
+                });
+            });
+        } catch (err) {
+            tbody.innerHTML = emptyRow(5, 'Accès limité', err.message || 'Impossible de charger les classes.');
+            setCount('countEcoleClasses', 0, 'classe');
+        }
+    }
+
+    function ouvrirModalClasseEcole(classe = null) {
+        const form = document.getElementById('formClasseEcole');
+        const titre = document.getElementById('titreModalClasseEcole');
+        if (!form || !titre) return;
+        form.reset();
+        document.getElementById('classeEcoleId').value = classe?.id || '';
+        document.getElementById('classeEcoleActive').checked = classe ? classe.active !== false : true;
+        const btnDel = document.getElementById('btnSupprimerClasse');
+        if (btnDel) btnDel.hidden = !classe?.id;
+        if (classe) {
+            titre.textContent = 'Modifier la classe';
+            form.nom.value = classe.nom || '';
+            form.code.value = classe.code || '';
+        } else {
+            titre.textContent = 'Nouvelle classe';
+        }
+        openModal('modalClasseEcole');
+    }
+
+    async function chargerEcoleUtilisateurs(ecoleId) {
+        const tbody = document.querySelector('#tableEcoleUtilisateurs tbody');
+        if (!tbody) return;
+        try {
+            const data = await api(`${API}/utilisateurs/?ecole=${ecoleId}&page_size=100`);
+            const rows = data.results || data;
+            setCount('countEcoleUtilisateurs', data.count ?? rows.length, 'compte');
+            tbody.innerHTML = rows.length ? rows.map((u) => {
+                const nom = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username;
+                const roleHtml = u.role === 'enseignant' && u.classe_nom
+                    ? `<span class="badge badge-neutral">${escapeHtml(u.role_display || u.role)}</span> <span class="code-chip">${escapeHtml(u.classe_nom)}</span>`
+                    : `<span class="badge badge-neutral">${escapeHtml(u.role_display || u.role)}</span>`;
+                return `
+                <tr>
+                    <td data-label="Utilisateur"><strong>${escapeHtml(nom)}</strong></td>
+                    <td data-label="Identifiant"><span class="code-chip">${escapeHtml(u.username)}</span></td>
+                    <td data-label="Rôle">${roleHtml}</td>
+                    <td data-label="Téléphone">${escapeHtml(u.telephone || '—')}</td>
+                    <td data-label="Statut"><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Actif' : 'Inactif'}</span></td>
+                </tr>`;
+            }).join('') : emptyRow(5, 'Aucun compte école', 'Créez un administratif ou un enseignant pour cette école.');
+        } catch (err) {
+            tbody.innerHTML = emptyRow(5, 'Accès limité', err.message || 'Impossible de charger les comptes.');
+            setCount('countEcoleUtilisateurs', 0, 'compte');
+        }
+    }
+
     async function chargerEcolePersonnels(ecoleId) {
         const data = await api(`${API}/personnels/?ecole=${ecoleId}&page_size=100`);
         const rows = data.results || data;
@@ -506,7 +755,7 @@ const EducRDC = (() => {
                 <td data-label="Téléphone">${escapeHtml(p.telephone || '—')}</td>
                 <td data-label="Statut"><span class="badge ${p.actif ? 'badge-success' : 'badge-danger'}">${p.actif ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">Modifier</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">${ico('edit')}Modifier</button>
                 </td>
             </tr>
         `).join('') : emptyRow(7, 'Aucun personnel identifié', 'Cliquez sur « Identifier » pour enregistrer un agent.');
@@ -546,6 +795,34 @@ const EducRDC = (() => {
         openModal('modalPersonnel');
     }
 
+    function renderPhotosEcole(ecole) {
+        const grille = document.getElementById('grillePhotosEcole');
+        if (!grille) return;
+        const photos = ecole.photos || [];
+        setCount('countEcolePhotos', photos.length, 'photo');
+        if (!photos.length) {
+            grille.innerHTML = '<p class="empty-inline">Aucune photo pour le moment. Ajoutez une vue de l\'établissement.</p>';
+            return;
+        }
+        grille.innerHTML = photos.map((p) => {
+            const src = escapeHtml(p.image_url || p.image || '');
+            const legende = escapeHtml(p.legende || '');
+            const badge = p.est_principale ? '<span class="photo-badge">Principale</span>' : '';
+            return `
+                <figure class="ecole-photo-card${p.est_principale ? ' is-main' : ''}">
+                    <a href="${src}" target="_blank" rel="noopener" class="ecole-photo-link">
+                        <img src="${src}" alt="${legende || 'Photo école'}">
+                    </a>
+                    ${badge}
+                    <figcaption>
+                        <span>${legende || 'Sans légende'}</span>
+                        <button type="button" class="btn-link danger" data-photo-delete="${p.id}" title="Supprimer">${ico('trash')}Supprimer</button>
+                    </figcaption>
+                </figure>
+            `;
+        }).join('');
+    }
+
     async function chargerEcoleDetail() {
         const root = document.getElementById('ecoleDetail');
         if (!root) return;
@@ -566,9 +843,6 @@ const EducRDC = (() => {
         const eff = ecole.effectifs ?? 0;
         document.getElementById('detailEcoleEffectifs').textContent = `${eff} élève${eff > 1 ? 's' : ''}`;
 
-        const avatar = document.getElementById('detailEcoleAvatar');
-        if (avatar) avatar.textContent = initials(ecole.nom);
-
         fillDetailList('blocEcoleIdentite', [
             ['Nom', ecole.nom],
             ['Code école', ecole.code],
@@ -583,13 +857,28 @@ const EducRDC = (() => {
             ['Province éducationnelle', ecole.province_educationnelle_nom || ecole.province_nom],
             ['Antenne', ecole.antenne_nom],
             ['Adresse', ecole.adresse],
+            ['Latitude', ecole.latitude != null ? String(ecole.latitude) : '—'],
+            ['Longitude', ecole.longitude != null ? String(ecole.longitude) : '—'],
         ]);
+
+        const mapsEl = document.getElementById('lienMapsEcole');
+        if (mapsEl) {
+            if (ecole.maps_url) {
+                mapsEl.hidden = false;
+                mapsEl.innerHTML = `<a href="${escapeHtml(ecole.maps_url)}" target="_blank" rel="noopener">Voir sur Google Maps</a>`;
+            } else {
+                mapsEl.hidden = true;
+                mapsEl.innerHTML = '';
+            }
+        }
 
         fillDetailList('blocEcoleContact', [
             ['Téléphone', ecole.telephone],
             ['Email', ecole.email],
             ['Créée le', (ecole.date_creation || '').slice(0, 10)],
         ]);
+
+        renderPhotosEcole(ecole);
 
         fillDetailList('blocEcoleEffectifs', [
             ['MAT', String(ecole.effectif_mat ?? 0)],
@@ -600,6 +889,24 @@ const EducRDC = (() => {
             ['Personnels identifiés', String(ecole.nombre_personnels ?? 0)],
         ]);
 
+        const avatar = document.getElementById('detailEcoleAvatar');
+        if (avatar) {
+            if (ecole.photo_principale_url) {
+                avatar.classList.add('has-photo');
+                avatar.innerHTML = `<img src="${escapeHtml(ecole.photo_principale_url)}" alt="">`;
+            } else {
+                avatar.classList.remove('has-photo');
+                avatar.textContent = initials(ecole.nom);
+            }
+        }
+
+        root._ecoleCache = ecole;
+        if (document.getElementById('sectionClassesEcole')) {
+            await chargerEcoleClasses(id);
+        }
+        if (document.getElementById('comptes-ecole')) {
+            await chargerEcoleUtilisateurs(id);
+        }
         await chargerEcolePersonnels(id);
 
         const elevesData = await api(`${API}/eleves/?ecole=${id}&page_size=50`);
@@ -613,14 +920,132 @@ const EducRDC = (() => {
                 </td>
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(el.sexe_display || el.sexe || '—')}</td>
-                <td data-label="Classe">${escapeHtml(el.classe || '—')}</td>
+                <td data-label="Classe">${escapeHtml(el.classe_nom || '—')}</td>
                 <td data-label="Statut"><span class="badge ${el.actif ? 'badge-success' : 'badge-danger'}">${el.actif ? 'Actif' : 'Inactif'}</span></td>
             </tr>
         `).join('') : emptyRow(5, 'Aucun élève enregistré', 'Les élèves inscrits dans cette école apparaîtront ici.');
     }
 
+    async function ensureCacheHierarchieEcole() {
+        if (cacheEcolesPA.length && cacheEcolesPE.length && cacheEcolesAntennes.length) return;
+        const [pas, pes, antennes] = await Promise.all([
+            api(`${API}/provinces-administratives/?page_size=200`),
+            api(`${API}/provinces-educationnelles/?page_size=200`),
+            api(`${API}/antennes/?page_size=200`),
+        ]);
+        cacheEcolesPA = pas.results || pas;
+        cacheEcolesPE = pes.results || pes;
+        cacheEcolesAntennes = antennes.results || antennes;
+    }
+
+    function bindEditEcoleHierarchie() {
+        const selPA = document.getElementById('editSelectProvinceAdmin');
+        const selPE = document.getElementById('editSelectProvinceEduc');
+        const selA = document.getElementById('editSelectAntenne');
+        if (!selPA || !selPE || !selA || selPA.dataset.cascadeBound === '1') return;
+        selPA.dataset.cascadeBound = '1';
+
+        const fillPE = () => {
+            const paId = selPA.value;
+            const filtered = cacheEcolesPE.filter((p) => String(p.province_administrative) === String(paId));
+            const cur = selPE.value;
+            selPE.innerHTML = filtered.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+            if (cur && filtered.some((p) => String(p.id) === String(cur))) selPE.value = cur;
+            fillAntennes();
+        };
+        const fillAntennes = () => {
+            const peId = selPE.value;
+            const filtered = cacheEcolesAntennes.filter((a) => String(a.province_educationnelle) === String(peId));
+            const cur = selA.value;
+            selA.innerHTML = filtered.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)}</option>`).join('');
+            if (cur && filtered.some((a) => String(a.id) === String(cur))) selA.value = cur;
+        };
+
+        selPA.addEventListener('change', fillPE);
+        selPE.addEventListener('change', fillAntennes);
+        selPA._fillPE = fillPE;
+        selPE._fillAntennes = fillAntennes;
+    }
+
+    async function ouvrirModalEditEcole() {
+        const root = document.getElementById('ecoleDetail');
+        const form = document.getElementById('formEditEcole');
+        const ecole = root?._ecoleCache;
+        if (!form || !ecole) {
+            toast('Données de l\'école non chargées.', 'warning');
+            return;
+        }
+        await ensureCacheHierarchieEcole();
+        bindEditEcoleHierarchie();
+
+        const selPA = document.getElementById('editSelectProvinceAdmin');
+        const selPE = document.getElementById('editSelectProvinceEduc');
+        const selA = document.getElementById('editSelectAntenne');
+        if (!selPA || !selPE || !selA) {
+            toast('Formulaire de modification introuvable.', 'error');
+            return;
+        }
+
+        selPA.innerHTML = cacheEcolesPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+
+        let paId = ecole.province_administrative_id;
+        if (!paId) {
+            const pe = cacheEcolesPE.find((p) => String(p.id) === String(ecole.province_educationnelle));
+            paId = pe?.province_administrative;
+        }
+        if (paId) selPA.value = String(paId);
+        if (typeof selPA._fillPE === 'function') selPA._fillPE();
+        if (ecole.province_educationnelle) selPE.value = String(ecole.province_educationnelle);
+        if (typeof selPE._fillAntennes === 'function') selPE._fillAntennes();
+        if (ecole.antenne) selA.value = String(ecole.antenne);
+
+        // Si l'antenne / PE n'est pas dans la liste filtrée, forcer l'option
+        if (ecole.province_educationnelle && String(selPE.value) !== String(ecole.province_educationnelle)) {
+            const pe = cacheEcolesPE.find((p) => String(p.id) === String(ecole.province_educationnelle));
+            if (pe) {
+                selPE.insertAdjacentHTML(
+                    'beforeend',
+                    `<option value="${pe.id}">${escapeHtml(pe.nom)}</option>`,
+                );
+                selPE.value = String(pe.id);
+                if (typeof selPE._fillAntennes === 'function') selPE._fillAntennes();
+            }
+        }
+        if (ecole.antenne && String(selA.value) !== String(ecole.antenne)) {
+            const ant = cacheEcolesAntennes.find((a) => String(a.id) === String(ecole.antenne));
+            if (ant) {
+                selA.insertAdjacentHTML(
+                    'beforeend',
+                    `<option value="${ant.id}">${escapeHtml(ant.nom)}</option>`,
+                );
+                selA.value = String(ant.id);
+            }
+        }
+
+        form.nom.value = ecole.nom || '';
+        form.code.value = ecole.code || '';
+        form.numero_agrement.value = ecole.numero_agrement || '';
+        form.directeur.value = ecole.directeur || '';
+        form.type_ecole.value = ecole.type_ecole || 'publique';
+        form.niveau.value = ecole.niveau || 'primaire';
+        form.adresse.value = ecole.adresse || '';
+        form.telephone.value = ecole.telephone || '';
+        form.email.value = ecole.email || '';
+        form.latitude.value = ecole.latitude != null ? ecole.latitude : '';
+        form.longitude.value = ecole.longitude != null ? ecole.longitude : '';
+        form.effectif_mat.value = ecole.effectif_mat ?? 0;
+        form.effectif_prim.value = ecole.effectif_prim ?? 0;
+        form.effectif_sec.value = ecole.effectif_sec ?? 0;
+        const active = document.getElementById('editEcoleActive');
+        if (active) active.checked = ecole.active !== false;
+
+        openModal('modalEditEcole');
+    }
+
     function initEcoleDetail() {
         bindModalClosers();
+        bindFileDropPreview('importPersonnelFile');
+        bindFileDropPreview('importClassesFile');
         const root = document.getElementById('ecoleDetail');
         const ecoleId = root?.dataset.ecoleId;
 
@@ -630,6 +1055,329 @@ const EducRDC = (() => {
         document.getElementById('btnPersonnelEcole')?.addEventListener('click', goPersonnel);
         document.getElementById('btnNouveauPersonnel')?.addEventListener('click', () => ouvrirModalPersonnel());
         document.getElementById('btnNouveauPersonnel2')?.addEventListener('click', () => ouvrirModalPersonnel());
+        document.getElementById('btnImporterPersonnel')?.addEventListener('click', () => {
+            const result = document.getElementById('importPersonnelResult');
+            if (result) {
+                result.hidden = true;
+                result.textContent = '';
+            }
+            openModal('modalImportPersonnel');
+        });
+
+        document.getElementById('btnModifierEcole')?.addEventListener('click', () => {
+            ouvrirModalEditEcole().catch((err) => toast(err.message, 'error'));
+        });
+
+        document.getElementById('btnSupprimerEcole')?.addEventListener('click', async () => {
+            if (!ecoleId || !confirm('Supprimer définitivement cette école ?')) return;
+            try {
+                await api(`${API}/ecoles/${ecoleId}/`, { method: 'DELETE' });
+                toast('École supprimée.', 'success');
+                window.location.href = '/ecoles/';
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        document.getElementById('btnSupprimerClasse')?.addEventListener('click', async () => {
+            const id = document.getElementById('classeEcoleId')?.value;
+            if (!id || !confirm('Supprimer cette classe ?')) return;
+            try {
+                await api(`${API}/classes/${id}/`, { method: 'DELETE' });
+                toast('Classe supprimée.', 'success');
+                closeModal('modalClasseEcole');
+                await chargerEcoleClasses(ecoleId);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        function syncRoleUserEcoleUI() {
+            const role = document.getElementById('selectRoleUserEcole')?.value || '';
+            const enseignant = role === 'enseignant';
+            const groupe = document.getElementById('groupeClasseUserEcole');
+            const sel = document.getElementById('selectClasseUserEcole');
+            if (groupe) groupe.hidden = !enseignant;
+            if (sel) {
+                sel.required = enseignant;
+                if (!enseignant) sel.value = '';
+            }
+        }
+
+        document.getElementById('btnNouvelleClasse')?.addEventListener('click', () => ouvrirModalClasseEcole());
+
+        document.getElementById('btnImporterClasses')?.addEventListener('click', () => {
+            const result = document.getElementById('importClassesResult');
+            if (result) {
+                result.hidden = true;
+                result.textContent = '';
+            }
+            openModal('modalImportClasses');
+        });
+
+        document.getElementById('formImportClasses')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fichier = document.getElementById('importClassesFile')?.files?.[0];
+            if (!fichier) {
+                toast('Choisissez un fichier Excel à importer.', 'warning');
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('fichier', fichier);
+            fd.append('ecole', ecoleId);
+            fd.append(
+                'update_existing',
+                document.getElementById('importClassesUpdate')?.checked ? '1' : '0',
+            );
+            const btn = document.getElementById('btnSubmitImportClasses');
+            const resultEl = document.getElementById('importClassesResult');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Import…';
+            }
+            try {
+                const data = await api(`${API}/classes/import/`, { method: 'POST', body: fd, headers: {} });
+                toast(data.detail || 'Import terminé.', data.errors_count ? 'warning' : 'success');
+                if (resultEl) {
+                    const errs = (data.errors || []).slice(0, 8).map((x) => `L.${x.ligne}: ${x.message}`).join(' · ');
+                    resultEl.textContent = errs || data.detail || 'Import terminé.';
+                    resultEl.hidden = false;
+                }
+                if (!data.errors_count) {
+                    document.getElementById('formImportClasses')?.reset();
+                    closeModal('modalImportClasses');
+                }
+                await chargerEcoleClasses(ecoleId);
+            } catch (err) {
+                toast(err.message, 'error');
+                if (resultEl) {
+                    resultEl.textContent = err.message;
+                    resultEl.hidden = false;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `${ico('upload')}Lancer l'import`;
+                }
+            }
+        });
+
+        document.getElementById('formClasseEcole')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) {
+                toast('Veuillez indiquer le nom de la classe.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const id = document.getElementById('classeEcoleId')?.value;
+            const payload = {
+                ecole: Number(ecoleId),
+                nom: form.nom.value.trim(),
+                code: form.code.value.trim(),
+                active: document.getElementById('classeEcoleActive')?.checked !== false,
+            };
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                if (id) {
+                    await api(`${API}/classes/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                    toast('Classe mise à jour.', 'success');
+                } else {
+                    await api(`${API}/classes/`, { method: 'POST', body: JSON.stringify(payload) });
+                    toast('Classe créée.', 'success');
+                }
+                closeModal('modalClasseEcole');
+                form.reset();
+                await chargerEcoleClasses(ecoleId);
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('btnNouveauUserEcole')?.addEventListener('click', () => {
+            const form = document.getElementById('formUserEcole');
+            const ecole = root?._ecoleCache;
+            if (form) form.reset();
+            const sub = document.getElementById('sousTitreUserEcole');
+            if (sub && ecole) {
+                sub.textContent = ecole.code
+                    ? `${ecole.nom} · ${ecole.code}`
+                    : (ecole.nom || 'Compte rattaché à cette école');
+            }
+            syncRoleUserEcoleUI();
+            if (ecoleId) remplirSelectClasses(ecoleId, 'selectClasseUserEcole');
+            openModal('modalUserEcole');
+        });
+
+        document.getElementById('selectRoleUserEcole')?.addEventListener('change', syncRoleUserEcoleUI);
+
+        document.getElementById('formUserEcole')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const role = form.role.value;
+            if (role === 'enseignant' && !form.classe?.value) {
+                toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
+                return;
+            }
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const payload = {
+                username: form.username.value.trim(),
+                password: form.password.value,
+                first_name: form.first_name.value.trim(),
+                last_name: form.last_name.value.trim(),
+                email: form.email.value.trim(),
+                telephone: form.telephone.value.trim(),
+                role,
+                ecole: Number(ecoleId),
+                classe: role === 'enseignant' ? Number(form.classe.value) : null,
+                is_active: true,
+            };
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                await api(`${API}/utilisateurs/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast('Compte école créé.', 'success');
+                closeModal('modalUserEcole');
+                form.reset();
+                await chargerEcoleUtilisateurs(ecoleId);
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('formEditEcole')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const pe = form.province_educationnelle?.value;
+            const antenne = form.antenne?.value;
+            if (!form.nom.value?.trim() || !form.code.value?.trim() || !form.adresse.value?.trim() || !pe || !antenne) {
+                toast('Veuillez compléter les champs obligatoires (nom, code, adresse, PE, antenne).', 'warning');
+                form.reportValidity();
+                return;
+            }
+            const payload = Object.fromEntries(new FormData(form).entries());
+            delete payload.active;
+            payload.province_educationnelle = Number(pe);
+            payload.antenne = Number(antenne);
+            payload.effectif_mat = Number(payload.effectif_mat || 0);
+            payload.effectif_prim = Number(payload.effectif_prim || 0);
+            payload.effectif_sec = Number(payload.effectif_sec || 0);
+            payload.effectifs = payload.effectif_mat + payload.effectif_prim + payload.effectif_sec;
+            payload.active = Boolean(document.getElementById('editEcoleActive')?.checked);
+            if (!payload.email) payload.email = '';
+            if (payload.latitude === '' || payload.latitude == null) payload.latitude = null;
+            else payload.latitude = Number(payload.latitude);
+            if (payload.longitude === '' || payload.longitude == null) payload.longitude = null;
+            else payload.longitude = Number(payload.longitude);
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                await api(`${API}/ecoles/${ecoleId}/`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload),
+                });
+                toast('École mise à jour.', 'success');
+                closeModal('modalEditEcole');
+                await chargerEcoleDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('btnAjouterPhotoEcole')?.addEventListener('click', () => {
+            const form = document.getElementById('formPhotoEcole');
+            if (form) form.reset();
+            const drop = form?.querySelector('.file-drop');
+            const title = form?.querySelector('.file-drop-title');
+            if (title) title.textContent = 'Déposer des photos ou cliquer pour parcourir';
+            drop?.classList.remove('has-file', 'is-dragover');
+            openModal('modalPhotoEcole');
+        });
+
+        bindFileDropPreview('ecolePhotoFile');
+
+        document.getElementById('formPhotoEcole')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const form = e.target;
+            const fileInput = document.getElementById('ecolePhotoFile');
+            const fichiers = fileInput?.files ? Array.from(fileInput.files).filter((f) => f && f.size) : [];
+            if (!fichiers.length) {
+                toast('Choisissez une ou plusieurs images.', 'warning');
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const fd = new FormData();
+            fichiers.forEach((fichier) => fd.append('image', fichier, fichier.name));
+            fd.append('legende', (form.querySelector('[name="legende"]')?.value || '').trim());
+            fd.append(
+                'est_principale',
+                document.getElementById('ecolePhotoPrincipale')?.checked ? '1' : '0',
+            );
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = fichiers.length > 1 ? `Envoi (${fichiers.length})…` : 'Envoi…';
+            }
+            try {
+                const data = await api(`${API}/ecoles/${ecoleId}/photos/`, {
+                    method: 'POST',
+                    body: fd,
+                    headers: {},
+                });
+                toast(data.detail || `${fichiers.length} photo(s) ajoutée(s).`, 'success');
+                closeModal('modalPhotoEcole');
+                form.reset();
+                const title = form.querySelector('.file-drop-title');
+                if (title) title.textContent = 'Déposer des photos ou cliquer pour parcourir';
+                form.querySelector('.file-drop')?.classList.remove('has-file', 'is-dragover');
+                await chargerEcoleDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Ajouter';
+                }
+            }
+        });
+
+        document.getElementById('grillePhotosEcole')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-photo-delete]');
+            if (!btn) return;
+            const photoId = btn.getAttribute('data-photo-delete');
+            if (!photoId || !window.confirm('Supprimer cette photo ?')) return;
+            try {
+                await api(`${API}/ecoles/${ecoleId}/photos/${photoId}/`, { method: 'DELETE' });
+                toast('Photo supprimée.', 'success');
+                await chargerEcoleDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
 
         document.getElementById('formPersonnel')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -667,6 +1415,80 @@ const EducRDC = (() => {
                 ]);
             } catch (err) {
                 toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('formImportPersonnel')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const fichier = document.getElementById('importPersonnelFile')?.files?.[0];
+            if (!fichier) {
+                toast('Choisissez un fichier Excel à importer.', 'warning');
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const fd = new FormData();
+            fd.append('fichier', fichier);
+            fd.append('ecole', ecoleId);
+            fd.append(
+                'update_existing',
+                document.getElementById('importPersonnelUpdate')?.checked ? '1' : '0',
+            );
+
+            const btn = document.getElementById('btnSubmitImportPersonnel');
+            const resultEl = document.getElementById('importPersonnelResult');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Import en cours…';
+            }
+            try {
+                const data = await api(`${API}/personnels/import/`, { method: 'POST', body: fd, headers: {} });
+                toast(data.detail || 'Import terminé.', data.errors_count ? 'warning' : 'success');
+                if (resultEl) {
+                    let html = escapeHtml(data.detail || '');
+                    if (data.errors?.length) {
+                        html += '<ul style="margin:0.5rem 0 0;padding-left:1.1rem">';
+                        data.errors.slice(0, 8).forEach((err) => {
+                            html += `<li>Ligne ${escapeHtml(err.ligne)} : ${escapeHtml(err.message)}</li>`;
+                        });
+                        if (data.errors_count > 8) {
+                            html += `<li>… et ${data.errors_count - 8} autre(s)</li>`;
+                        }
+                        html += '</ul>';
+                    }
+                    resultEl.innerHTML = html;
+                    resultEl.hidden = false;
+                }
+                await chargerEcolePersonnels(ecoleId);
+                const ecole = await api(`${API}/ecoles/${ecoleId}/`);
+                fillDetailList('blocEcoleEffectifs', [
+                    ['MAT', String(ecole.effectif_mat ?? 0)],
+                    ['PRIM', String(ecole.effectif_prim ?? 0)],
+                    ['SEC', String(ecole.effectif_sec ?? 0)],
+                    ['EFFECTIFS', String(ecole.effectifs ?? 0)],
+                    ['Élèves enregistrés', String(ecole.nombre_eleves ?? 0)],
+                    ['Personnels identifiés', String(ecole.nombre_personnels ?? 0)],
+                ]);
+                if (!data.errors_count) {
+                    form.reset();
+                    const title = form.querySelector('.file-drop-title');
+                    if (title) title.textContent = 'Déposer un Excel ou cliquer pour parcourir';
+                    closeModal('modalImportPersonnel');
+                }
+            } catch (err) {
+                toast(err.message, 'error');
+                if (resultEl) {
+                    resultEl.textContent = err.message;
+                    resultEl.hidden = false;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.textContent = "Lancer l'import";
+                }
             }
         });
 
@@ -713,20 +1535,22 @@ const EducRDC = (() => {
                     </a>
                 </td>
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(e.matricule)}</span></td>
+                <td data-label="N° Identification"><span class="code-chip">${escapeHtml(e.numero_identification || '—')}</span></td>
+                <td data-label="N° Permanent"><span class="code-chip">${escapeHtml(e.numero_permanent || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(e.sexe_display || e.sexe)}</td>
                 <td data-label="Naissance">${escapeHtml(e.date_naissance)}</td>
                 <td data-label="École / Classe">
                     <div class="entity-meta">
                         <strong title="${escapeHtml(e.ecole_nom || '')}">${escapeHtml(e.ecole_nom || '—')}</strong>
-                        <span>${escapeHtml(e.classe || '')}</span>
+                        <span>${escapeHtml(e.classe_nom || '')}</span>
                     </div>
                 </td>
                 <td data-label="Statut"><span class="badge ${e.actif ? 'badge-success' : 'badge-danger'}">${e.actif ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions">
-                    <a class="btn btn-secondary btn-sm" href="/eleves/${e.id}/">Détail</a>
+                    <a class="btn btn-secondary btn-sm" href="/eleves/${e.id}/">${ico('eye')}Détail</a>
                 </td>
             </tr>`;
-        }).join('') : emptyRow(7, 'Aucun élève trouvé', 'Ajoutez un élève ou affinez votre recherche.');
+        }).join('') : emptyRow(9, 'Aucun élève trouvé', 'Ajoutez un élève ou affinez votre recherche.');
 
         const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
         renderPagination('paginationEleves', pageEleves, totalPages, chargerEleves);
@@ -735,6 +1559,9 @@ const EducRDC = (() => {
     function initEleves() {
         bindModalClosers();
         bindFileDropPreview('elevePhoto');
+        bindFileDropPreview('elevePhotoPere');
+        bindFileDropPreview('elevePhotoMere');
+        bindFileDropPreview('elevePhotoTuteur');
         bindFileDropPreview('importElevesFile');
         chargerSelectEcoles('selectEcoleEleve').catch((e) => toast(e.message, 'error'));
         chargerSelectEcoles('selectEcoleImportEleves', {
@@ -742,15 +1569,28 @@ const EducRDC = (() => {
         }).catch((e) => toast(e.message, 'error'));
         chargerEleves().catch((e) => toast(e.message, 'error'));
 
-        document.getElementById('btnNouvelEleve')?.addEventListener('click', () => openModal('modalEleve'));
-        document.getElementById('btnImporterEleves')?.addEventListener('click', () => {
+        const openImportEleves = () => {
             const result = document.getElementById('importElevesResult');
             if (result) {
                 result.hidden = true;
                 result.textContent = '';
             }
             openModal('modalImportEleves');
+        };
+        document.getElementById('selectEcoleEleve')?.addEventListener('change', (e) => {
+            remplirSelectClasses(e.target.value, 'selectClasseEleve');
         });
+        document.getElementById('btnNouvelEleve')?.addEventListener('click', () => {
+            const ecoleId = document.getElementById('selectEcoleEleve')?.value;
+            if (ecoleId) remplirSelectClasses(ecoleId, 'selectClasseEleve');
+            else {
+                const sel = document.getElementById('selectClasseEleve');
+                if (sel) sel.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
+            }
+            openModal('modalEleve');
+        });
+        document.getElementById('btnImporterEleves')?.addEventListener('click', openImportEleves);
+        document.getElementById('btnImporterEleves2')?.addEventListener('click', openImportEleves);
         document.getElementById('btnSearchEleves')?.addEventListener('click', () => chargerEleves(1));
         document.getElementById('searchEleves')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') chargerEleves(1);
@@ -765,15 +1605,20 @@ const EducRDC = (() => {
                 return;
             }
             const fd = new FormData(form);
-            // Retirer photo vide pour éviter erreur API
-            const photo = fd.get('photo');
-            if (photo instanceof File && !photo.size) fd.delete('photo');
+            // Retirer photos vides pour éviter erreur API
+            ['photo', 'photo_pere', 'photo_mere', 'photo_tuteur'].forEach((key) => {
+                const file = fd.get(key);
+                if (file instanceof File && !file.size) fd.delete(key);
+            });
             try {
                 await api(`${API}/eleves/`, { method: 'POST', body: fd, headers: {} });
                 toast('Élève enregistré.', 'success');
                 form.reset();
-                const title = form.querySelector('.file-drop-title');
-                if (title) title.textContent = 'Déposer une photo ou cliquer pour parcourir';
+                form.querySelectorAll('.file-drop-title').forEach((title) => {
+                    title.textContent = title.closest('#elevePhoto')
+                        ? 'Déposer une photo ou cliquer pour parcourir'
+                        : 'Déposer une photo ou cliquer';
+                });
                 closeModal('modalEleve');
                 await chargerSelectEcoles('selectEcoleEleve');
                 await chargerEleves(1);
@@ -828,7 +1673,7 @@ const EducRDC = (() => {
                 if (!data.errors_count) {
                     form.reset();
                     const title = form.querySelector('.file-drop-title');
-                    if (title) title.textContent = 'Déposer un CSV ou cliquer pour parcourir';
+                    if (title) title.textContent = 'Déposer un Excel ou cliquer pour parcourir';
                     closeModal('modalImportEleves');
                 }
             } catch (err) {
@@ -847,6 +1692,8 @@ const EducRDC = (() => {
     }
 
     /* ---------- Détail élève ---------- */
+    let cacheEleveDetail = null;
+
     function fillDetailList(containerId, items) {
         const el = document.getElementById(containerId);
         if (!el) return;
@@ -885,18 +1732,125 @@ const EducRDC = (() => {
         }
     }
 
+    function renderParentCards(eleve) {
+        const wrap = document.getElementById('blocParents');
+        if (!wrap) return;
+        const canEdit = Boolean(document.getElementById('btnModifierParents'));
+        const cards = [
+            {
+                role: 'pere',
+                label: 'Père',
+                name: eleve.nom_complet_pere,
+                phone: eleve.telephone_pere,
+                email: eleve.email_pere,
+                extra: eleve.profession_pere,
+                photo: eleve.photo_pere_url,
+            },
+            {
+                role: 'mere',
+                label: 'Mère',
+                name: eleve.nom_complet_mere,
+                phone: eleve.telephone_mere,
+                email: eleve.email_mere,
+                extra: eleve.profession_mere,
+                photo: eleve.photo_mere_url,
+            },
+            {
+                role: 'tuteur',
+                label: eleve.lien_tuteur_display || 'Tuteur',
+                name: eleve.nom_tuteur,
+                phone: eleve.telephone_tuteur,
+                email: eleve.email_tuteur,
+                extra: eleve.lien_tuteur_display || '',
+                photo: eleve.photo_tuteur_url,
+            },
+        ];
+
+        wrap.innerHTML = cards.map((c) => {
+            const name = c.name || 'Non renseigné';
+            const photoHtml = c.photo
+                ? `<img src="${escapeHtml(c.photo)}" alt="Photo ${escapeHtml(c.label)}">`
+                : escapeHtml(initials(c.name || c.label));
+            const phoneHtml = c.phone
+                ? `<a href="tel:${escapeHtml(c.phone)}">${escapeHtml(c.phone)}</a>`
+                : '—';
+            const emailHtml = c.email
+                ? `<a href="mailto:${escapeHtml(c.email)}">${escapeHtml(c.email)}</a>`
+                : '—';
+            const actions = canEdit
+                ? `<div class="parent-card-actions">
+                        <label class="btn btn-ghost btn-sm" for="inputPhotoParent_${c.role}">${ico('photo')}Photo</label>
+                        <input type="file" id="inputPhotoParent_${c.role}" accept="image/*" hidden data-parent-photo="${c.role}">
+                   </div>`
+                : '';
+            return `
+                <article class="parent-card">
+                    <div class="parent-card-photo">${photoHtml}</div>
+                    <div class="parent-card-body">
+                        <p class="parent-card-role">${escapeHtml(c.label)}</p>
+                        <h4 class="parent-card-name">${escapeHtml(name)}</h4>
+                        <div class="parent-card-meta">
+                            <span>Tél. ${phoneHtml}</span>
+                            <span>E-mail ${emailHtml}</span>
+                            ${c.extra && c.role !== 'tuteur' ? `<span>${escapeHtml(c.extra)}</span>` : ''}
+                        </div>
+                        ${actions}
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        wrap.querySelectorAll('[data-parent-photo]').forEach((input) => {
+            input.addEventListener('change', async (e) => {
+                const file = e.target.files && e.target.files[0];
+                const role = e.target.dataset.parentPhoto;
+                if (!file || !role) return;
+                const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+                const fd = new FormData();
+                fd.append('photo', file);
+                fd.append('role', role);
+                try {
+                    await api(`${API}/eleves/${id}/photo-parent/`, { method: 'POST', body: fd, headers: {} });
+                    toast(`Photo ${role === 'mere' ? 'de la mère' : role === 'pere' ? 'du père' : 'du tuteur'} mise à jour.`, 'success');
+                    await chargerEleveDetail();
+                } catch (err) {
+                    toast(err.message, 'error');
+                } finally {
+                    e.target.value = '';
+                }
+            });
+        });
+    }
+
+    function remplirFormParents(eleve) {
+        const form = document.getElementById('formParentsEleve');
+        if (!form || !eleve) return;
+        const fields = [
+            'adresse',
+            'nom_pere', 'postnom_pere', 'prenom_pere', 'telephone_pere', 'email_pere', 'profession_pere',
+            'nom_mere', 'postnom_mere', 'prenom_mere', 'telephone_mere', 'email_mere', 'profession_mere',
+            'lien_tuteur', 'nom_tuteur', 'telephone_tuteur', 'email_tuteur',
+        ];
+        fields.forEach((name) => {
+            if (form.elements.namedItem(name)) {
+                form.elements.namedItem(name).value = eleve[name] || '';
+            }
+        });
+    }
+
     async function chargerEleveDetail() {
         const root = document.getElementById('eleveDetail');
         if (!root) return;
         const id = root.dataset.eleveId;
         const eleve = await api(`${API}/eleves/${id}/`);
+        cacheEleveDetail = eleve;
 
         document.getElementById('detailMatricule').textContent = eleve.matricule;
         document.getElementById('detailNom').textContent = eleve.nom_complet;
         document.getElementById('detailSousTitre').textContent =
-            `${eleve.ecole_nom || '—'} · ${eleve.classe || '—'}`;
+            `${eleve.ecole_nom || '—'} · ${eleve.classe_nom || '—'}`;
         document.getElementById('detailSexe').textContent = eleve.sexe_display || eleve.sexe;
-        document.getElementById('detailClasse').textContent = eleve.classe || '—';
+        document.getElementById('detailClasse').textContent = eleve.classe_nom || '—';
         const statut = document.getElementById('detailStatut');
         statut.textContent = eleve.actif ? 'Actif' : 'Inactif';
         statut.className = `badge ${eleve.actif ? 'badge-success' : 'badge-danger'}`;
@@ -904,6 +1858,9 @@ const EducRDC = (() => {
         renderDetailPhoto(eleve);
 
         fillDetailList('blocIdentite', [
+            ['Matricule', eleve.matricule],
+            ['Numéro Identification', eleve.numero_identification],
+            ['Numéro Permanent', eleve.numero_permanent],
             ['Nom', eleve.nom],
             ['Postnom', eleve.postnom],
             ['Prénom', eleve.prenom],
@@ -915,18 +1872,18 @@ const EducRDC = (() => {
         fillDetailList('blocScolarite', [
             ['École', eleve.ecole_nom],
             ['Code école', eleve.ecole_code],
-            ['Classe', eleve.classe],
+            ['Classe', eleve.classe_nom],
             ['Province admin.', eleve.province_administrative_nom],
             ['Province éduc.', eleve.province_nom],
             ['Antenne', eleve.antenne_nom],
             ['Inscription', (eleve.date_inscription || '').slice(0, 10)],
         ]);
 
-        fillDetailList('blocTuteur', [
-            ['Nom du tuteur', eleve.nom_tuteur],
-            ['Téléphone', eleve.telephone_tuteur],
-            ['Adresse', eleve.adresse],
+        fillDetailList('blocAdresse', [
+            ['Résidence', eleve.adresse],
         ]);
+
+        renderParentCards(eleve);
 
         const bio = eleve.biometrie;
         fillDetailList('blocBiometrie', bio ? [
@@ -939,17 +1896,6 @@ const EducRDC = (() => {
             ['Info', 'Ajoutez une photo pour initialiser la biométrie'],
         ]);
 
-        const tEnr = document.querySelector('#tableDetailEnrolements tbody');
-        const enrs = eleve.enrolements || [];
-        tEnr.innerHTML = enrs.length ? enrs.map((r) => {
-            const badge = r.statut === 'valide' ? 'badge-success' : r.statut === 'rejete' ? 'badge-danger' : 'badge-warning';
-            return `<tr>
-                <td data-label="Année">${escapeHtml(r.annee_scolaire)}</td>
-                <td data-label="Statut"><span class="badge ${badge}">${escapeHtml(r.statut_display)}</span></td>
-                <td data-label="Date">${escapeHtml((r.date_enrolement || '').slice(0, 10))}</td>
-            </tr>`;
-        }).join('') : emptyRow(3, 'Aucun enrôlement', 'Cet élève n\'a pas encore de dossier.');
-
         const tCartes = document.querySelector('#tableDetailCartes tbody');
         const cartes = eleve.cartes || [];
         tCartes.innerHTML = cartes.length ? cartes.map((c) => `
@@ -959,18 +1905,62 @@ const EducRDC = (() => {
                 <td data-label="Expiration">${escapeHtml(c.date_expiration)}</td>
                 <td data-label="Actions">
                     <div class="actions-inline">
-                        <a class="btn btn-primary btn-sm" href="${API}/cartes/${c.id}/pdf/" target="_blank">PDF</a>
-                        ${c.qr_code_url ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(c.qr_code_url)}" target="_blank">QR</a>` : ''}
+                        <a class="btn btn-primary btn-sm" href="${API}/cartes/${c.id}/pdf/" target="_blank">${ico('pdf')}PDF</a>
+                        ${c.qr_code_url ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(c.qr_code_url)}" target="_blank">${ico('qr')}QR</a>` : ''}
                     </div>
                 </td>
             </tr>
-        `).join('') : emptyRow(4, 'Aucune carte', 'La carte sera générée après validation d\'enrôlement.');
+        `).join('') : emptyRow(4, 'Aucune carte', 'Aucune carte scolaire n\'est encore associée à cet élève.');
 
         return eleve;
     }
 
     function initEleveDetail() {
+        bindModalClosers();
         chargerEleveDetail().catch((e) => toast(e.message, 'error'));
+
+        document.getElementById('btnSupprimerEleve')?.addEventListener('click', async () => {
+            const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+            if (!id || !confirm('Supprimer définitivement cet élève ?')) return;
+            try {
+                await api(`${API}/eleves/${id}/`, { method: 'DELETE' });
+                toast('Élève supprimé.', 'success');
+                window.location.href = '/eleves/';
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        document.getElementById('btnModifierParents')?.addEventListener('click', () => {
+            remplirFormParents(cacheEleveDetail);
+            openModal('modalParentsEleve');
+        });
+
+        document.getElementById('formParentsEleve')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+            if (!id) return;
+            const payload = {};
+            [
+                'adresse',
+                'nom_pere', 'postnom_pere', 'prenom_pere', 'telephone_pere', 'email_pere', 'profession_pere',
+                'nom_mere', 'postnom_mere', 'prenom_mere', 'telephone_mere', 'email_mere', 'profession_mere',
+                'lien_tuteur', 'nom_tuteur', 'telephone_tuteur', 'email_tuteur',
+            ].forEach((name) => {
+                payload[name] = (form.elements.namedItem(name)?.value || '').trim();
+            });
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                await api(`${API}/eleves/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                toast('Parents et contacts mis à jour.', 'success');
+                closeModal('modalParentsEleve');
+                await chargerEleveDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
 
         document.getElementById('inputPhotoDetail')?.addEventListener('change', async (e) => {
             const file = e.target.files && e.target.files[0];
@@ -987,145 +1977,6 @@ const EducRDC = (() => {
                 toast(err.message, 'error');
             } finally {
                 e.target.value = '';
-            }
-        });
-    }
-
-    /* ---------- Enrôlement ---------- */
-    let pageEnrolements = 1;
-
-    async function chargerSelectEleves() {
-        const data = await api(`${API}/eleves/?page_size=300`);
-        const list = data.results || data;
-        const sel = document.getElementById('selectEleveEnrolement');
-        if (!sel) return;
-        sel.innerHTML = list.map((e) =>
-            `<option value="${e.id}">${e.matricule} — ${e.nom_complet}</option>`
-        ).join('');
-    }
-
-    async function chargerEnrolements(page = 1) {
-        pageEnrolements = page;
-        const statut = document.getElementById('filtreStatut')?.value || '';
-        let url = `${API}/enrolements/?page=${page}`;
-        if (statut) url += `&statut=${encodeURIComponent(statut)}`;
-        const data = await api(url);
-        const rows = data.results || data;
-        const tbody = document.querySelector('#tableEnrolements tbody');
-
-        setCount('countEnrolements', data.count ?? rows.length);
-
-        tbody.innerHTML = rows.length ? rows.map((r) => {
-            const badge =
-                r.statut === 'valide' ? 'badge-success' :
-                r.statut === 'rejete' ? 'badge-danger' : 'badge-warning';
-            const actions = r.statut === 'en_attente' ? `
-                <div class="actions-inline">
-                    <button class="btn btn-secondary btn-sm" type="button" data-bio="${r.eleve}" data-enr="${r.id}">Biométrie</button>
-                    <button class="btn btn-success btn-sm" type="button" data-valider="${r.id}">Valider</button>
-                    <button class="btn btn-danger btn-sm" type="button" data-rejeter="${r.id}">Rejeter</button>
-                </div>` : `<span class="badge badge-neutral">Terminé</span>`;
-
-            return `
-                <tr>
-                    <td data-label="Élève">
-                        <div class="entity-cell">
-                            <div class="entity-avatar">${escapeHtml(initials(r.eleve_nom))}</div>
-                            <div class="entity-meta">
-                                <strong>${escapeHtml(r.eleve_nom || '—')}</strong>
-                                <span>Dossier #${r.id}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td data-label="Matricule"><span class="code-chip">${escapeHtml(r.eleve_matricule || '—')}</span></td>
-                    <td data-label="Année">${escapeHtml(r.annee_scolaire)}</td>
-                    <td data-label="Statut"><span class="badge ${badge}">${escapeHtml(r.statut_display)}</span></td>
-                    <td data-label="Date">${escapeHtml((r.date_enrolement || '').slice(0, 10))}</td>
-                    <td data-label="Actions">${actions}</td>
-                </tr>`;
-        }).join('') : emptyRow(6, 'Aucun enrôlement', 'Créez un dossier pour démarrer le workflow.');
-
-        tbody.querySelectorAll('[data-bio]').forEach((btn) => {
-            btn.addEventListener('click', () => {
-                document.getElementById('bioEleveId').value = btn.dataset.bio;
-                openModal('modalBiometrie');
-            });
-        });
-        tbody.querySelectorAll('[data-valider]').forEach((btn) => {
-            btn.addEventListener('click', () => validerEnrolement(btn.dataset.valider));
-        });
-        tbody.querySelectorAll('[data-rejeter]').forEach((btn) => {
-            btn.addEventListener('click', () => rejeterEnrolement(btn.dataset.rejeter));
-        });
-
-        const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
-        renderPagination('paginationEnrolements', pageEnrolements, totalPages, chargerEnrolements);
-    }
-
-    async function validerEnrolement(id) {
-        try {
-            const res = await api(`${API}/enrolements/${id}/valider/`, { method: 'POST', body: '{}' });
-            toast(res.detail || 'Enrôlement validé et carte générée.', 'success');
-            await chargerEnrolements(pageEnrolements);
-        } catch (err) {
-            toast(err.message, 'error');
-        }
-    }
-
-    async function rejeterEnrolement(id) {
-        const observations = prompt('Motif du rejet :') || '';
-        try {
-            await api(`${API}/enrolements/${id}/rejeter/`, {
-                method: 'POST',
-                body: JSON.stringify({ observations }),
-            });
-            toast('Enrôlement rejeté.', 'warning');
-            await chargerEnrolements(pageEnrolements);
-        } catch (err) {
-            toast(err.message, 'error');
-        }
-    }
-
-    function initEnrolement() {
-        bindModalClosers();
-        bindFileDropPreview('bioPhoto');
-        chargerSelectEleves().catch((e) => toast(e.message, 'error'));
-        chargerEnrolements().catch((e) => toast(e.message, 'error'));
-
-        document.getElementById('btnNouvelEnrolement')?.addEventListener('click', () => openModal('modalEnrolement'));
-        document.getElementById('btnFiltrerEnrolement')?.addEventListener('click', () => chargerEnrolements(1));
-        document.getElementById('filtreStatut')?.addEventListener('change', () => chargerEnrolements(1));
-
-        document.getElementById('formEnrolement')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const payload = Object.fromEntries(new FormData(e.target).entries());
-            payload.eleve = Number(payload.eleve);
-            try {
-                await api(`${API}/enrolements/`, { method: 'POST', body: JSON.stringify(payload) });
-                toast('Enrôlement créé.', 'success');
-                e.target.reset();
-                closeModal('modalEnrolement');
-                await chargerEnrolements(1);
-            } catch (err) {
-                toast(err.message, 'error');
-            }
-        });
-
-        document.getElementById('formBiometrie')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const form = e.target;
-            const fd = new FormData(form);
-            if (!fd.get('photo') || !fd.get('photo').size) {
-                toast('La photo est obligatoire.', 'warning');
-                return;
-            }
-            try {
-                await api(`${API}/biometrie/`, { method: 'POST', body: fd, headers: {} });
-                toast('Biométrie enregistrée.', 'success');
-                form.reset();
-                closeModal('modalBiometrie');
-            } catch (err) {
-                toast(err.message, 'error');
             }
         });
     }
@@ -1166,12 +2017,12 @@ const EducRDC = (() => {
                 <td data-label="Statut"><span class="badge badge-info">${escapeHtml(c.statut_display || c.statut)}</span></td>
                 <td data-label="Actions">
                     <div class="actions-inline">
-                        <a class="btn btn-primary btn-sm" href="${API}/cartes/${c.id}/pdf/" target="_blank">PDF</a>
-                        ${c.qr_code_url ? `<a class="btn btn-secondary btn-sm" href="${c.qr_code_url}" target="_blank">QR</a>` : ''}
+                        <a class="btn btn-primary btn-sm" href="${API}/cartes/${c.id}/pdf/" target="_blank">${ico('pdf')}PDF</a>
+                        ${c.qr_code_url ? `<a class="btn btn-secondary btn-sm" href="${c.qr_code_url}" target="_blank">${ico('qr')}QR</a>` : ''}
                     </div>
                 </td>
             </tr>
-        `).join('') : emptyRow(7, 'Aucune carte produite', 'Les cartes apparaissent après validation d\'un enrôlement.');
+        `).join('') : emptyRow(7, 'Aucune carte produite', 'Les cartes scolaires apparaîtront ici une fois émises.');
 
         const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
         renderPagination('paginationCartes', pageCartes, totalPages, chargerCartes);
@@ -1194,10 +2045,27 @@ const EducRDC = (() => {
             setText('rEleves', stats.nb_eleves);
             setText('rEcoles', stats.nb_ecoles);
             setText('rCartes', stats.nb_cartes);
-            setText('rValides', stats.enrolements_valides);
-            const labels = (stats.par_province || []).map((p) => p.nom);
-            const values = (stats.par_province || []).map((p) => p.nb_ecoles);
-            drawBarChart('chartRapports', labels, values);
+            setText('rBiometries', stats.biometries_validees);
+
+            const subtitle = document.querySelector('.topbar-title p');
+            if (subtitle && stats.scope_label) {
+                subtitle.textContent = `${stats.scope_label} — statistiques et exports`;
+            }
+
+            const chartTitle = document.querySelector('#chartRapports')?.closest('.panel')?.querySelector('.panel-header h2');
+            const chartSub = document.querySelector('#chartRapports')?.closest('.panel')?.querySelector('.panel-header p');
+            if (chartTitle && stats.chart?.title) chartTitle.textContent = stats.chart.title;
+            if (chartSub && stats.chart?.subtitle) chartSub.textContent = stats.chart.subtitle;
+
+            const series = stats.chart?.series || (stats.par_province || []).map((p) => ({
+                nom: p.nom,
+                valeur: p.nb_ecoles ?? p.nb_eleves ?? 0,
+            }));
+            // Rapports : privilégier nb_ecoles si présent, sinon valeur élèves
+            const values = series.map((s) => (
+                s.nb_ecoles != null && stats.scope !== 'ecole' ? s.nb_ecoles : s.valeur
+            ));
+            drawBarChart('chartRapports', series.map((s) => s.nom), values);
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -1470,8 +2338,7 @@ const EducRDC = (() => {
                 <td data-label="Code"><span class="code-chip">${escapeHtml(p.code)}</span></td>
                 <td data-label="Statut"><span class="badge ${p.actif !== false ? 'badge-success' : 'badge-danger'}">${p.actif !== false ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions"><div class="actions-inline">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pa="${p.id}">Modifier</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-del-pa="${p.id}">Supprimer</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pa="${p.id}">${ico('edit')}Modifier</button>
                 </div></td>
             </tr>`).join('') : emptyRow(4, 'Aucune province administrative', 'Ajoutez le niveau 1 de la hiérarchie.');
         tbody.querySelectorAll('[data-edit-pa]').forEach((btn) => {
@@ -1482,19 +2349,9 @@ const EducRDC = (() => {
                 document.getElementById('paId').value = p.id;
                 const form = document.getElementById('formPA');
                 form.nom.value = p.nom; form.code.value = p.code;
+                const btnDel = document.getElementById('btnSupprimerPA');
+                if (btnDel) btnDel.hidden = false;
                 openModal('modalPA');
-            });
-        });
-        tbody.querySelectorAll('[data-del-pa]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cette province administrative ?')) return;
-                try {
-                    await api(`${API}/provinces-administratives/${btn.dataset.delPa}/`, { method: 'DELETE' });
-                    toast('Province administrative supprimée.', 'success');
-                    await chargerPA(pagePA);
-                    await chargerOptionsHierarchie();
-                    await chargerOrganigramme().catch(() => {});
-                } catch (err) { toast(err.message, 'error'); }
             });
         });
         renderPagination('paginationPA', pagePA, data.count ? Math.ceil(data.count / 20) : 1, chargerPA);
@@ -1519,8 +2376,7 @@ const EducRDC = (() => {
                 <td data-label="Province admin.">${escapeHtml(p.province_administrative_nom || '')}</td>
                 <td data-label="Statut"><span class="badge ${p.actif !== false ? 'badge-success' : 'badge-danger'}">${p.actif !== false ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions"><div class="actions-inline">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pe="${p.id}">Modifier</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-del-pe="${p.id}">Supprimer</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-pe="${p.id}">${ico('edit')}Modifier</button>
                 </div></td>
             </tr>`).join('') : emptyRow(5, 'Aucune province éducationnelle', 'Créez une PE rattachée à une province administrative.');
         tbody.querySelectorAll('[data-edit-pe]').forEach((btn) => {
@@ -1532,19 +2388,9 @@ const EducRDC = (() => {
                 const form = document.getElementById('formPE');
                 form.nom.value = p.nom; form.code.value = p.code;
                 form.province_administrative.value = p.province_administrative;
+                const btnDel = document.getElementById('btnSupprimerPE');
+                if (btnDel) btnDel.hidden = false;
                 openModal('modalPE');
-            });
-        });
-        tbody.querySelectorAll('[data-del-pe]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cette province éducationnelle ?')) return;
-                try {
-                    await api(`${API}/provinces-educationnelles/${btn.dataset.delPe}/`, { method: 'DELETE' });
-                    toast('Province éducationnelle supprimée.', 'success');
-                    await chargerPE(pagePE);
-                    await chargerOptionsHierarchie();
-                    await chargerOrganigramme().catch(() => {});
-                } catch (err) { toast(err.message, 'error'); }
             });
         });
         renderPagination('paginationPE', pagePE, data.count ? Math.ceil(data.count / 20) : 1, chargerPE);
@@ -1569,8 +2415,7 @@ const EducRDC = (() => {
                 <td data-label="Province éduc.">${escapeHtml(a.province_educationnelle_nom || '')}</td>
                 <td data-label="Province admin.">${escapeHtml(a.province_administrative_nom || '')}</td>
                 <td data-label="Actions"><div class="actions-inline">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-antenne="${a.id}">Modifier</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-del-antenne="${a.id}">Supprimer</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-antenne="${a.id}">${ico('edit')}Modifier</button>
                 </div></td>
             </tr>`).join('') : emptyRow(5, 'Aucune antenne', 'Créez une antenne rattachée à une province éducationnelle.');
         tbody.querySelectorAll('[data-edit-antenne]').forEach((btn) => {
@@ -1583,21 +2428,66 @@ const EducRDC = (() => {
                 form.nom.value = a.nom; form.code.value = a.code;
                 form.province_educationnelle.value = a.province_educationnelle;
                 form.adresse.value = a.adresse || ''; form.telephone.value = a.telephone || '';
+                const btnDel = document.getElementById('btnSupprimerAntenne');
+                if (btnDel) btnDel.hidden = false;
                 openModal('modalAntenne');
             });
         });
-        tbody.querySelectorAll('[data-del-antenne]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cette antenne ?')) return;
-                try {
-                    await api(`${API}/antennes/${btn.dataset.delAntenne}/`, { method: 'DELETE' });
-                    toast('Antenne supprimée.', 'success');
-                    await chargerAntennes(pageAntennes);
-                    await chargerOrganigramme().catch(() => {});
-                } catch (err) { toast(err.message, 'error'); }
-            });
-        });
         renderPagination('paginationAntennes', pageAntennes, data.count ? Math.ceil(data.count / 20) : 1, chargerAntennes);
+    }
+
+    async function chargerModelesImport() {
+        const grille = document.getElementById('grilleModelesImport');
+        if (!grille) return;
+        const data = await api(`${API}/modeles-import/`);
+        const items = data.results || data;
+        setCount('countModelesImport', data.count ?? items.length, 'modèle');
+
+        const ops = items.filter((m) => m.categorie === 'opérationnel' || m.categorie === 'operationnel');
+        const refs = items.filter((m) => m.categorie === 'referentiel');
+        const autres = items.filter((m) => !ops.includes(m) && !refs.includes(m));
+
+        const renderCard = (m) => `
+            <article class="import-modele-card">
+                <div class="import-modele-card-top">
+                    <h3>${escapeHtml(m.titre)}</h3>
+                    <span class="badge ${m.categorie === 'referentiel' ? 'badge-info' : 'badge-success'}">
+                        ${m.categorie === 'referentiel' ? 'Référentiel' : 'Opérationnel'}
+                    </span>
+                </div>
+                <p>${escapeHtml(m.description || '')}</p>
+                <p class="form-hint" style="margin:0.35rem 0 0">
+                    <strong>Obligatoires :</strong> ${(m.obligatoires || []).map((c) => `<code>${escapeHtml(c)}</code>`).join(' ')}
+                </p>
+                <p class="form-hint" style="margin:0.35rem 0 0">
+                    <strong>Colonnes :</strong> ${(m.colonnes || []).map((c) => `<code>${escapeHtml(c)}</code>`).join(' ')}
+                </p>
+                ${m.notes ? `<p class="form-hint" style="margin:0.35rem 0 0">${escapeHtml(m.notes)}</p>` : ''}
+                <div class="import-modele-card-actions">
+                    <a class="btn btn-primary btn-sm" href="${escapeHtml(m.url)}" download>
+                        ${ico('download')}Télécharger ${escapeHtml(m.fichier || '.xlsx')}
+                    </a>
+                </div>
+            </article>
+        `;
+
+        const section = (title, list) => {
+            if (!list.length) return '';
+            return `
+                <div class="import-modeles-section">
+                    <h3 class="detail-card-title">${escapeHtml(title)}</h3>
+                    <div class="import-modeles-cards">${list.map(renderCard).join('')}</div>
+                </div>
+            `;
+        };
+
+        grille.innerHTML = items.length
+            ? [
+                section('Données opérationnelles', ops),
+                section('Référentiel territorial', refs),
+                section('Autres', autres),
+            ].join('')
+            : '<p class="empty-state">Aucun modèle disponible.</p>';
     }
 
     function initParametres() {
@@ -1609,7 +2499,11 @@ const EducRDC = (() => {
                 if (btn.dataset.tab === 'pa') chargerPA(1).catch((e) => toast(e.message, 'error'));
                 if (btn.dataset.tab === 'pe') chargerPE(1).catch((e) => toast(e.message, 'error'));
                 if (btn.dataset.tab === 'antennes') chargerAntennes(1).catch((e) => toast(e.message, 'error'));
+                if (btn.dataset.tab === 'modeles-import') chargerModelesImport().catch((e) => toast(e.message, 'error'));
             });
+        });
+        document.getElementById('btnRefreshModelesImport')?.addEventListener('click', () => {
+            chargerModelesImport().catch((e) => toast(e.message, 'error'));
         });
         chargerOrganigramme().catch((e) => toast(e.message, 'error'));
         chargerOptionsHierarchie().catch((e) => toast(e.message, 'error'));
@@ -1634,7 +2528,21 @@ const EducRDC = (() => {
             document.getElementById('titreModalPA').textContent = 'Nouvelle province administrative';
             document.getElementById('formPA').reset();
             document.getElementById('paId').value = '';
+            const btnDel = document.getElementById('btnSupprimerPA');
+            if (btnDel) btnDel.hidden = true;
             openModal('modalPA');
+        });
+        document.getElementById('btnSupprimerPA')?.addEventListener('click', async () => {
+            const id = document.getElementById('paId')?.value;
+            if (!id || !confirm('Supprimer cette province administrative ?')) return;
+            try {
+                await api(`${API}/provinces-administratives/${id}/`, { method: 'DELETE' });
+                toast('Province administrative supprimée.', 'success');
+                closeModal('modalPA');
+                await chargerPA(pagePA);
+                await chargerOptionsHierarchie();
+                await chargerOrganigramme().catch(() => {});
+            } catch (err) { toast(err.message, 'error'); }
         });
         document.getElementById('formPA')?.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -1678,7 +2586,21 @@ const EducRDC = (() => {
             await chargerOptionsHierarchie();
             document.getElementById('titreModalPE').textContent = 'Nouvelle province éducationnelle';
             document.getElementById('formPE').reset(); document.getElementById('peId').value = '';
+            const btnDel = document.getElementById('btnSupprimerPE');
+            if (btnDel) btnDel.hidden = true;
             openModal('modalPE');
+        });
+        document.getElementById('btnSupprimerPE')?.addEventListener('click', async () => {
+            const id = document.getElementById('peId')?.value;
+            if (!id || !confirm('Supprimer cette province éducationnelle ?')) return;
+            try {
+                await api(`${API}/provinces-educationnelles/${id}/`, { method: 'DELETE' });
+                toast('Province éducationnelle supprimée.', 'success');
+                closeModal('modalPE');
+                await chargerPE(pagePE);
+                await chargerOptionsHierarchie();
+                await chargerOrganigramme().catch(() => {});
+            } catch (err) { toast(err.message, 'error'); }
         });
         document.getElementById('formPE')?.addEventListener('submit', async (e) => {
             e.preventDefault(); const form = e.target;
@@ -1702,7 +2624,20 @@ const EducRDC = (() => {
             await chargerOptionsHierarchie();
             document.getElementById('titreModalAntenne').textContent = 'Nouvelle antenne';
             document.getElementById('formAntenne').reset(); document.getElementById('antenneId').value = '';
+            const btnDel = document.getElementById('btnSupprimerAntenne');
+            if (btnDel) btnDel.hidden = true;
             openModal('modalAntenne');
+        });
+        document.getElementById('btnSupprimerAntenne')?.addEventListener('click', async () => {
+            const id = document.getElementById('antenneId')?.value;
+            if (!id || !confirm('Supprimer cette antenne ?')) return;
+            try {
+                await api(`${API}/antennes/${id}/`, { method: 'DELETE' });
+                toast('Antenne supprimée.', 'success');
+                closeModal('modalAntenne');
+                await chargerAntennes(pageAntennes);
+                await chargerOrganigramme().catch(() => {});
+            } catch (err) { toast(err.message, 'error'); }
         });
         document.getElementById('formAntenne')?.addEventListener('submit', async (e) => {
             e.preventDefault(); const form = e.target;
@@ -1727,27 +2662,85 @@ const EducRDC = (() => {
     let cacheUserPE = [];
     let cacheUserAntennes = [];
 
+    let cacheUserEcoles = [];
+
+    function estRoleEcole(role) {
+        return role === 'admin_ecole' || role === 'enseignant';
+    }
+
+    async function remplirSelectClasses(ecoleId, selectId, selectedId = '') {
+        const sel = document.getElementById(selectId);
+        if (!sel) return;
+        const current = selectedId || sel.value || '';
+        sel.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
+        if (!ecoleId) return;
+        try {
+            const data = await api(`${API}/classes/?ecole=${ecoleId}&actif=1&page_size=200`);
+            const rows = data.results || data;
+            sel.innerHTML = `<option value="">— Sélectionner une classe —</option>${
+                rows.map((c) => `<option value="${c.id}">${escapeHtml(c.nom)}${c.code ? ` (${escapeHtml(c.code)})` : ''}</option>`).join('')
+            }`;
+            if (current) sel.value = String(current);
+        } catch (err) {
+            toast(err.message || 'Impossible de charger les classes.', 'error');
+        }
+    }
+
     async function chargerOptionsUtilisateur() {
-        const [pas, pes, ants] = await Promise.all([
+        const [pas, pes, ants, ecoles] = await Promise.all([
             api(`${API}/provinces-administratives/?page_size=500`),
             api(`${API}/provinces-educationnelles/?page_size=500`),
             api(`${API}/antennes/?page_size=500`),
+            api(`${API}/ecoles/?page_size=500`),
         ]);
         cacheUserPA = pas.results || pas;
         cacheUserPE = pes.results || pes;
         cacheUserAntennes = ants.results || ants;
+        cacheUserEcoles = ecoles.results || ecoles;
         syncSelectsUtilisateur();
+        syncRoleUtilisateurUI();
+    }
+
+    function syncRoleUtilisateurUI() {
+        const role = document.getElementById('selectRoleUtilisateur')?.value || '';
+        const school = estRoleEcole(role);
+        const enseignant = role === 'enseignant';
+        const req = document.getElementById('reqEcoleUtilisateur');
+        const selEcole = document.getElementById('selectUserEcole');
+        const groupeClasse = document.getElementById('groupeClasseUtilisateur');
+        const selClasse = document.getElementById('selectUserClasse');
+        if (req) req.hidden = !school;
+        if (selEcole) selEcole.required = school;
+        if (groupeClasse) groupeClasse.hidden = !enseignant;
+        if (selClasse) {
+            selClasse.required = enseignant;
+            if (!enseignant) selClasse.value = '';
+        }
+        if (enseignant && selEcole?.value) {
+            remplirSelectClasses(selEcole.value, 'selectUserClasse', selClasse?.value || '');
+        }
     }
 
     function syncSelectsUtilisateur(selected = {}) {
         const selPA = document.getElementById('selectUserPA');
         const selPE = document.getElementById('selectUserPE');
         const selAnt = document.getElementById('selectUserAntenne');
+        const selEcole = document.getElementById('selectUserEcole');
         if (!selPA || !selPE || !selAnt) return;
 
         const paId = selected.province_administrative || selPA.value || '';
         const peId = selected.province_educationnelle || selPE.value || '';
         const antId = selected.antenne || selAnt.value || '';
+        const ecoleId = selected.ecole || selEcole?.value || '';
+
+        if (selEcole) {
+            selEcole.innerHTML = `<option value="">— Aucune —</option>${
+                cacheUserEcoles.map((e) =>
+                    `<option value="${e.id}">${escapeHtml(e.nom)} (${escapeHtml(e.code)})</option>`
+                ).join('')
+            }`;
+            selEcole.value = ecoleId ? String(ecoleId) : '';
+        }
 
         selPA.innerHTML = `<option value="">— Aucune —</option>${
             cacheUserPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)} (${escapeHtml(p.code)})</option>`).join('')
@@ -1771,9 +2764,17 @@ const EducRDC = (() => {
             antFiltered.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)} (${escapeHtml(a.code)})</option>`).join('')
         }`;
         selAnt.value = antId && antFiltered.some((a) => String(a.id) === String(antId)) ? String(antId) : '';
+        syncRoleUtilisateurUI();
     }
 
     function rattachementLabel(u) {
+        if (u.ecole_nom) {
+            const ecole = u.ecole_code ? `${u.ecole_nom} (${u.ecole_code})` : u.ecole_nom;
+            if (u.role === 'enseignant' && u.classe_nom) {
+                return `${ecole} · classe ${u.classe_nom}`;
+            }
+            return ecole;
+        }
         const parts = [
             u.antenne_nom,
             u.province_educationnelle_nom,
@@ -1816,24 +2817,13 @@ const EducRDC = (() => {
                 </td>
                 <td data-label="Statut"><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions"><div class="actions-inline">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-user="${u.id}">Modifier</button>
-                    <button type="button" class="btn btn-danger btn-sm" data-del-user="${u.id}">Supprimer</button>
+                    <button type="button" class="btn btn-ghost btn-sm" data-edit-user="${u.id}">${ico('edit')}Modifier</button>
                 </div></td>
             </tr>`;
         }).join('') : emptyRow(6, 'Aucun utilisateur trouvé', 'Ajoutez un compte ou affinez la recherche.');
 
         tbody.querySelectorAll('[data-edit-user]').forEach((btn) => {
             btn.addEventListener('click', () => ouvrirModalUtilisateur(cacheUtilisateurs.find((x) => String(x.id) === String(btn.dataset.editUser))));
-        });
-        tbody.querySelectorAll('[data-del-user]').forEach((btn) => {
-            btn.addEventListener('click', async () => {
-                if (!confirm('Supprimer cet utilisateur ?')) return;
-                try {
-                    await api(`${API}/utilisateurs/${btn.dataset.delUser}/`, { method: 'DELETE' });
-                    toast('Utilisateur supprimé.', 'success');
-                    await chargerUtilisateurs(pageUtilisateurs);
-                } catch (err) { toast(err.message, 'error'); }
-            });
         });
         renderPagination(
             'paginationUtilisateurs',
@@ -1859,13 +2849,15 @@ const EducRDC = (() => {
         }
     }
 
-    function ouvrirModalUtilisateur(user = null) {
+    async function ouvrirModalUtilisateur(user = null) {
         const form = document.getElementById('formUtilisateur');
         const titre = document.getElementById('titreModalUtilisateur');
         if (!form || !titre) return;
         form.reset();
         document.getElementById('utilisateurId').value = user?.id || '';
         setModePasswordUtilisateur(Boolean(user));
+        const btnDel = document.getElementById('btnSupprimerUtilisateur');
+        if (btnDel) btnDel.hidden = !user?.id;
         if (user) {
             titre.textContent = "Modifier l'utilisateur";
             form.username.value = user.username || '';
@@ -1879,11 +2871,27 @@ const EducRDC = (() => {
                 province_administrative: user.province_administrative || '',
                 province_educationnelle: user.province_educationnelle || '',
                 antenne: user.antenne || '',
+                ecole: user.ecole || '',
             });
         } else {
             titre.textContent = 'Nouvel utilisateur';
             document.getElementById('utilisateurActif').checked = true;
+            const selClasse = document.getElementById('selectUserClasse');
+            if (selClasse) selClasse.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
             syncSelectsUtilisateur({});
+        }
+        const role = document.getElementById('selectRoleUtilisateur')?.value || '';
+        const ecoleId = document.getElementById('selectUserEcole')?.value || '';
+        const groupeClasse = document.getElementById('groupeClasseUtilisateur');
+        const selClasse = document.getElementById('selectUserClasse');
+        const req = document.getElementById('reqEcoleUtilisateur');
+        const school = estRoleEcole(role);
+        if (req) req.hidden = !school;
+        document.getElementById('selectUserEcole') && (document.getElementById('selectUserEcole').required = school);
+        if (groupeClasse) groupeClasse.hidden = role !== 'enseignant';
+        if (selClasse) selClasse.required = role === 'enseignant';
+        if (role === 'enseignant' && ecoleId) {
+            await remplirSelectClasses(ecoleId, 'selectUserClasse', user?.classe || '');
         }
         openModal('modalUtilisateur');
     }
@@ -1899,14 +2907,44 @@ const EducRDC = (() => {
             if (e.key === 'Enter') chargerUtilisateurs(1);
         });
         document.getElementById('btnNouvelUtilisateur')?.addEventListener('click', () => ouvrirModalUtilisateur());
+        document.getElementById('btnSupprimerUtilisateur')?.addEventListener('click', async () => {
+            const id = document.getElementById('utilisateurId')?.value;
+            if (!id || !confirm('Supprimer cet utilisateur ?')) return;
+            try {
+                await api(`${API}/utilisateurs/${id}/`, { method: 'DELETE' });
+                toast('Utilisateur supprimé.', 'success');
+                closeModal('modalUtilisateur');
+                await chargerUtilisateurs(pageUtilisateurs);
+            } catch (err) { toast(err.message, 'error'); }
+        });
 
         document.getElementById('selectUserPA')?.addEventListener('change', () => syncSelectsUtilisateur());
         document.getElementById('selectUserPE')?.addEventListener('change', () => syncSelectsUtilisateur());
+        document.getElementById('selectRoleUtilisateur')?.addEventListener('change', () => syncRoleUtilisateurUI());
+        document.getElementById('selectUserEcole')?.addEventListener('change', () => {
+            const ecoleId = document.getElementById('selectUserEcole')?.value;
+            if (ecoleId && document.getElementById('selectRoleUtilisateur')?.value === 'enseignant') {
+                remplirSelectClasses(ecoleId, 'selectUserClasse');
+            } else {
+                const selClasse = document.getElementById('selectUserClasse');
+                if (selClasse) selClasse.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
+            }
+            syncRoleUtilisateurUI();
+        });
 
         document.getElementById('formUtilisateur')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const id = document.getElementById('utilisateurId').value;
+            const role = form.role.value;
+            if (estRoleEcole(role) && !form.ecole?.value) {
+                toast("Sélectionnez l'école pour un administratif ou un enseignant.", 'warning');
+                return;
+            }
+            if (role === 'enseignant' && !form.classe?.value) {
+                toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
+                return;
+            }
             if (!form.checkValidity()) {
                 toast('Veuillez compléter les champs obligatoires.', 'warning');
                 form.reportValidity();
@@ -1923,12 +2961,19 @@ const EducRDC = (() => {
                 first_name: form.first_name.value.trim(),
                 last_name: form.last_name.value.trim(),
                 telephone: form.telephone.value.trim(),
-                role: form.role.value,
+                role,
                 is_active: document.getElementById('utilisateurActif')?.checked !== false,
                 province_administrative: form.province_administrative.value || null,
                 province_educationnelle: form.province_educationnelle.value || null,
                 antenne: form.antenne.value || null,
+                ecole: form.ecole?.value || null,
+                classe: role === 'enseignant' ? Number(form.classe.value) : null,
             };
+            if (estRoleEcole(role)) {
+                payload.ecole = Number(payload.ecole);
+            } else {
+                payload.ecole = null;
+            }
             if (password) payload.password = password;
 
             const submitBtn = form.querySelector('button[type="submit"]');
@@ -1958,7 +3003,6 @@ const EducRDC = (() => {
         initEleves,
         initEleveDetail,
         initEcoleDetail,
-        initEnrolement,
         initCartes,
         initRapports,
         initParametres,

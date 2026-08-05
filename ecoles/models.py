@@ -133,6 +133,20 @@ class Ecole(models.Model):
     adresse = models.CharField(max_length=255, verbose_name='Adresse')
     telephone = models.CharField(max_length=20, blank=True, verbose_name='Téléphone')
     email = models.EmailField(blank=True, verbose_name='Email')
+    latitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True,
+        verbose_name='Latitude GPS',
+    )
+    longitude = models.DecimalField(
+        max_digits=10,
+        decimal_places=7,
+        null=True,
+        blank=True,
+        verbose_name='Longitude GPS',
+    )
     directeur = models.CharField(max_length=150, blank=True, verbose_name='Directeur')
     effectif_mat = models.PositiveIntegerField(default=0, verbose_name='Effectif MAT')
     effectif_prim = models.PositiveIntegerField(default=0, verbose_name='Effectif PRIM')
@@ -173,6 +187,79 @@ class Ecole(models.Model):
     @property
     def nombre_personnels(self):
         return self.personnels.filter(actif=True).count()
+
+    @property
+    def photo_principale(self):
+        principale = self.photos.filter(est_principale=True).first()
+        if principale:
+            return principale
+        return self.photos.first()
+
+    @property
+    def has_gps(self):
+        return self.latitude is not None and self.longitude is not None
+
+
+class Classe(models.Model):
+    """Classe scolaire créée par l'administratif de l'école."""
+
+    ecole = models.ForeignKey(
+        Ecole,
+        on_delete=models.CASCADE,
+        related_name='classes',
+        verbose_name='École',
+    )
+    nom = models.CharField(max_length=50, verbose_name='Nom de la classe')
+    code = models.CharField(max_length=20, blank=True, verbose_name='Code')
+    active = models.BooleanField(default=True, verbose_name='Active')
+    date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
+
+    class Meta:
+        verbose_name = 'Classe'
+        verbose_name_plural = 'Classes'
+        ordering = ['nom']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['ecole', 'nom'],
+                name='uniq_classe_nom_par_ecole',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.nom} ({self.ecole.code})'
+
+    def save(self, *args, **kwargs):
+        self.nom = (self.nom or '').strip()
+        self.code = (self.code or '').strip()
+        super().save(*args, **kwargs)
+
+
+class PhotoEcole(models.Model):
+    """Photo associée à une école."""
+
+    ecole = models.ForeignKey(
+        Ecole,
+        on_delete=models.CASCADE,
+        related_name='photos',
+        verbose_name='École',
+    )
+    image = models.ImageField(upload_to='ecoles/photos/', verbose_name='Photo')
+    legende = models.CharField(max_length=200, blank=True, verbose_name='Légende')
+    est_principale = models.BooleanField(default=False, verbose_name='Photo principale')
+    date_ajout = models.DateTimeField(auto_now_add=True, verbose_name="Date d'ajout")
+
+    class Meta:
+        verbose_name = "Photo d'école"
+        verbose_name_plural = "Photos d'écoles"
+        ordering = ['-est_principale', '-date_ajout']
+
+    def __str__(self):
+        return f'Photo — {self.ecole.nom}'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.est_principale:
+            PhotoEcole.objects.filter(ecole=self.ecole).exclude(pk=self.pk).update(est_principale=False)
 
 
 class PersonnelEcole(models.Model):

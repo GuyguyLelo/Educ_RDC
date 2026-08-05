@@ -20,6 +20,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token = super().get_token(user)
         token['username'] = user.username
         token['role'] = user.role
+        if user.ecole_id:
+            token['ecole_id'] = user.ecole_id
+        if user.classe_id:
+            token['classe_id'] = user.classe_id
+            token['classe'] = user.classe.nom
         return token
 
     def validate(self, attrs):
@@ -37,6 +42,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         'province_administrative',
         'province_educationnelle',
         'antenne',
+        'ecole',
+        'classe',
     ).all()
     permission_classes = [IsAuthenticated]
     search_fields = ['username', 'first_name', 'last_name', 'email', 'telephone']
@@ -48,17 +55,21 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         return UtilisateurSerializer
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
-            return [EstAdmin()]
-        return [IsAuthenticated()]
+        # Liste / CRUD réservés à l'administrateur ; `moi` reste accessible à tous
+        if self.action == 'moi':
+            return [IsAuthenticated()]
+        return [EstAdmin()]
 
     def get_queryset(self):
         qs = super().get_queryset()
         role = self.request.query_params.get('role')
+        ecole = self.request.query_params.get('ecole')
         q = self.request.query_params.get('q')
         actif = self.request.query_params.get('actif')
         if role:
             qs = qs.filter(role=role)
+        if ecole:
+            qs = qs.filter(ecole_id=ecole)
         if q:
             qs = qs.filter(
                 Q(username__icontains=q)

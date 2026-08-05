@@ -3,37 +3,48 @@
 
 {% block title %}Tableau de bord{% endblock %}
 {% block page_title %}Tableau de bord{% endblock %}
-{% block page_subtitle %}Vue d'ensemble nationale — suivi en temps réel{% endblock %}
+{% block page_subtitle %}Chargement du périmètre…{% endblock %}
 
 {% block content %}
+<section class="dash-banner" id="dashBanner" hidden>
+    <div class="dash-banner-main">
+        <span class="dash-role-badge" id="dashRoleBadge">—</span>
+        <div>
+            <strong id="dashWelcome">Bienvenue</strong>
+            <p id="dashScopeLabel">—</p>
+        </div>
+    </div>
+    <div class="dash-actions" id="dashActions"></div>
+</section>
+
 <section class="stats-grid" id="statsGrid">
-    <article class="stat-card">
-        <span class="stat-label">Élèves inscrits</span>
-        <strong class="stat-value" id="statEleves">—</strong>
-        <div class="stat-hint">Population scolaire active</div>
+    <article class="stat-card" data-card-slot="0">
+        <span class="stat-label">—</span>
+        <strong class="stat-value">—</strong>
+        <div class="stat-hint"></div>
     </article>
-    <article class="stat-card">
-        <span class="stat-label">Écoles</span>
-        <strong class="stat-value" id="statEcoles">—</strong>
-        <div class="stat-hint">Établissements identifiés</div>
+    <article class="stat-card" data-card-slot="1">
+        <span class="stat-label">—</span>
+        <strong class="stat-value">—</strong>
+        <div class="stat-hint"></div>
     </article>
-    <article class="stat-card accent">
-        <span class="stat-label">Cartes produites</span>
-        <strong class="stat-value" id="statCartes">—</strong>
-        <div class="stat-hint">Cartes scolaires actives</div>
+    <article class="stat-card accent" data-card-slot="2">
+        <span class="stat-label">—</span>
+        <strong class="stat-value">—</strong>
+        <div class="stat-hint"></div>
     </article>
-    <article class="stat-card">
-        <span class="stat-label">En attente</span>
-        <strong class="stat-value" id="statAttente">—</strong>
-        <div class="stat-hint">Enrôlements à valider</div>
+    <article class="stat-card" data-card-slot="3">
+        <span class="stat-label">—</span>
+        <strong class="stat-value">—</strong>
+        <div class="stat-hint"></div>
     </article>
 </section>
 
 <div class="dashboard-grid">
     <section class="panel">
         <div class="panel-header">
-            <h2>Répartition par province</h2>
-            <p>Élèves actifs</p>
+            <h2 id="chartTitle">Répartition</h2>
+            <p id="chartSubtitle">Chargement…</p>
         </div>
         <div class="chart-wrap">
             <canvas id="chartProvinces" width="800" height="320"></canvas>
@@ -42,17 +53,10 @@
 
     <section class="panel">
         <div class="panel-header">
-            <h2>Processus métier</h2>
-            <p>Parcours d'enrôlement</p>
+            <h2 id="workflowTitle">Priorités</h2>
+            <p id="workflowSubtitle">Selon votre rôle</p>
         </div>
-        <ol class="workflow">
-            <li>Créer une école</li>
-            <li>Ajouter un élève</li>
-            <li>Lancer l'enrôlement</li>
-            <li>Capturer la photo biométrique</li>
-            <li>Valider le dossier</li>
-            <li>Générer la carte scolaire</li>
-        </ol>
+        <ol class="workflow" id="dashWorkflow"></ol>
     </section>
 </div>
 {% endblock %}

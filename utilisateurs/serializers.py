@@ -4,6 +4,26 @@ from django.contrib.auth.password_validation import validate_password
 from .models import Utilisateur
 
 
+def _valider_rattachement_scolaire(attrs, instance=None):
+    role = attrs.get('role', getattr(instance, 'role', None))
+    ecole = attrs.get('ecole', getattr(instance, 'ecole', None))
+    classe = attrs.get('classe', getattr(instance, 'classe', None) if instance else None)
+    if role in Utilisateur.ROLES_ECOLE and not ecole:
+        raise serializers.ValidationError({
+            'ecole': "L'école est obligatoire pour un administratif ou un enseignant.",
+        })
+    if role == Utilisateur.Role.ENSEIGNANT:
+        if not classe:
+            raise serializers.ValidationError({
+                'classe': "Sélectionnez la classe dont l'enseignant est titulaire.",
+            })
+        if ecole and classe.ecole_id != ecole.id:
+            raise serializers.ValidationError({
+                'classe': "La classe doit appartenir à l'école sélectionnée.",
+            })
+    return attrs
+
+
 class UtilisateurSerializer(serializers.ModelSerializer):
     role_display = serializers.CharField(source='get_role_display', read_only=True)
     province_administrative_nom = serializers.CharField(
@@ -15,6 +35,15 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     antenne_nom = serializers.CharField(
         source='antenne.nom', read_only=True, allow_null=True, default=None,
     )
+    ecole_nom = serializers.CharField(
+        source='ecole.nom', read_only=True, allow_null=True, default=None,
+    )
+    ecole_code = serializers.CharField(
+        source='ecole.code', read_only=True, allow_null=True, default=None,
+    )
+    classe_nom = serializers.CharField(
+        source='classe.nom', read_only=True, allow_null=True, default=None,
+    )
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -25,9 +54,14 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'province_administrative', 'province_administrative_nom',
             'province_educationnelle', 'province_educationnelle_nom',
             'antenne', 'antenne_nom',
+            'ecole', 'ecole_nom', 'ecole_code',
+            'classe', 'classe_nom',
             'is_active', 'date_creation', 'password',
         ]
-        read_only_fields = ['date_creation']
+        read_only_fields = ['date_creation', 'classe_nom']
+
+    def validate(self, attrs):
+        return _valider_rattachement_scolaire(attrs, self.instance)
 
     def validate_password(self, value):
         if value:
@@ -53,8 +87,11 @@ class UtilisateurCreateSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'role', 'telephone',
             'province_administrative', 'province_educationnelle', 'antenne',
-            'is_active',
+            'ecole', 'classe', 'is_active',
         ]
+
+    def validate(self, attrs):
+        return _valider_rattachement_scolaire(attrs)
 
     def create(self, validated_data):
         password = validated_data.pop('password')

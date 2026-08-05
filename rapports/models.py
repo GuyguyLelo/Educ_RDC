@@ -12,7 +12,6 @@ class Rapport(models.Model):
         ELEVES = 'eleves', 'Rapport élèves'
         ECOLES = 'ecoles', 'Rapport écoles'
         CARTES = 'cartes', 'Rapport cartes'
-        ENROLEMENTS = 'enrolements', 'Rapport enrôlements'
         GLOBAL = 'global', 'Rapport global'
 
     titre = models.CharField(max_length=200, verbose_name='Titre')

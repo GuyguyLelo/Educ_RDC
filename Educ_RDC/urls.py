@@ -14,15 +14,16 @@ from ecoles.views import (
     ProvinceEducationnelleViewSet,
     AntenneViewSet,
     EcoleViewSet,
+    ClasseViewSet,
     PersonnelEcoleViewSet,
 )
 from eleves.views import EleveViewSet
 from biometrie.views import BiometrieViewSet
-from enrolement.views import EnrolementViewSet
 from cartes.views import CarteViewSet
 from paiements.views import PaiementViewSet
 from rapports.views import statistiques_dashboard, export_rapport_pdf
 from administration import views as admin_views
+from administration import import_modeles as admin_import_modeles
 
 # Router API REST
 router = DefaultRouter()
@@ -32,10 +33,10 @@ router.register(r'provinces-educationnelles', ProvinceEducationnelleViewSet, bas
 router.register(r'provinces', ProvinceAdministrativeViewSet, basename='province')  # alias
 router.register(r'antennes', AntenneViewSet, basename='antenne')
 router.register(r'ecoles', EcoleViewSet, basename='ecole')
+router.register(r'classes', ClasseViewSet, basename='classe')
 router.register(r'personnels', PersonnelEcoleViewSet, basename='personnel')
 router.register(r'eleves', EleveViewSet, basename='eleve')
 router.register(r'biometrie', BiometrieViewSet, basename='biometrie')
-router.register(r'enrolements', EnrolementViewSet, basename='enrolement')
 router.register(r'cartes', CarteViewSet, basename='carte')
 router.register(r'paiements', PaiementViewSet, basename='paiement')
 
@@ -50,7 +51,6 @@ urlpatterns = [
     path('ecoles/<int:ecole_id>/', admin_views.vue_ecole_detail, name='ecole_detail'),
     path('eleves/', admin_views.vue_eleves, name='eleves'),
     path('eleves/<int:eleve_id>/', admin_views.vue_eleve_detail, name='eleve_detail'),
-    path('enrolement/', admin_views.vue_enrolement, name='enrolement'),
     path('cartes/', admin_views.vue_cartes, name='cartes'),
     path('rapports/', admin_views.vue_rapports, name='rapports'),
     path('parametres/', admin_views.vue_parametres, name='parametres'),
@@ -69,6 +69,16 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/stats/', statistiques_dashboard, name='api_stats'),
     path('api/rapports/pdf/', export_rapport_pdf, name='api_rapport_pdf'),
+    path(
+        'api/modeles-import/',
+        admin_import_modeles.api_liste_modeles_import,
+        name='api_modeles_import',
+    ),
+    path(
+        'api/modeles-import/<slug:cle>/',
+        admin_import_modeles.api_telecharger_modele_import,
+        name='api_modele_import_detail',
+    ),
 ]
 
 if settings.DEBUG:

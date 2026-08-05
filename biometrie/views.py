@@ -13,10 +13,27 @@ from .serializers import BiometrieSerializer
 
 
 class BiometrieViewSet(viewsets.ModelViewSet):
-    queryset = Biometrie.objects.select_related('eleve').all()
+    queryset = Biometrie.objects.select_related('eleve', 'eleve__ecole').all()
     serializer_class = BiometrieSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     search_fields = ['eleve__matricule', 'eleve__nom']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        if getattr(user, 'est_enseignant', False) and user.ecole_id:
+            qs = qs.filter(eleve__ecole_id=user.ecole_id)
+            if user.classe_id:
+                qs = qs.filter(eleve__classe_id=user.classe_id)
+            else:
+                qs = qs.none()
+        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            qs = qs.filter(eleve__ecole_id=user.ecole_id)
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+            qs = qs.filter(eleve__ecole__province_educationnelle_id=user.province_educationnelle_id)
+        elif user.role == 'agent_antenne' and user.antenne_id:
+            qs = qs.filter(eleve__ecole__antenne_id=user.antenne_id)
+        return qs
 
     def perform_create(self, serializer):
         # Simulation d'empreinte si non fournie

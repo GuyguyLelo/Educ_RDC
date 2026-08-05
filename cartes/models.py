@@ -20,14 +20,6 @@ class Carte(models.Model):
         related_name='cartes',
         verbose_name='Élève',
     )
-    enrolement = models.OneToOneField(
-        'enrolement.Enrolement',
-        on_delete=models.PROTECT,
-        related_name='carte',
-        verbose_name='Enrôlement',
-        null=True,
-        blank=True,
-    )
     numero_carte = models.CharField(
         max_length=40,
         unique=True,

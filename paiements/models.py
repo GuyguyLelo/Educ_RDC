@@ -10,7 +10,6 @@ class Paiement(models.Model):
 
     class TypePaiement(models.TextChoices):
         CARTE = 'carte', 'Frais de carte'
-        ENROLEMENT = 'enrolement', "Frais d'enrôlement"
         AUTRE = 'autre', 'Autre'
 
     class Statut(models.TextChoices):

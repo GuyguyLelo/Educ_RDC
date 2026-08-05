@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Nouvelle structure{% endblock %}
 {% block page_title %}Nouvelle structure organisationnelle{% endblock %}
 {% block page_subtitle %}Formulaire unique avec héritage — PA, PE ou Antenne{% endblock %}
@@ -20,7 +21,7 @@
                 <h2>Créer une structure</h2>
                 <p>Choisissez le type puis renseignez les champs</p>
             </div>
-            <a href="{% url 'parametres' %}" class="btn btn-ghost">← Retour paramètres</a>
+            <a href="{% url 'parametres' %}" class="btn btn-ghost">{% ico 'back' %}Retour paramètres</a>
         </div>
 
         <form method="post" id="formStructure" novalidate class="structure-form">
@@ -109,8 +110,8 @@
             </div>
 
             <div class="modal-actions" style="padding:1rem 0 0; border-top:1px solid var(--line); margin-top:1rem">
-                <a href="{% url 'parametres' %}" class="btn btn-ghost">Annuler</a>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <a href="{% url 'parametres' %}" class="btn btn-ghost">{% ico 'cancel' %}Annuler</a>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </section>

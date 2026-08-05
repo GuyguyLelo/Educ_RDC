@@ -14,7 +14,7 @@ class CarteSerializer(serializers.ModelSerializer):
         model = Carte
         fields = [
             'id', 'eleve', 'eleve_nom', 'eleve_matricule', 'ecole_nom',
-            'enrolement', 'numero_carte', 'date_emission', 'date_expiration',
+            'numero_carte', 'date_emission', 'date_expiration',
             'qr_code', 'qr_code_url', 'statut', 'statut_display',
         ]
         read_only_fields = ['numero_carte', 'date_emission', 'qr_code']

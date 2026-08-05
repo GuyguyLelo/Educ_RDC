@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Cartes scolaires{% endblock %}
 {% block page_title %}Cartes scolaires{% endblock %}
 {% block page_subtitle %}Production, QR code et export PDF{% endblock %}
@@ -12,7 +13,7 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
                 <input type="search" id="searchCartes" placeholder="N° carte, matricule, nom…">
             </div>
-            <button class="btn btn-ghost" id="btnSearchCartes" type="button">Rechercher</button>
+            <button class="btn btn-ghost" id="btnSearchCartes" type="button">{% ico 'search' %}Rechercher</button>
         </div>
     </section>
 
@@ -20,7 +21,7 @@
         <div class="list-panel-header">
             <div>
                 <h2>Cartes produites</h2>
-                <p>Cartes scolaires générées après validation d'enrôlement</p>
+                <p>Cartes scolaires produites pour les élèves identifiés</p>
             </div>
             <span class="list-count" id="countCartes">— résultats</span>
         </div>

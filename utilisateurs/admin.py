@@ -6,15 +6,18 @@ from .models import Utilisateur
 @admin.register(Utilisateur)
 class UtilisateurAdmin(UserAdmin):
     list_display = (
-        'username', 'email', 'role',
+        'username', 'email', 'role', 'ecole', 'classe',
         'province_administrative', 'province_educationnelle', 'antenne', 'is_active',
     )
-    list_filter = ('role', 'is_active', 'province_administrative', 'province_educationnelle')
-    search_fields = ('username', 'first_name', 'last_name', 'email')
+    list_filter = (
+        'role', 'is_active', 'ecole',
+        'province_administrative', 'province_educationnelle',
+    )
+    search_fields = ('username', 'first_name', 'last_name', 'email', 'classe')
     fieldsets = UserAdmin.fieldsets + (
         ('Educ_RDC', {
             'fields': (
-                'role', 'telephone',
+                'role', 'telephone', 'ecole', 'classe',
                 'province_administrative', 'province_educationnelle', 'antenne',
             ),
         }),
@@ -22,7 +25,7 @@ class UtilisateurAdmin(UserAdmin):
     add_fieldsets = UserAdmin.add_fieldsets + (
         ('Educ_RDC', {
             'fields': (
-                'role', 'telephone',
+                'role', 'telephone', 'ecole', 'classe',
                 'province_administrative', 'province_educationnelle', 'antenne',
             ),
         }),

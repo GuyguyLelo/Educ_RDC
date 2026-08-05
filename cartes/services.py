@@ -27,14 +27,10 @@ def generer_qr_code(carte: Carte) -> None:
     carte.qr_code.save(nom_fichier, ContentFile(buffer.read()), save=False)
 
 
-def creer_carte_depuis_enrolement(enrolement) -> Carte:
-    """Crée une carte scolaire à partir d'un enrôlement validé."""
-    if hasattr(enrolement, 'carte') and enrolement.carte:
-        return enrolement.carte
-
+def creer_carte_pour_eleve(eleve) -> Carte:
+    """Crée une carte scolaire pour un élève."""
     carte = Carte(
-        eleve=enrolement.eleve,
-        enrolement=enrolement,
+        eleve=eleve,
         numero_carte=f'RDC-{uuid.uuid4().hex[:12].upper()}',
         date_expiration=timezone.now().date() + timedelta(days=365 * 3),
         statut=Carte.Statut.ACTIVE,
@@ -72,7 +68,7 @@ def generer_pdf_carte(carte: Carte) -> bytes:
         f'Sexe : {carte.eleve.get_sexe_display()}',
         f'Date de naissance : {carte.eleve.date_naissance}',
         f'École : {carte.eleve.ecole.nom}',
-        f'Classe : {carte.eleve.classe}',
+        f'Classe : {carte.eleve.classe.nom if carte.eleve.classe_id else "—"}',
         f'Émission : {carte.date_emission:%d/%m/%Y}',
         f'Expiration : {carte.date_expiration:%d/%m/%Y}',
         f'Statut : {carte.get_statut_display()}',

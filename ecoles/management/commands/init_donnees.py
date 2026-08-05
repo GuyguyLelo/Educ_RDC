@@ -10,6 +10,7 @@ from ecoles.models import (
     ProvinceEducationnelle,
     Antenne,
     Ecole,
+    Classe,
 )
 from eleves.models import Eleve
 
@@ -113,7 +114,12 @@ class Command(BaseCommand):
             ('ELV-2026-002', 'Mwanza', 'Marie', 'Grace', '2015-07-21', 'F', '4ème primaire'),
             ('ELV-2026-003', 'Tshisekedi', 'Jean', 'Luc', '2013-11-05', 'M', '6ème primaire'),
         ]
-        for mat, nom, postnom, prenom, dnaiss, sexe, classe in eleves_demo:
+        for mat, nom, postnom, prenom, dnaiss, sexe, classe_nom in eleves_demo:
+            classe, _ = Classe.objects.get_or_create(
+                ecole=ecole,
+                nom=classe_nom,
+                defaults={'active': True},
+            )
             Eleve.objects.get_or_create(
                 matricule=mat,
                 defaults={

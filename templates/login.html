@@ -1,3 +1,4 @@
+{% load ui_icons %}
 {% load static %}
 <!DOCTYPE html>
 <html lang="fr">
@@ -11,6 +12,7 @@
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
 </head>
 <body class="login-page">
+    {% include 'partials/icon_sprite.html' %}
     <section class="login-hero">
         <div class="login-hero-brand">
             <div class="brand-mark large">RDC</div>
@@ -59,7 +61,7 @@
                     <label for="password">Mot de passe</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="••••••••">
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">Accéder à la plateforme</button>
+                <button type="submit" class="btn btn-primary btn-block">{% ico 'login' %}Accéder à la plateforme</button>
             </form>
 
             <p class="login-hint">Compte démo : <strong>admin</strong> / <strong>admin123</strong></p>

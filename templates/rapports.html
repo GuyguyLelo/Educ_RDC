@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Rapports{% endblock %}
 {% block page_title %}Rapports administratifs{% endblock %}
 {% block page_subtitle %}Statistiques et exports PDF{% endblock %}
@@ -19,8 +20,8 @@
         <strong class="stat-value" id="rCartes">—</strong>
     </article>
     <article class="stat-card">
-        <span class="stat-label">Enrôlements validés</span>
-        <strong class="stat-value" id="rValides">—</strong>
+        <span class="stat-label">Biométries validées</span>
+        <strong class="stat-value" id="rBiometries">—</strong>
     </article>
 </section>
 
@@ -30,8 +31,8 @@
         <p>Documents administratifs</p>
     </div>
     <div class="export-actions">
-        <a href="/api/rapports/pdf/" class="btn btn-primary" target="_blank">Exporter le rapport PDF</a>
-        <button class="btn btn-ghost" id="btnRefreshStats">Actualiser les statistiques</button>
+        <a href="/api/rapports/pdf/" class="btn btn-primary" target="_blank">{% ico 'pdf' %}Exporter le rapport PDF</a>
+        <button class="btn btn-ghost" id="btnRefreshStats">{% ico 'refresh' %}Actualiser les statistiques</button>
     </div>
 </section>
 

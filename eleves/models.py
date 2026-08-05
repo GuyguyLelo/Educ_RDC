@@ -12,6 +12,20 @@ class Eleve(models.Model):
         FEMININ = 'F', 'Féminin'
 
     matricule = models.CharField(max_length=30, unique=True, verbose_name='Matricule')
+    numero_identification = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name='Numéro Identification',
+    )
+    numero_permanent = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name='Numéro Permanent',
+    )
     nom = models.CharField(max_length=100, verbose_name='Nom')
     postnom = models.CharField(max_length=100, blank=True, verbose_name='Postnom')
     prenom = models.CharField(max_length=100, verbose_name='Prénom')
@@ -24,10 +38,69 @@ class Eleve(models.Model):
         related_name='eleves',
         verbose_name='École',
     )
-    classe = models.CharField(max_length=50, verbose_name='Classe')
+    classe = models.ForeignKey(
+        'ecoles.Classe',
+        on_delete=models.PROTECT,
+        related_name='eleves',
+        verbose_name='Classe',
+        null=True,
+        blank=True,
+    )
     adresse = models.CharField(max_length=255, blank=True, verbose_name='Adresse')
+
+    # ——— Père ———
+    nom_pere = models.CharField(max_length=100, blank=True, verbose_name='Nom du père')
+    postnom_pere = models.CharField(max_length=100, blank=True, verbose_name='Postnom du père')
+    prenom_pere = models.CharField(max_length=100, blank=True, verbose_name='Prénom du père')
+    telephone_pere = models.CharField(max_length=20, blank=True, verbose_name='Téléphone père')
+    email_pere = models.EmailField(blank=True, verbose_name='E-mail père')
+    profession_pere = models.CharField(max_length=120, blank=True, verbose_name='Profession père')
+    photo_pere = models.ImageField(
+        upload_to='eleves/parents/',
+        blank=True,
+        null=True,
+        verbose_name='Photo du père',
+    )
+
+    # ——— Mère ———
+    nom_mere = models.CharField(max_length=100, blank=True, verbose_name='Nom de la mère')
+    postnom_mere = models.CharField(max_length=100, blank=True, verbose_name='Postnom de la mère')
+    prenom_mere = models.CharField(max_length=100, blank=True, verbose_name='Prénom de la mère')
+    telephone_mere = models.CharField(max_length=20, blank=True, verbose_name='Téléphone mère')
+    email_mere = models.EmailField(blank=True, verbose_name='E-mail mère')
+    profession_mere = models.CharField(max_length=120, blank=True, verbose_name='Profession mère')
+    photo_mere = models.ImageField(
+        upload_to='eleves/parents/',
+        blank=True,
+        null=True,
+        verbose_name='Photo de la mère',
+    )
+
+    # ——— Tuteur / responsable légal ———
+    class LienTuteur(models.TextChoices):
+        PERE = 'pere', 'Père'
+        MERE = 'mere', 'Mère'
+        TUTEUR = 'tuteur', 'Tuteur légal'
+        ONCLE_TANTE = 'oncle_tante', 'Oncle / Tante'
+        GRAND_PARENT = 'grand_parent', 'Grand-parent'
+        AUTRE = 'autre', 'Autre'
+
     nom_tuteur = models.CharField(max_length=150, blank=True, verbose_name='Nom du tuteur')
     telephone_tuteur = models.CharField(max_length=20, blank=True, verbose_name='Téléphone tuteur')
+    email_tuteur = models.EmailField(blank=True, verbose_name='E-mail tuteur')
+    lien_tuteur = models.CharField(
+        max_length=20,
+        choices=LienTuteur.choices,
+        blank=True,
+        verbose_name='Lien de parenté (tuteur)',
+    )
+    photo_tuteur = models.ImageField(
+        upload_to='eleves/parents/',
+        blank=True,
+        null=True,
+        verbose_name='Photo du tuteur',
+    )
+
     photo = models.ImageField(
         upload_to='eleves/photos/',
         blank=True,
@@ -46,10 +119,28 @@ class Eleve(models.Model):
     def __str__(self):
         return f'{self.nom} {self.postnom} {self.prenom} ({self.matricule})'
 
+    def save(self, *args, **kwargs):
+        if self.numero_identification is not None:
+            self.numero_identification = self.numero_identification.strip() or None
+        if self.numero_permanent is not None:
+            self.numero_permanent = self.numero_permanent.strip() or None
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _joindre_nom(*parties):
+        return ' '.join(p for p in parties if p).strip()
+
     @property
     def nom_complet(self):
-        parties = [self.nom, self.postnom, self.prenom]
-        return ' '.join(p for p in parties if p).strip()
+        return self._joindre_nom(self.nom, self.postnom, self.prenom)
+
+    @property
+    def nom_complet_pere(self):
+        return self._joindre_nom(self.nom_pere, self.postnom_pere, self.prenom_pere)
+
+    @property
+    def nom_complet_mere(self):
+        return self._joindre_nom(self.nom_mere, self.postnom_mere, self.prenom_mere)
 
     def get_photo(self):
         """Retourne la photo élève, sinon celle de la biométrie."""

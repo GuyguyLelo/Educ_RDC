@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Utilisateurs{% endblock %}
 {% block page_title %}Gestion des utilisateurs{% endblock %}
-{% block page_subtitle %}Comptes, rôles et rattachement territorial{% endblock %}
+{% block page_subtitle %}Comptes agents, administratifs d'école et enseignants{% endblock %}
 
 {% block content %}
 <div class="list-shell" id="utilisateursApp">
@@ -20,12 +21,14 @@
                     <option value="agent_national">Agent National</option>
                     <option value="agent_provincial">Agent Provincial</option>
                     <option value="agent_antenne">Agent Antenne</option>
+                    <option value="admin_ecole">Administratif école</option>
+                    <option value="enseignant">Enseignant</option>
                 </select>
             </div>
-            <button class="btn btn-ghost" id="btnSearchUtilisateurs" type="button">Rechercher</button>
+            <button class="btn btn-ghost" id="btnSearchUtilisateurs" type="button">{% ico 'search' %}Rechercher</button>
         </div>
         <div class="toolbar-actions">
-            <button class="btn btn-primary" id="btnNouvelUtilisateur" type="button">+ Nouvel utilisateur</button>
+            <button class="btn btn-primary" id="btnNouvelUtilisateur" type="button">{% ico 'plus' %}Nouvel utilisateur</button>
         </div>
     </section>
 
@@ -101,6 +104,8 @@
                                 <option value="agent_national">Agent National</option>
                                 <option value="agent_provincial">Agent Provincial</option>
                                 <option value="agent_antenne" selected>Agent Antenne</option>
+                                <option value="admin_ecole">Administratif école</option>
+                                <option value="enseignant">Enseignant</option>
                             </select>
                         </div>
                     </div>
@@ -123,7 +128,27 @@
                     </div>
                 </section>
 
-                <section class="form-section">
+                <section class="form-section" id="sectionRattachementEcole">
+                    <h4 class="form-section-title">École (comptes scolaires)</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>École <span class="req" id="reqEcoleUtilisateur" hidden>*</span></label>
+                            <select name="ecole" id="selectUserEcole">
+                                <option value="">— Aucune —</option>
+                            </select>
+                            <span class="form-hint">Obligatoire pour Administratif école et Enseignant.</span>
+                        </div>
+                        <div class="form-group full" id="groupeClasseUtilisateur" hidden>
+                            <label>Classe (titulaire) <span class="req">*</span></label>
+                            <select name="classe" id="selectUserClasse">
+                                <option value="">— Sélectionner une classe —</option>
+                            </select>
+                            <span class="form-hint">Choisissez une classe déjà créée pour l'école. L'enseignant ne verra que ses élèves.</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" id="sectionRattachementTerritorial">
                     <h4 class="form-section-title">Rattachement territorial</h4>
                     <div class="form-grid">
                         <div class="form-group">
@@ -143,14 +168,15 @@
                             <select name="antenne" id="selectUserAntenne">
                                 <option value="">— Aucune —</option>
                             </select>
-                            <span class="form-hint">Selon le rôle : PE pour agent provincial, antenne pour agent antenne.</span>
+                            <span class="form-hint">Agents : PE / antenne. Comptes scolaires : rempli automatiquement via l'école.</span>
                         </div>
                     </div>
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <button type="button" class="btn btn-danger" id="btnSupprimerUtilisateur" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>

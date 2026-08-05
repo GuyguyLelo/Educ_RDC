@@ -6,6 +6,8 @@ from .models import (
     ProvinceEducationnelle,
     Antenne,
     Ecole,
+    Classe,
+    PhotoEcole,
     PersonnelEcole,
 )
 
@@ -92,12 +94,33 @@ class AntenneSerializer(serializers.ModelSerializer):
         ]
 
 
+class PhotoEcoleSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PhotoEcole
+        fields = ['id', 'ecole', 'image', 'image_url', 'legende', 'est_principale', 'date_ajout']
+        read_only_fields = ['date_ajout']
+
+    def get_image_url(self, obj):
+        request = self.context.get('request')
+        if not obj.image:
+            return None
+        url = obj.image.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+
 class EcoleSerializer(serializers.ModelSerializer):
     province_educationnelle_nom = serializers.CharField(
         source='province_educationnelle.nom', read_only=True,
     )
     province_administrative_nom = serializers.CharField(
         source='province_administrative.nom', read_only=True,
+    )
+    province_administrative_id = serializers.IntegerField(
+        source='province_administrative.id', read_only=True,
     )
     antenne_nom = serializers.CharField(source='antenne.nom', read_only=True)
     type_display = serializers.CharField(source='get_type_ecole_display', read_only=True)
@@ -107,18 +130,70 @@ class EcoleSerializer(serializers.ModelSerializer):
     # Alias pour compatibilité frontend
     province_nom = serializers.CharField(source='province_educationnelle.nom', read_only=True)
     province = serializers.IntegerField(source='province_educationnelle_id', read_only=True)
+    photos = PhotoEcoleSerializer(many=True, read_only=True)
+    photo_principale_url = serializers.SerializerMethodField()
+    maps_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Ecole
         fields = [
             'id', 'nom', 'code', 'numero_agrement', 'type_ecole', 'type_display', 'niveau',
-            'niveau_display', 'adresse', 'telephone', 'email', 'directeur',
+            'niveau_display', 'adresse', 'telephone', 'email',
+            'latitude', 'longitude', 'maps_url',
+            'directeur',
             'effectif_mat', 'effectif_prim', 'effectif_sec', 'effectifs',
             'province_educationnelle', 'province_educationnelle_nom',
-            'province_administrative_nom', 'province', 'province_nom',
+            'province_administrative_id', 'province_administrative_nom',
+            'province', 'province_nom',
             'antenne', 'antenne_nom',
+            'photos', 'photo_principale_url',
             'active', 'nombre_eleves', 'nombre_personnels', 'date_creation',
         ]
+
+    def get_photo_principale_url(self, obj):
+        photo = obj.photo_principale
+        if not photo or not photo.image:
+            return None
+        request = self.context.get('request')
+        url = photo.image.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+    def get_maps_url(self, obj):
+        if obj.latitude is None or obj.longitude is None:
+            return None
+        return f'https://www.google.com/maps?q={obj.latitude},{obj.longitude}'
+
+
+class ClasseSerializer(serializers.ModelSerializer):
+    ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
+    ecole_code = serializers.CharField(source='ecole.code', read_only=True)
+    nb_eleves = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Classe
+        fields = [
+            'id', 'ecole', 'ecole_nom', 'ecole_code',
+            'nom', 'code', 'active', 'nb_eleves', 'date_creation',
+        ]
+        read_only_fields = ['date_creation']
+
+    def get_nb_eleves(self, obj):
+        return obj.eleves.filter(actif=True).count()
+
+    def validate(self, attrs):
+        ecole = attrs.get('ecole') or getattr(self.instance, 'ecole', None)
+        nom = (attrs.get('nom') or getattr(self.instance, 'nom', '') or '').strip()
+        if ecole and nom:
+            qs = Classe.objects.filter(ecole=ecole, nom__iexact=nom)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({
+                    'nom': 'Cette classe existe déjà pour cette école.',
+                })
+        return attrs
 
 
 class PersonnelEcoleSerializer(serializers.ModelSerializer):

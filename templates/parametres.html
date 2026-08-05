@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Paramètres{% endblock %}
 {% block page_title %}Paramètres{% endblock %}
 {% block page_subtitle %}Données référentielles — hiérarchie territoriale{% endblock %}
@@ -13,7 +14,7 @@
             → <strong>Antenne</strong>
             (modèle de base commun avec héritage)
         </p>
-        <a href="{% url 'structure_nouvelle' %}" class="btn btn-primary">+ Nouvelle structure</a>
+        <a href="{% url 'structure_nouvelle' %}" class="btn btn-primary">{% ico 'plus' %}Nouvelle structure</a>
     </div>
 
     <nav class="tabs-bar" role="tablist">
@@ -21,6 +22,7 @@
         <button type="button" class="tab-btn" data-tab="pa" role="tab" aria-selected="false">Provinces administratives</button>
         <button type="button" class="tab-btn" data-tab="pe" role="tab" aria-selected="false">Provinces éducationnelles</button>
         <button type="button" class="tab-btn" data-tab="antennes" role="tab" aria-selected="false">Antennes</button>
+        <button type="button" class="tab-btn" data-tab="modeles-import" role="tab" aria-selected="false">Modèles d'import</button>
         <button type="button" class="tab-btn" data-tab="references" role="tab" aria-selected="false">Références système</button>
     </nav>
 
@@ -32,12 +34,12 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
                     <input type="search" id="searchOrganigramme" placeholder="Filtrer PA, PE ou antenne…">
                 </div>
-                <button class="btn btn-ghost" id="btnSearchOrganigramme" type="button">Filtrer</button>
+                <button class="btn btn-ghost" id="btnSearchOrganigramme" type="button">{% ico 'filter' %}Filtrer</button>
             </div>
             <div class="toolbar-actions">
-                <button class="btn btn-ghost" id="btnOrgExpand" type="button">Tout déplier</button>
-                <button class="btn btn-ghost" id="btnOrgCollapse" type="button">Tout replier</button>
-                <button class="btn btn-secondary" id="btnOrgRefresh" type="button">Actualiser</button>
+                <button class="btn btn-ghost" id="btnOrgExpand" type="button">{% ico 'expand' %}Tout déplier</button>
+                <button class="btn btn-ghost" id="btnOrgCollapse" type="button">{% ico 'collapse' %}Tout replier</button>
+                <button class="btn btn-secondary" id="btnOrgRefresh" type="button">{% ico 'refresh' %}Actualiser</button>
             </div>
         </section>
 
@@ -76,10 +78,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
                     <input type="search" id="searchPA" placeholder="Rechercher une province administrative…">
                 </div>
-                <button class="btn btn-ghost" id="btnSearchPA" type="button">Rechercher</button>
+                <button class="btn btn-ghost" id="btnSearchPA" type="button">{% ico 'search' %}Rechercher</button>
             </div>
             <div class="toolbar-actions">
-                <button class="btn btn-primary" id="btnNouveauPA" type="button">+ Nouvelle province admin.</button>
+                <button class="btn btn-primary" id="btnNouveauPA" type="button">{% ico 'plus' %}Nouvelle province admin.</button>
             </div>
         </section>
         <section class="list-panel">
@@ -124,10 +126,10 @@
                         <option value="">Toutes les provinces admin.</option>
                     </select>
                 </div>
-                <button class="btn btn-ghost" id="btnSearchPE" type="button">Filtrer</button>
+                <button class="btn btn-ghost" id="btnSearchPE" type="button">{% ico 'filter' %}Filtrer</button>
             </div>
             <div class="toolbar-actions">
-                <button class="btn btn-primary" id="btnNouveauPE" type="button">+ Nouvelle province éduc.</button>
+                <button class="btn btn-primary" id="btnNouveauPE" type="button">{% ico 'plus' %}Nouvelle province éduc.</button>
             </div>
         </section>
         <section class="list-panel">
@@ -173,10 +175,10 @@
                         <option value="">Toutes les provinces éduc.</option>
                     </select>
                 </div>
-                <button class="btn btn-ghost" id="btnSearchAntennes" type="button">Filtrer</button>
+                <button class="btn btn-ghost" id="btnSearchAntennes" type="button">{% ico 'filter' %}Filtrer</button>
             </div>
             <div class="toolbar-actions">
-                <button class="btn btn-primary" id="btnNouvelleAntenne" type="button">+ Nouvelle antenne</button>
+                <button class="btn btn-primary" id="btnNouvelleAntenne" type="button">{% ico 'plus' %}Nouvelle antenne</button>
             </div>
         </section>
         <section class="list-panel">
@@ -208,6 +210,33 @@
         </section>
     </div>
 
+    <div class="tab-panel" id="tab-modeles-import" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <p class="form-hint" style="margin:0">
+                    Téléchargez les fichiers Excel modèles, remplissez-les, puis importez-les
+                    depuis les écrans Élèves, Écoles ou fiche école (personnel).
+                </p>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-secondary" id="btnRefreshModelesImport" type="button">{% ico 'refresh' %}Actualiser</button>
+            </div>
+        </section>
+
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Modèles de fichiers d'importation</h2>
+                    <p>Génération des gabarits Excel (.xlsx) avec colonnes et exemples</p>
+                </div>
+                <span class="list-count" id="countModelesImport">—</span>
+            </div>
+            <div class="import-modeles-grid" id="grilleModelesImport">
+                <p class="empty-state">Chargement des modèles…</p>
+            </div>
+        </section>
+    </div>
+
     <div class="tab-panel" id="tab-references" role="tabpanel" hidden>
         <section class="detail-card">
             <div class="detail-card-grid refs-grid">
@@ -235,6 +264,8 @@
                         <li><span class="code-chip">agent_national</span> Agent National</li>
                         <li><span class="code-chip">agent_provincial</span> Agent Provincial</li>
                         <li><span class="code-chip">agent_antenne</span> Agent Antenne</li>
+                        <li><span class="code-chip">admin_ecole</span> Administratif école</li>
+                        <li><span class="code-chip">enseignant</span> Enseignant</li>
                     </ul>
                 </div>
                 <div>
@@ -279,8 +310,9 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <button type="button" class="btn btn-danger" id="btnSupprimerPA" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>
@@ -318,8 +350,9 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <button type="button" class="btn btn-danger" id="btnSupprimerPE" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>
@@ -365,8 +398,9 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <button type="button" class="btn btn-danger" id="btnSupprimerAntenne" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>

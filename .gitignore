@@ -10,3 +10,7 @@ staticfiles/
 .DS_Store
 .idea/
 .vscode/
+
+# Word lock files
+~$*
+*.tmp

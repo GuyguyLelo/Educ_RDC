@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Détail école{% endblock %}
 {% block page_title %}Fiche école{% endblock %}
 {% block page_subtitle %}Identification, effectifs, personnel et localisation{% endblock %}
@@ -19,9 +20,13 @@
                     <p class="detail-sub" id="detailEcoleSousTitre">—</p>
                 </div>
                 <div class="detail-hero-actions">
-                    <a href="{% url 'ecoles' %}" class="btn btn-ghost btn-sm">← Liste</a>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnPersonnelEcole">Personnel de l'école</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel">+ Identifier</button>
+                    <a href="{% url 'ecoles' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEcole">{% ico 'edit' %}Modifier</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnPersonnelEcole">{% ico 'users' %}Personnel</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel">{% ico 'user' %}Identifier</button>
+                    {% if request.user.est_admin or request.user.role == 'admin_ecole' or request.user.est_national %}
+                    <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEcole">{% ico 'trash' %}Supprimer</button>
+                    {% endif %}
                 </div>
             </div>
             <div class="detail-chips">
@@ -43,6 +48,7 @@
             <div>
                 <h3 class="detail-card-title">Localisation</h3>
                 <dl class="detail-list compact" id="blocEcoleLocalisation"></dl>
+                <p class="form-hint" id="lienMapsEcole" hidden style="margin-top:0.75rem"></p>
             </div>
             <div>
                 <h3 class="detail-card-title">Contact</h3>
@@ -55,6 +61,79 @@
         </div>
     </section>
 
+    <section class="detail-card" id="sectionPhotosEcole">
+        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
+            <div>
+                <h3 class="detail-card-title" style="margin:0">Photos de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Galerie visuelle de l'établissement</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                <span class="list-count" id="countEcolePhotos">—</span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnAjouterPhotoEcole">{% ico 'photo' %}Ajouter des photos</button>
+            </div>
+        </div>
+        <div class="ecole-photo-grid" id="grillePhotosEcole"></div>
+    </section>
+
+    {% if request.user.est_admin or request.user.role == 'admin_ecole' %}
+    <section class="detail-card" id="sectionClassesEcole">
+        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
+            <div>
+                <h3 class="detail-card-title" style="margin:0">Classes de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Créées par l'administratif — utilisées pour les élèves et les enseignants titulaires</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                <span class="list-count" id="countEcoleClasses">—</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnImporterClasses">{% ico 'import' %}Importer Excel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNouvelleClasse">{% ico 'plus' %}Nouvelle classe</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableEcoleClasses">
+                <thead>
+                    <tr>
+                        <th>Classe</th>
+                        <th>Code</th>
+                        <th>Élèves</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if request.user.est_admin %}
+    <section class="detail-card" id="comptes-ecole">
+        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
+            <div>
+                <h3 class="detail-card-title" style="margin:0">Comptes utilisateurs de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Administratifs et enseignants avec accès plateforme</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                <span class="list-count" id="countEcoleUtilisateurs">—</span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNouveauUserEcole">{% ico 'user' %}Créer un compte</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableEcoleUtilisateurs">
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>Identifiant</th>
+                        <th>Rôle</th>
+                        <th>Téléphone</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="detail-card" id="sectionPersonnelEcole">
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
@@ -63,7 +142,8 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcolePersonnels">—</span>
-                <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">+ Identifier un agent</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnImporterPersonnel">{% ico 'import' %}Importer Excel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">{% ico 'user' %}Identifier un agent</button>
             </div>
         </div>
         <div class="table-responsive">
@@ -185,12 +265,382 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>
 </div>
+
+<div class="modal" id="modalImportPersonnel" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Importer le personnel</h3>
+                <p>Fichier Excel (.xlsx) — mise à jour si matricule ou identité déjà connus</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formImportPersonnel" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Fichier</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label class="file-drop" for="importPersonnelFile">
+                                <input type="file" name="fichier" id="importPersonnelFile" accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+                                <span class="file-drop-title">Déposer un Excel ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">.xlsx (recommandé) ou .csv</span>
+                            </label>
+                        </div>
+                        <div class="form-group full">
+                            <label class="checkbox-inline" for="importPersonnelUpdate">
+                                <input type="checkbox" name="update_existing" id="importPersonnelUpdate" value="1" checked>
+                                <span>Mettre à jour les agents déjà connus (même matricule ou même identité)</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Format attendu</h4>
+                    <p class="form-hint" style="margin:0 0 0.75rem">
+                        Colonnes obligatoires :
+                        <code>nom</code>, <code>prenom</code>, <code>sexe</code> (M/F).
+                        Optionnelles :
+                        <code>matricule</code>, <code>postnom</code>, <code>fonction</code>,
+                        <code>telephone</code>, <code>email</code>,
+                        <code>date_naissance</code>, <code>date_prise_service</code>.
+                    </p>
+                    <a class="btn btn-ghost btn-sm" href="/api/personnels/modele-import/" id="lienModelePersonnel">
+                        {% ico 'download' %}Télécharger le modèle Excel
+                    </a>
+                    <div id="importPersonnelResult" class="form-hint" hidden style="margin-top:0.85rem"></div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitImportPersonnel">{% ico 'upload' %}Lancer l'import</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalEditEcole" hidden>
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Modifier l'école</h3>
+                <p>Mettre à jour l'identification, la localisation et les effectifs</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formEditEcole" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Nom de l'école <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: EP Boyoma">
+                        </div>
+                        <div class="form-group">
+                            <label>Code école <span class="req">*</span></label>
+                            <input name="code" required placeholder="Ex: ECO-KIN-001">
+                        </div>
+                        <div class="form-group">
+                            <label>N° d'agrément</label>
+                            <input name="numero_agrement" placeholder="Ex: AGR/EPSP/2024/001">
+                        </div>
+                        <div class="form-group">
+                            <label>Directeur</label>
+                            <input name="directeur" placeholder="Nom du directeur">
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select name="type_ecole">
+                                <option value="publique">Publique</option>
+                                <option value="privee">Privée</option>
+                                <option value="conventionnee">Conventionnée</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Niveau</label>
+                            <select name="niveau">
+                                <option value="maternelle">Maternelle</option>
+                                <option value="primaire">Primaire</option>
+                                <option value="secondaire">Secondaire</option>
+                                <option value="mixte">Mixte</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-inline" for="editEcoleActive" style="margin-top:1.6rem">
+                                <input type="checkbox" name="active" id="editEcoleActive" value="1" checked>
+                                <span>École active</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Localisation & contact</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Province administrative <span class="req">*</span></label>
+                            <select id="editSelectProvinceAdmin"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Province éducationnelle <span class="req">*</span></label>
+                            <select name="province_educationnelle" id="editSelectProvinceEduc" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Antenne <span class="req">*</span></label>
+                            <select name="antenne" id="editSelectAntenne" required></select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Adresse <span class="req">*</span></label>
+                            <input name="adresse" required placeholder="Avenue, commune, ville">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>Email</label>
+                            <input name="email" type="email" placeholder="ecole@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Latitude GPS</label>
+                            <input name="latitude" type="number" step="any" placeholder="Ex: -4.3250000">
+                        </div>
+                        <div class="form-group">
+                            <label>Longitude GPS</label>
+                            <input name="longitude" type="number" step="any" placeholder="Ex: 15.3222000">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Effectifs déclarés</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>MAT</label>
+                            <input name="effectif_mat" type="number" min="0" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>PRIM</label>
+                            <input name="effectif_prim" type="number" min="0" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>SEC</label>
+                            <input name="effectif_sec" type="number" min="0" step="1" value="0">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer les modifications</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalPhotoEcole" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Ajouter des photos</h3>
+                <p>Une ou plusieurs images de l'établissement</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formPhotoEcole" method="post" enctype="multipart/form-data" action="#" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Fichiers</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label class="file-drop">
+                                <input type="file" name="image" id="ecolePhotoFile" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" multiple>
+                                <span class="file-drop-title">Déposer des photos ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">Sélection multiple — JPG, PNG, WebP…</span>
+                            </label>
+                        </div>
+                        <div class="form-group full">
+                            <label>Légende (optionnelle)</label>
+                            <input name="legende" placeholder="Ex: Entrée principale — appliquée à toutes si plusieurs">
+                        </div>
+                        <div class="form-group full">
+                            <label class="checkbox-inline" for="ecolePhotoPrincipale">
+                                <input type="checkbox" name="est_principale" id="ecolePhotoPrincipale" value="1">
+                                <span>Première image = photo principale</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'plus' %}Ajouter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if request.user.est_admin or request.user.role == 'admin_ecole' %}
+<div class="modal" id="modalImportClasses" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Importer des classes</h3>
+                <p>Fichier Excel / CSV — créez les classes avant d'importer les élèves</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formImportClasses" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Fichier <span class="req">*</span></label>
+                            <div class="file-drop" data-file-drop>
+                                <input type="file" name="fichier" id="importClassesFile" accept=".xlsx,.xlsm,.csv,.txt" required>
+                                <span class="file-drop-title">Déposer un Excel ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">Colonnes : nom, code, ecole_code, active</span>
+                            </div>
+                        </div>
+                        <div class="form-group full">
+                            <label class="checkbox-inline" for="importClassesUpdate">
+                                <input type="checkbox" id="importClassesUpdate" checked>
+                                <span>Mettre à jour les classes déjà connues (même nom)</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Format attendu</h4>
+                    <p class="form-hint" style="margin:0 0 0.75rem">
+                        Obligatoire : <code>nom</code>.
+                        Optionnelles : <code>code</code>, <code>ecole_code</code>, <code>active</code> (oui/non).
+                    </p>
+                    <a class="btn btn-ghost btn-sm" href="/api/classes/modele-import/" id="lienModeleClasses">
+                        {% ico 'download' %}Télécharger le modèle Excel
+                    </a>
+                    <div id="importClassesResult" class="form-hint" hidden style="margin-top:0.85rem"></div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitImportClasses">{% ico 'upload' %}Lancer l'import</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalClasseEcole" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalClasseEcole">Nouvelle classe</h3>
+                <p>Classe disponible pour les élèves et les enseignants titulaires</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formClasseEcole" novalidate>
+            <input type="hidden" id="classeEcoleId" value="">
+            <div class="form-sections">
+                <section class="form-section">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Nom de la classe <span class="req">*</span></label>
+                            <input name="nom" required placeholder="ex: 6ème Primaire A" maxlength="50">
+                        </div>
+                        <div class="form-group">
+                            <label>Code</label>
+                            <input name="code" placeholder="ex: 6P-A" maxlength="20">
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-inline" for="classeEcoleActive" style="margin-top:1.65rem">
+                                <input type="checkbox" name="active" id="classeEcoleActive" value="1" checked>
+                                <span>Classe active</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerClasse" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if request.user.est_admin %}
+<div class="modal" id="modalUserEcole" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Créer un compte école</h3>
+                <p id="sousTitreUserEcole">Administratif ou enseignant rattaché à cette école</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formUserEcole" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Compte</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Rôle <span class="req">*</span></label>
+                            <select name="role" id="selectRoleUserEcole" required>
+                                <option value="admin_ecole">Administratif école</option>
+                                <option value="enseignant" selected>Enseignant</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="groupeClasseUserEcole">
+                            <label>Classe (titulaire) <span class="req">*</span></label>
+                            <select name="classe" id="selectClasseUserEcole">
+                                <option value="">— Sélectionner —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Identifiant <span class="req">*</span></label>
+                            <input name="username" required autocomplete="username" placeholder="ex: ens.ecole01">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom</label>
+                            <input name="first_name" placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Nom</label>
+                            <input name="last_name" placeholder="Nom">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email" type="email" placeholder="nom@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group full">
+                            <label>Mot de passe <span class="req">*</span></label>
+                            <input name="password" type="password" required autocomplete="new-password" placeholder="••••••••">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'user' %}Créer le compte</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

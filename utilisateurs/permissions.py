@@ -34,15 +34,28 @@ class EstNationalOuAdmin(BasePermission):
 
 
 class LecturePourTousEcritureAdmin(BasePermission):
-    """Lecture pour tous les authentifiés, écriture pour admin/national."""
+    """Lecture pour tous les authentifiés, écriture pour rôles opérationnels."""
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
             return True
+        # Enseignant : lecture seule (élèves / cartes de sa classe)
         return request.user.est_national or request.user.role in (
             'agent_provincial',
             'agent_antenne',
             'admin',
+            'admin_ecole',
         )
+
+
+class GestionClassesEcole(BasePermission):
+    """Lecture pour authentifiés ; création/édition des classes par admin ou administratif école."""
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(request.user.est_admin or request.user.role == 'admin_ecole')

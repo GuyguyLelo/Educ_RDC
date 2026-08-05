@@ -1,9 +1,10 @@
 {% extends 'base.html' %}
+{% load ui_icons %}
 {% load static %}
 
 {% block title %}Détail élève{% endblock %}
 {% block page_title %}Fiche élève{% endblock %}
-{% block page_subtitle %}Identité, photo et dossiers associés{% endblock %}
+{% block page_subtitle %}Identité, parents, photo et dossiers associés{% endblock %}
 
 {% block content %}
 <div class="detail-shell" id="eleveDetail" data-eleve-id="{{ eleve_id }}">
@@ -21,9 +22,13 @@
                     <p class="detail-sub" id="detailSousTitre">—</p>
                 </div>
                 <div class="detail-hero-actions">
-                    <a href="{% url 'eleves' %}" class="btn btn-ghost btn-sm">← Liste</a>
-                    <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">Changer photo</label>
+                    <a href="{% url 'eleves' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
+                    <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">{% ico 'photo' %}Changer photo</label>
                     <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
+                    {% if not request.user.est_enseignant %}
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnModifierParents">{% ico 'edit' %}Parents</button>
+                    <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEleve">{% ico 'trash' %}Supprimer</button>
+                    {% endif %}
                 </div>
             </div>
             <div class="detail-chips">
@@ -46,8 +51,8 @@
                 <dl class="detail-list compact" id="blocScolarite"></dl>
             </div>
             <div>
-                <h3 class="detail-card-title">Tuteur</h3>
-                <dl class="detail-list compact" id="blocTuteur"></dl>
+                <h3 class="detail-card-title">Adresse</h3>
+                <dl class="detail-list compact" id="blocAdresse"></dl>
             </div>
             <div>
                 <h3 class="detail-card-title">Biométrie</h3>
@@ -57,41 +62,102 @@
     </section>
 
     <section class="detail-card">
-        <div class="detail-split">
-            <div>
-                <h3 class="detail-card-title">Enrôlements</h3>
-                <div class="table-responsive">
-                    <table class="data-table compact" id="tableDetailEnrolements">
-                        <thead>
-                            <tr>
-                                <th>Année</th>
-                                <th>Statut</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
-            <div>
-                <h3 class="detail-card-title">Cartes scolaires</h3>
-                <div class="table-responsive">
-                    <table class="data-table compact" id="tableDetailCartes">
-                        <thead>
-                            <tr>
-                                <th>N° Carte</th>
-                                <th>Statut</th>
-                                <th>Expiration</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
-            </div>
+        <div class="detail-card-head">
+            <h3 class="detail-card-title" style="margin:0;border:0;padding:0">Parents &amp; contacts</h3>
+        </div>
+        <div class="parent-cards" id="blocParents"></div>
+    </section>
+
+    <section class="detail-card">
+        <h3 class="detail-card-title">Cartes scolaires</h3>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableDetailCartes">
+                <thead>
+                    <tr>
+                        <th>N° Carte</th>
+                        <th>Statut</th>
+                        <th>Expiration</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
         </div>
     </section>
 </div>
+
+{% if not request.user.est_enseignant %}
+<div class="modal" id="modalParentsEleve" hidden>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Parents &amp; contacts</h3>
+                <p>Identité, coordonnées et photos du père, de la mère et du tuteur</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formParentsEleve" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Adresse</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Adresse de résidence</label>
+                            <input name="adresse" placeholder="Avenue, commune, ville">
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Père</h4>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Nom</label><input name="nom_pere"></div>
+                        <div class="form-group"><label>Postnom</label><input name="postnom_pere"></div>
+                        <div class="form-group"><label>Prénom</label><input name="prenom_pere"></div>
+                        <div class="form-group"><label>Téléphone</label><input name="telephone_pere" type="tel"></div>
+                        <div class="form-group"><label>E-mail</label><input name="email_pere" type="email"></div>
+                        <div class="form-group"><label>Profession</label><input name="profession_pere"></div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Mère</h4>
+                    <div class="form-grid">
+                        <div class="form-group"><label>Nom</label><input name="nom_mere"></div>
+                        <div class="form-group"><label>Postnom</label><input name="postnom_mere"></div>
+                        <div class="form-group"><label>Prénom</label><input name="prenom_mere"></div>
+                        <div class="form-group"><label>Téléphone</label><input name="telephone_mere" type="tel"></div>
+                        <div class="form-group"><label>E-mail</label><input name="email_mere" type="email"></div>
+                        <div class="form-group"><label>Profession</label><input name="profession_mere"></div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Tuteur / responsable</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Lien de parenté</label>
+                            <select name="lien_tuteur">
+                                <option value="">— Sélectionner —</option>
+                                <option value="pere">Père</option>
+                                <option value="mere">Mère</option>
+                                <option value="tuteur">Tuteur légal</option>
+                                <option value="oncle_tante">Oncle / Tante</option>
+                                <option value="grand_parent">Grand-parent</option>
+                                <option value="autre">Autre</option>
+                            </select>
+                        </div>
+                        <div class="form-group"><label>Nom complet</label><input name="nom_tuteur"></div>
+                        <div class="form-group"><label>Téléphone</label><input name="telephone_tuteur" type="tel"></div>
+                        <div class="form-group"><label>E-mail</label><input name="email_tuteur" type="email"></div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

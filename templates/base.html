@@ -1,4 +1,4 @@
-{% load static %}
+{% load static ui_icons %}
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -13,6 +13,7 @@
     {% block extra_css %}{% endblock %}
 </head>
 <body>
+    {% include 'partials/icon_sprite.html' %}
     <div class="sidebar-overlay" id="sidebarOverlay" aria-hidden="true"></div>
     <div class="app-shell">
         <aside class="sidebar" id="sidebar" aria-label="Navigation principale">
@@ -24,7 +25,7 @@
                 </div>
             </div>
 
-            <nav class="sidebar-nav">
+            <nav class="sidebar-nav" data-user-role="{{ request.user.role }}">
                 <div class="nav-section">Pilotage</div>
                 <a href="{% url 'dashboard' %}" class="nav-link {% if page == 'dashboard' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
@@ -32,21 +33,20 @@
                 </a>
 
                 <div class="nav-section">Opérations</div>
+                {% if request.user.role == 'admin_ecole' and request.user.ecole_id %}
+                <a href="{% url 'ecole_detail' request.user.ecole_id %}" class="nav-link {% if page == 'ecole_detail' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-6h6v6"/></svg>
+                    Mon école
+                </a>
+                {% elif not request.user.est_enseignant %}
                 <a href="{% url 'ecoles' %}" class="nav-link {% if page == 'ecoles' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V8l7-4 7 4v13M9 21v-6h6v6"/></svg>
                     Écoles
                 </a>
+                {% endif %}
                 <a href="{% url 'eleves' %}" class="nav-link {% if page == 'eleves' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19c.8-3.2 3.2-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2c2.2.3 3.9 1.6 4.5 3.8"/></svg>
                     Élèves
-                </a>
-                <a href="{% url 'enrolement' %}" class="nav-link {% if page == 'enrolement' %}active{% endif %}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><path d="M4 6.5A2.5 2.5 0 016.5 4H14l6 6v7.5a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 17.5v-11z"/></svg>
-                    Enrôlement
-                </a>
-                <a href="{% url 'cartes' %}" class="nav-link {% if page == 'cartes' %}active{% endif %}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2.5" y="5" width="19" height="14" rx="2"/><circle cx="8.5" cy="12" r="2.2"/><path d="M13 10.5h5M13 13.5h3.5"/></svg>
-                    Cartes
                 </a>
 
                 <div class="nav-section">Analyse</div>
@@ -55,15 +55,19 @@
                     Rapports
                 </a>
 
+                {% if request.user.est_national %}
                 <div class="nav-section">Administration</div>
+                {% if request.user.est_admin %}
                 <a href="{% url 'utilisateurs' %}" class="nav-link {% if page == 'utilisateurs' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19c.8-3.2 3.2-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2c2.2.3 3.9 1.6 4.5 3.8"/></svg>
                     Gestion Utilisateurs
                 </a>
+                {% endif %}
                 <a href="{% url 'parametres' %}" class="nav-link {% if page == 'parametres' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.3.6.9 1.1 1.5 1.1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
                     Paramètres
                 </a>
+                {% endif %}
             </nav>
 
             <div class="sidebar-footer">
@@ -74,7 +78,7 @@
                         <span>{{ request.user.get_role_display }}</span>
                     </div>
                 </div>
-                <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">Déconnexion</a>
+                <a href="{% url 'logout' %}" class="btn btn-outline-light btn-sm">{% ico 'logout' %}Déconnexion</a>
             </div>
         </aside>
 

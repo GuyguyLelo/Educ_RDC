@@ -11,10 +11,9 @@ from rest_framework.response import Response
 
 from utilisateurs.permissions import LecturePourTousEcritureAdmin
 from biometrie.models import Biometrie
-from enrolement.models import Enrolement
 from cartes.models import Carte
 from .models import Eleve
-from .import_utils import importer_eleves
+from .import_utils import importer_eleves, reponse_modele_xlsx
 from .serializers import EleveSerializer, EleveDetailSerializer
 
 
@@ -37,15 +36,20 @@ class EleveViewSet(viewsets.ModelViewSet):
         'ecole__province_educationnelle',
         'ecole__province_educationnelle__province_administrative',
         'ecole__antenne',
+        'classe',
         'biometrie',
     ).prefetch_related(
-        Prefetch('enrolements', queryset=Enrolement.objects.order_by('-date_enrolement')),
         Prefetch('cartes', queryset=Carte.objects.order_by('-date_emission')),
     ).all()
     serializer_class = EleveSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
-    search_fields = ['matricule', 'nom', 'postnom', 'prenom', 'classe']
+    search_fields = [
+        'matricule', 'numero_identification', 'numero_permanent',
+        'nom', 'postnom', 'prenom', 'classe__nom',
+        'nom_pere', 'nom_mere', 'nom_tuteur',
+        'telephone_pere', 'telephone_mere', 'telephone_tuteur',
+    ]
     ordering_fields = ['nom', 'date_inscription', 'matricule']
 
     def get_serializer_class(self):
@@ -64,6 +68,8 @@ class EleveViewSet(viewsets.ModelViewSet):
             from django.db.models import Q
             qs = qs.filter(
                 Q(matricule__icontains=q)
+                | Q(numero_identification__icontains=q)
+                | Q(numero_permanent__icontains=q)
                 | Q(nom__icontains=q)
                 | Q(postnom__icontains=q)
                 | Q(prenom__icontains=q)
@@ -72,6 +78,14 @@ class EleveViewSet(viewsets.ModelViewSet):
             qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
             qs = qs.filter(ecole__antenne_id=user.antenne_id)
+        elif getattr(user, 'est_enseignant', False) and user.ecole_id:
+            qs = qs.filter(ecole_id=user.ecole_id)
+            if user.classe_id:
+                qs = qs.filter(classe_id=user.classe_id)
+            else:
+                qs = qs.none()
+        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            qs = qs.filter(ecole_id=user.ecole_id)
         return qs
 
     def perform_create(self, serializer):
@@ -100,24 +114,62 @@ class EleveViewSet(viewsets.ModelViewSet):
         )
 
     @action(
+        detail=True,
+        methods=['post'],
+        url_path='photo-parent',
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def photo_parent(self, request, pk=None):
+        """Upload / remplacement de la photo du père, de la mère ou du tuteur."""
+        eleve = self.get_object()
+        role = (request.data.get('role') or '').strip().lower()
+        field_map = {
+            'pere': 'photo_pere',
+            'mere': 'photo_mere',
+            'tuteur': 'photo_tuteur',
+        }
+        field = field_map.get(role)
+        if not field:
+            return Response(
+                {'detail': 'Rôle invalide. Utilisez pere, mere ou tuteur.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        fichier = request.FILES.get('photo') or request.FILES.get(field)
+        if not fichier:
+            return Response(
+                {'detail': 'Fichier photo requis (champ "photo").'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        setattr(eleve, field, fichier)
+        eleve.save(update_fields=[field, 'date_modification'])
+        return Response(
+            EleveDetailSerializer(eleve, context={'request': request}).data
+        )
+
+    @action(detail=False, methods=['get'], url_path='modele-import')
+    def modele_import(self, request):
+        """Télécharge le modèle Excel d'import des élèves."""
+        return reponse_modele_xlsx()
+
+    @action(
         detail=False,
         methods=['post'],
         url_path='import',
         parser_classes=[MultiPartParser, FormParser],
     )
     def import_fichier(self, request):
-        """Importe des élèves depuis un CSV (champ fichier)."""
+        """Importe des élèves depuis un Excel (.xlsx) ou CSV."""
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(
-                {'detail': 'Fichier CSV requis (champ « fichier »).'},
+                {'detail': 'Fichier Excel ou CSV requis (champ « fichier »).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         name = (fichier.name or '').lower()
-        if name and not name.endswith(('.csv', '.txt', '.tsv')):
+        if name and not name.endswith(('.xlsx', '.xlsm', '.csv', '.txt', '.tsv')):
             return Response(
-                {'detail': 'Format non supporté. Utilisez un fichier .csv ou .txt.'},
+                {'detail': 'Format non supporté. Utilisez un fichier .xlsx ou .csv.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -142,6 +194,7 @@ class EleveViewSet(viewsets.ModelViewSet):
                 fichier.read(),
                 ecole_id=ecole_id,
                 ecole_code=ecole_code,
+                filename=fichier.name or '',
                 update_existing=update_existing,
             )
         except ValueError as exc:

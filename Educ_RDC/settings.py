@@ -29,7 +29,7 @@ INSTALLED_APPS = [
     'ecoles',
     'eleves',
     'biometrie',
-    'enrolement',
+    'enrolement',  # conservé pour l'historique des migrations (modèle retiré)
     'cartes',
     'paiements',
     'rapports',
@@ -134,4 +134,6 @@ CORS_ALLOW_ALL_ORIGINS = True
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:8002',
+    'http://127.0.0.1:8002',
 ]

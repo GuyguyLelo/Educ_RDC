@@ -1,8 +1,9 @@
 {% extends 'base.html' %}
 
+{% load ui_icons %}
 {% block title %}Élèves{% endblock %}
-{% block page_title %}Gestion des élèves{% endblock %}
-{% block page_subtitle %}Enregistrement et recherche des élèves{% endblock %}
+{% block page_title %}{% if request.user.est_enseignant %}Élèves de ma classe{% else %}Gestion des élèves{% endif %}{% endblock %}
+{% block page_subtitle %}{% if request.user.est_enseignant %}Classe {{ request.user.classe_nom|default:"—" }} — consultation{% else %}Enregistrement et recherche des élèves{% endif %}{% endblock %}
 
 {% block content %}
 <div class="list-shell">
@@ -10,23 +11,30 @@
         <div class="search-box">
             <div class="search-field">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-                <input type="search" id="searchEleves" placeholder="Matricule, nom, postnom, prénom…">
+                <input type="search" id="searchEleves" placeholder="Matricule, N° identification, N° permanent, nom…">
             </div>
-            <button class="btn btn-ghost" id="btnSearchEleves" type="button">Rechercher</button>
+            <button class="btn btn-ghost" id="btnSearchEleves" type="button">{% ico 'search' %}Rechercher</button>
         </div>
+        {% if not request.user.est_enseignant %}
         <div class="toolbar-actions">
-            <button class="btn btn-secondary" id="btnImporterEleves" type="button">Importer</button>
-            <button class="btn btn-primary" id="btnNouvelEleve" type="button">+ Nouvel élève</button>
+            <button class="btn btn-secondary" id="btnImporterEleves" type="button">{% ico 'import' %}Importer Excel</button>
+            <button class="btn btn-primary" id="btnNouvelEleve" type="button">{% ico 'plus' %}Nouvel élève</button>
         </div>
+        {% endif %}
     </section>
 
     <section class="list-panel">
         <div class="list-panel-header">
             <div>
-                <h2>Liste des élèves</h2>
-                <p>Dossiers scolaires enregistrés</p>
+                <h2>{% if request.user.est_enseignant %}Élèves — {{ request.user.classe_nom|default:"ma classe" }}{% else %}Liste des élèves{% endif %}</h2>
+                <p>{% if request.user.est_enseignant %}Uniquement les élèves de votre classe titulaire{% else %}Dossiers scolaires enregistrés — import Excel / CSV disponible{% endif %}</p>
             </div>
-            <span class="list-count" id="countEleves">— résultats</span>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                <span class="list-count" id="countEleves">— résultats</span>
+                {% if not request.user.est_enseignant %}
+                <button class="btn btn-secondary btn-sm" id="btnImporterEleves2" type="button">{% ico 'import' %}Importer Excel</button>
+                {% endif %}
+            </div>
         </div>
         <div class="table-responsive">
             <table class="data-table" id="tableEleves">
@@ -34,6 +42,8 @@
                     <tr>
                         <th>Élève</th>
                         <th>Matricule</th>
+                        <th>N° Identification</th>
+                        <th>N° Permanent</th>
                         <th>Sexe</th>
                         <th>Naissance</th>
                         <th>École / Classe</th>
@@ -68,6 +78,14 @@
                         <div class="form-group">
                             <label>Matricule <span class="req">*</span></label>
                             <input name="matricule" required placeholder="ELV-2026-000">
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Identification</label>
+                            <input name="numero_identification" placeholder="Ex: ID-KIN-001">
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Permanent</label>
+                            <input name="numero_permanent" placeholder="Ex: NP-2026-0001">
                         </div>
                         <div class="form-group">
                             <label>Sexe <span class="req">*</span></label>
@@ -122,32 +140,141 @@
                         </div>
                         <div class="form-group">
                             <label>Classe <span class="req">*</span></label>
-                            <input name="classe" required placeholder="Ex: 5ème primaire">
+                            <select name="classe" id="selectClasseEleve" required>
+                                <option value="">— Sélectionner une classe —</option>
+                            </select>
+                            <span class="form-hint">Les classes sont créées par l'administratif de l'école.</span>
                         </div>
                     </div>
                 </section>
 
                 <section class="form-section">
-                    <h4 class="form-section-title">Tuteur & contact</h4>
+                    <h4 class="form-section-title">Adresse</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Adresse de résidence</label>
+                            <input name="adresse" placeholder="Avenue, commune, ville">
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Père</h4>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Nom du tuteur</label>
-                            <input name="nom_tuteur" placeholder="Nom complet du tuteur">
+                            <label>Nom</label>
+                            <input name="nom_pere" placeholder="Nom">
                         </div>
                         <div class="form-group">
-                            <label>Téléphone tuteur</label>
-                            <input name="telephone_tuteur" type="tel" placeholder="+243 …">
+                            <label>Postnom</label>
+                            <input name="postnom_pere" placeholder="Postnom">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom</label>
+                            <input name="prenom_pere" placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_pere" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_pere" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Profession</label>
+                            <input name="profession_pere" placeholder="Profession">
                         </div>
                         <div class="form-group full">
-                            <label>Adresse</label>
-                            <input name="adresse" placeholder="Adresse de résidence">
+                            <label>Photo du père</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_pere" id="elevePhotoPere" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">JPG ou PNG</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Mère</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Nom</label>
+                            <input name="nom_mere" placeholder="Nom">
+                        </div>
+                        <div class="form-group">
+                            <label>Postnom</label>
+                            <input name="postnom_mere" placeholder="Postnom">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom</label>
+                            <input name="prenom_mere" placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_mere" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_mere" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Profession</label>
+                            <input name="profession_mere" placeholder="Profession">
+                        </div>
+                        <div class="form-group full">
+                            <label>Photo de la mère</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_mere" id="elevePhotoMere" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">JPG ou PNG</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Tuteur / responsable</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Lien de parenté</label>
+                            <select name="lien_tuteur">
+                                <option value="">— Sélectionner —</option>
+                                <option value="pere">Père</option>
+                                <option value="mere">Mère</option>
+                                <option value="tuteur">Tuteur légal</option>
+                                <option value="oncle_tante">Oncle / Tante</option>
+                                <option value="grand_parent">Grand-parent</option>
+                                <option value="autre">Autre</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom complet</label>
+                            <input name="nom_tuteur" placeholder="Nom complet du responsable">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_tuteur" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_tuteur" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group full">
+                            <label>Photo du tuteur</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_tuteur" id="elevePhotoTuteur" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">JPG ou PNG</span>
+                            </div>
                         </div>
                     </div>
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary">Enregistrer l'élève</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer l'élève</button>
             </div>
         </form>
     </div>
@@ -157,7 +284,7 @@
         <div class="modal-header">
             <div class="modal-header-text">
                 <h3>Importer des élèves</h3>
-                <p>Fichier CSV — mise à jour si le matricule existe déjà</p>
+                <p>Fichier Excel (.xlsx) ou CSV — mise à jour si le matricule existe déjà</p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
@@ -168,9 +295,9 @@
                     <div class="form-grid">
                         <div class="form-group full">
                             <label class="file-drop" for="importElevesFile">
-                                <input type="file" name="fichier" id="importElevesFile" accept=".csv,.txt,.tsv,text/csv,text/plain" required>
-                                <span class="file-drop-title">Déposer un CSV ou cliquer pour parcourir</span>
-                                <span class="file-drop-sub">.csv / .txt — séparateur ; ou ,</span>
+                                <input type="file" name="fichier" id="importElevesFile" accept=".xlsx,.xlsm,.csv,.txt,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/plain" required>
+                                <span class="file-drop-title">Déposer un Excel ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">.xlsx (recommandé) ou .csv</span>
                             </label>
                         </div>
                         <div class="form-group full">
@@ -193,20 +320,27 @@
                     <p class="form-hint" style="margin:0 0 0.75rem">
                         Colonnes obligatoires :
                         <code>matricule</code>, <code>nom</code>, <code>prenom</code>,
-                        <code>date_naissance</code>, <code>sexe</code> (M/F), <code>classe</code>.
-                        Optionnelles : <code>postnom</code>, <code>ecole_code</code>,
-                        <code>lieu_naissance</code>, <code>adresse</code>,
-                        <code>nom_tuteur</code>, <code>telephone_tuteur</code>.
+                        <code>date_naissance</code>, <code>sexe</code> (M/F),
+                        <code>classe</code> (nom exact d'une classe déjà créée).
+                        Optionnelles : <code>numero_identification</code>,
+                        <code>numero_permanent</code>, <code>postnom</code>,
+                        <code>ecole_code</code>, <code>lieu_naissance</code>,
+                        <code>adresse</code>, identité/contacts père &amp; mère
+                        (<code>nom_pere</code>, <code>telephone_pere</code>…),
+                        tuteur (<code>lien_tuteur</code>, <code>nom_tuteur</code>,
+                        <code>telephone_tuteur</code>, <code>email_tuteur</code>).
+                        Ordre recommandé : importer d'abord les
+                        <strong>classes</strong>, puis les élèves.
                     </p>
-                    <a class="btn btn-ghost btn-sm" href="/static/modele_import_eleves.csv" download>
-                        Télécharger le modèle CSV
+                    <a class="btn btn-ghost btn-sm" href="/api/eleves/modele-import/">
+                        {% ico 'download' %}Télécharger le modèle Excel
                     </a>
                     <div id="importElevesResult" class="form-hint" hidden style="margin-top:0.85rem"></div>
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>Annuler</button>
-                <button type="submit" class="btn btn-primary" id="btnSubmitImportEleves">Lancer l'import</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitImportEleves">{% ico 'upload' %}Lancer l'import</button>
             </div>
         </form>
     </div>
