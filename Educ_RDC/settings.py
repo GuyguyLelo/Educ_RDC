@@ -4,14 +4,22 @@ Plateforme nationale d'identification scolaire (RDC)
 """
 from pathlib import Path
 from datetime import timedelta
+from decouple import config
+
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+#SECRET_KEY = config("SECRET_KEY", default = 'django-insecure-educ-rdc-dev-key-change-in-production-2024' )
+
 SECRET_KEY = 'django-insecure-educ-rdc-dev-key-change-in-production-2024'
 
-DEBUG = True
+#DEBUG = True
+DEBUG = config('DEBUG', default='True', cast = bool)
 
-ALLOWED_HOSTS = ['*']
+#ALLOWED_HOSTS = ['*']
+
+ALLOWED_HOST = config("ALLOWED_HOST", default='localhost,127.0.0.1')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -67,14 +75,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Educ_RDC.wsgi.application'
 
-DATABASES = {
+DATABASES =  {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'Educ_RDC',
-        'USER': 'postgres',
-        'PASSWORD': '123456',
-        'HOST': 'localhost',
-        'PORT': '5432',
+        'NAME': config("DB_NAME"),
+        'USER': config("DB_USER"),
+        'PASSWORD': config("DB_PASSWORD"),
+        'HOSTS': config("DB_HOSTS"),
+        'PORT': config("DB_PORT"),
     }
 }
 
