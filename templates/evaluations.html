@@ -1,0 +1,219 @@
+{% extends 'base.html' %}
+{% load ui_icons %}
+
+{% block title %}Évaluation{% endblock %}
+{% block page_title %}Évaluation scolaire{% endblock %}
+{% block page_subtitle %}Saisie des notes (titulaire) et bulletins modèle RDC / IGE{% endblock %}
+
+{% block content %}
+<div
+    id="evaluationsPage"
+    data-enseignant="{{ est_enseignant|yesno:'1,0' }}"
+    data-classe-id="{{ classe_id }}"
+    data-ecole-id="{{ ecole_id }}"
+    data-peut-configurer="{{ peut_configurer|yesno:'1,0' }}"
+>
+    <section class="panel">
+        <div class="panel-header">
+            <div>
+                <h2>Paramètres de session</h2>
+                <p>Année scolaire, classe et matière pour la saisie</p>
+            </div>
+        </div>
+        <div class="form-grid" style="padding:0 0 0.5rem">
+            <div class="form-group">
+                <label>Année scolaire</label>
+                <select id="selectAnneeEval"></select>
+            </div>
+            <div class="form-group">
+                <label>Classe</label>
+                <select id="selectClasseEval" {% if est_enseignant %}disabled{% endif %}></select>
+            </div>
+            <div class="form-group">
+                <label>Matière (saisie)</label>
+                <select id="selectProgrammeEval"></select>
+            </div>
+            {% if peut_configurer %}
+            <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnNouvelleAnnee">{% ico 'plus' %}Année</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnCatalogueMatieres">{% ico 'download' %}Catalogue matières</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnAppliquerProgramme">{% ico 'save' %}Programme classe</button>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <div class="tabs-bar" style="margin:1rem 0 0.75rem">
+        <button type="button" class="tab-btn active" data-eval-tab="saisie">Saisie des notes</button>
+        <button type="button" class="tab-btn" data-eval-tab="bulletins">Bulletins</button>
+        {% if peut_configurer %}
+        <button type="button" class="tab-btn" data-eval-tab="matieres">Matières</button>
+        {% endif %}
+    </div>
+
+    <section class="panel" id="tabSaisieEval">
+        <div class="panel-header">
+            <div>
+                <h2>Grille de notes</h2>
+                <p id="hintGrilleEval">Sélectionnez une année, une classe et une matière</p>
+            </div>
+            <div class="panel-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btnEnregistrerNotes" disabled>
+                    {% ico 'save' %}Enregistrer
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableNotesEval">
+                <thead></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="panel" id="tabBulletinsEval" hidden>
+        <div class="panel-header">
+            <div>
+                <h2>Bulletins scolaires</h2>
+                <p>Impression PDF conforme au modèle officiel RDC (périodes / examens / totaux / %)</p>
+            </div>
+            <div class="panel-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnClasserBulletins">
+                    {% ico 'refresh' %}Actualiser classement
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableBulletinsEval">
+                <thead>
+                    <tr>
+                        <th>Élève</th>
+                        <th>Matricule</th>
+                        <th>Total</th>
+                        <th>%</th>
+                        <th>Place</th>
+                        <th>Décision</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if peut_configurer %}
+    <section class="panel" id="tabMatieresEval" hidden>
+        <div class="panel-header">
+            <div>
+                <h2>Matières de l'école</h2>
+                <p>Maximum = note maximale d'une période de travaux journaliers</p>
+            </div>
+            <div class="panel-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btnNouvelleMatiere">{% ico 'plus' %}Matière</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableMatieresEval">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Code</th>
+                        <th>Maximum TJ</th>
+                        <th>Ordre</th>
+                        <th>Statut</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+
+<div class="modal" id="modalAnneeEval" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Nouvelle année scolaire</h3>
+                <p>Les périodes RDC (4 P + 2 examens ou 3 trimestres) seront créées automatiquement</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formAnneeEval" novalidate>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Libellé <span class="req">*</span></label>
+                    <input name="libelle" required placeholder="2025-2026">
+                </div>
+                <div class="form-group">
+                    <label>Régime</label>
+                    <select name="regime">
+                        <option value="secondaire">Secondaire (4 périodes + 2 examens)</option>
+                        <option value="primaire">Primaire (3 trimestres)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Début <span class="req">*</span></label>
+                    <input type="date" name="date_debut" required>
+                </div>
+                <div class="form-group">
+                    <label>Fin <span class="req">*</span></label>
+                    <input type="date" name="date_fin" required>
+                </div>
+                <div class="form-group full">
+                    <label class="checkbox-inline">
+                        <input type="checkbox" name="active" checked>
+                        <span>Définir comme année active</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Créer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalMatiereEval" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Nouvelle matière</h3>
+                <p>Branche du bulletin (maximum d'une période TJ)</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formMatiereEval" novalidate>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nom <span class="req">*</span></label>
+                    <input name="nom" required placeholder="Français">
+                </div>
+                <div class="form-group">
+                    <label>Code</label>
+                    <input name="code" placeholder="FR">
+                </div>
+                <div class="form-group">
+                    <label>Maximum TJ <span class="req">*</span></label>
+                    <input name="maximum" type="number" step="0.5" min="0.5" value="10" required>
+                </div>
+                <div class="form-group">
+                    <label>Ordre</label>
+                    <input name="ordre" type="number" min="1" value="1">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initEvaluations());
+</script>
+{% endblock %}

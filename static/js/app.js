@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Educ_RDC — Frontend JavaScript (Fetch API)
  * Gestion formulaires, validation, notifications, pagination
  */
@@ -2997,6 +2997,336 @@ const EducRDC = (() => {
         });
     }
 
+    /* ---------- Évaluations / bulletins RDC ---------- */
+    function initEvaluations() {
+        const root = document.getElementById('evaluationsPage');
+        if (!root) return;
+        bindModalClosers();
+
+        const estEnseignant = root.dataset.enseignant === '1';
+        const classeFixe = root.dataset.classeId || '';
+        const ecoleId = root.dataset.ecoleId || '';
+        const peutConfigurer = root.dataset.peutConfigurer === '1';
+        let cacheGrille = null;
+
+        document.querySelectorAll('[data-eval-tab]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-eval-tab]').forEach((b) => b.classList.remove('active'));
+                btn.classList.add('active');
+                const tab = btn.dataset.evalTab;
+                document.getElementById('tabSaisieEval').hidden = tab !== 'saisie';
+                document.getElementById('tabBulletinsEval').hidden = tab !== 'bulletins';
+                const tabMat = document.getElementById('tabMatieresEval');
+                if (tabMat) tabMat.hidden = tab !== 'matieres';
+                if (tab === 'bulletins') chargerBulletinsEval().catch((e) => toast(e.message, 'error'));
+                if (tab === 'matieres') chargerMatieresEval().catch((e) => toast(e.message, 'error'));
+            });
+        });
+
+        async function chargerAnnees() {
+            const data = await api(`${API}/annees-scolaires/?page_size=50`);
+            const rows = data.results || data;
+            const sel = document.getElementById('selectAnneeEval');
+            sel.innerHTML = rows.length
+                ? rows.map((a) => `<option value="${a.id}" ${a.active ? 'selected' : ''}>${escapeHtml(a.libelle)}${a.active ? ' (active)' : ''}</option>`).join('')
+                : '<option value="">— Aucune année —</option>';
+        }
+
+        async function chargerClasses() {
+            const sel = document.getElementById('selectClasseEval');
+            let url = `${API}/classes/?actif=1&page_size=200`;
+            if (ecoleId) url += `&ecole=${ecoleId}`;
+            const data = await api(url);
+            const rows = data.results || data;
+            sel.innerHTML = rows.map((c) => `<option value="${c.id}">${escapeHtml(c.nom)}</option>`).join('')
+                || '<option value="">— Aucune classe —</option>';
+            if (classeFixe) {
+                sel.value = String(classeFixe);
+                sel.disabled = true;
+            }
+        }
+
+        async function chargerProgrammes() {
+            const annee = document.getElementById('selectAnneeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            const sel = document.getElementById('selectProgrammeEval');
+            if (!annee || !classe) {
+                sel.innerHTML = '<option value="">— Sélectionner —</option>';
+                return;
+            }
+            const data = await api(`${API}/programmes-classe/?annee=${annee}&classe=${classe}&page_size=200`);
+            const rows = data.results || data;
+            sel.innerHTML = rows.length
+                ? rows.map((p) => `<option value="${p.id}">${escapeHtml(p.matiere_nom)} (max ${p.maximum_effectif})</option>`).join('')
+                : '<option value="">— Aucune matière au programme —</option>';
+        }
+
+        async function chargerGrille() {
+            const programme = document.getElementById('selectProgrammeEval')?.value;
+            const thead = document.querySelector('#tableNotesEval thead');
+            const tbody = document.querySelector('#tableNotesEval tbody');
+            const btn = document.getElementById('btnEnregistrerNotes');
+            const hint = document.getElementById('hintGrilleEval');
+            if (!programme) {
+                thead.innerHTML = '';
+                tbody.innerHTML = emptyRow(3, 'Aucune matière', 'Appliquez un programme de classe ou sélectionnez une matière.');
+                if (btn) btn.disabled = true;
+                return;
+            }
+            const data = await api(`${API}/notes/grille/?programme=${programme}`);
+            cacheGrille = data;
+            const periodes = data.periodes || [];
+            hint.textContent = `${data.programme.matiere_nom} — ${data.eleves.length} élève(s)`;
+            thead.innerHTML = `<tr>
+                <th>Élève</th>
+                <th>Matricule</th>
+                ${periodes.map((p) => `<th>${escapeHtml(p.libelle)}<br><span class="form-hint">/${escapeHtml(data.maxima[p.id] || '')}</span></th>`).join('')}
+            </tr>`;
+            tbody.innerHTML = data.eleves.length ? data.eleves.map((el) => `
+                <tr data-eleve="${el.eleve_id}">
+                    <td data-label="Élève"><strong>${escapeHtml(el.eleve_nom)}</strong></td>
+                    <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule)}</span></td>
+                    ${periodes.map((p) => `
+                        <td data-label="${escapeHtml(p.libelle)}">
+                            <input type="number" class="input-note" min="0" step="0.5"
+                                max="${escapeHtml(data.maxima[p.id] || '')}"
+                                data-periode="${p.id}"
+                                value="${escapeHtml(el.notes[p.id] || '')}"
+                                style="width:4.5rem">
+                        </td>
+                    `).join('')}
+                </tr>
+            `).join('') : emptyRow(2 + periodes.length, 'Aucun élève', 'Aucun élève actif dans cette classe.');
+            if (btn) btn.disabled = !data.eleves.length;
+        }
+
+        async function chargerBulletinsEval() {
+            const annee = document.getElementById('selectAnneeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            const tbody = document.querySelector('#tableBulletinsEval tbody');
+            if (!annee || !classe) {
+                tbody.innerHTML = emptyRow(7, 'Sélection requise', 'Choisissez une année et une classe.');
+                return;
+            }
+            const data = await api(`${API}/bulletins/?annee=${annee}&classe=${classe}`);
+            const rows = data.results || [];
+            tbody.innerHTML = rows.length ? rows.map((b) => `
+                <tr>
+                    <td data-label="Élève"><strong>${escapeHtml(b.eleve_nom)}</strong></td>
+                    <td data-label="Matricule"><span class="code-chip">${escapeHtml(b.matricule)}</span></td>
+                    <td data-label="Total">${b.total_obtenu != null ? `${escapeHtml(String(b.total_obtenu))} / ${escapeHtml(String(b.total_max))}` : '—'}</td>
+                    <td data-label="%">${b.pourcentage != null ? `${escapeHtml(String(b.pourcentage))} %` : '—'}</td>
+                    <td data-label="Place">${b.place != null ? escapeHtml(String(b.place)) : '—'}</td>
+                    <td data-label="Décision"><span class="badge badge-info">${escapeHtml(b.decision_display || b.decision)}</span></td>
+                    <td data-label="Actions">
+                        <a class="btn btn-primary btn-sm" target="_blank"
+                           href="${API}/bulletins/${b.eleve_id}/pdf/?annee=${annee}">${ico('pdf')}Bulletin PDF</a>
+                    </td>
+                </tr>
+            `).join('') : emptyRow(7, 'Aucun bulletin', 'Saisissez des notes puis actualisez le classement.');
+        }
+
+        async function chargerMatieresEval() {
+            if (!peutConfigurer) return;
+            const tbody = document.querySelector('#tableMatieresEval tbody');
+            let url = `${API}/matieres/?page_size=200`;
+            if (ecoleId) url += `&ecole=${ecoleId}`;
+            const data = await api(url);
+            const rows = data.results || data;
+            tbody.innerHTML = rows.length ? rows.map((m) => `
+                <tr>
+                    <td data-label="Nom"><strong>${escapeHtml(m.nom)}</strong></td>
+                    <td data-label="Code"><span class="code-chip">${escapeHtml(m.code || '—')}</span></td>
+                    <td data-label="Maximum">${escapeHtml(String(m.maximum))}</td>
+                    <td data-label="Ordre">${escapeHtml(String(m.ordre))}</td>
+                    <td data-label="Statut"><span class="badge ${m.active ? 'badge-success' : 'badge-danger'}">${m.active ? 'Active' : 'Inactive'}</span></td>
+                </tr>
+            `).join('') : emptyRow(5, 'Aucune matière', 'Chargez le catalogue ou créez une matière.');
+        }
+
+        document.getElementById('selectAnneeEval')?.addEventListener('change', async () => {
+            await chargerProgrammes();
+            await chargerGrille().catch((e) => toast(e.message, 'error'));
+        });
+        document.getElementById('selectClasseEval')?.addEventListener('change', async () => {
+            await chargerProgrammes();
+            await chargerGrille().catch((e) => toast(e.message, 'error'));
+        });
+        document.getElementById('selectProgrammeEval')?.addEventListener('change', () => {
+            chargerGrille().catch((e) => toast(e.message, 'error'));
+        });
+
+        document.getElementById('btnEnregistrerNotes')?.addEventListener('click', async () => {
+            const programme = document.getElementById('selectProgrammeEval')?.value;
+            if (!programme || !cacheGrille) return;
+            const notes = [];
+            document.querySelectorAll('#tableNotesEval tbody tr[data-eleve]').forEach((tr) => {
+                const eleve = Number(tr.dataset.eleve);
+                tr.querySelectorAll('.input-note').forEach((input) => {
+                    const raw = (input.value || '').trim();
+                    notes.push({
+                        eleve,
+                        periode: Number(input.dataset.periode),
+                        valeur: raw === '' ? null : Number(raw),
+                    });
+                });
+            });
+            try {
+                const data = await api(`${API}/notes/saisie-bulk/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ programme: Number(programme), notes }),
+                });
+                toast(data.detail || 'Notes enregistrées.', data.errors_count ? 'warning' : 'success');
+                await chargerGrille();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnClasserBulletins')?.addEventListener('click', async () => {
+            const annee = document.getElementById('selectAnneeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            if (!annee || !classe) return;
+            try {
+                await api(`${API}/bulletins/classer/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ annee: Number(annee), classe: Number(classe) }),
+                });
+                toast('Classement actualisé.', 'success');
+                await chargerBulletinsEval();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnNouvelleAnnee')?.addEventListener('click', () => openModal('modalAnneeEval'));
+        document.getElementById('formAnneeEval')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            const payload = {
+                libelle: form.libelle.value.trim(),
+                regime: form.regime.value,
+                date_debut: form.date_debut.value,
+                date_fin: form.date_fin.value,
+                active: form.active.checked,
+            };
+            try {
+                await api(`${API}/annees-scolaires/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast('Année scolaire créée avec ses périodes.', 'success');
+                closeModal('modalAnneeEval');
+                form.reset();
+                await chargerAnnees();
+                await chargerProgrammes();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnCatalogueMatieres')?.addEventListener('click', async () => {
+            const anneeSel = document.getElementById('selectAnneeEval');
+            const regimeOpt = anneeSel?.selectedOptions?.[0];
+            // régime récupéré via API si besoin — défaut secondaire
+            let regime = 'secondaire';
+            try {
+                const annees = await api(`${API}/annees-scolaires/?page_size=50`);
+                const rows = annees.results || annees;
+                const cur = rows.find((a) => String(a.id) === String(anneeSel.value));
+                if (cur?.regime) regime = cur.regime;
+            } catch (_) { /* ignore */ }
+            try {
+                const data = await api(`${API}/matieres/charger-catalogue/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ ecole: ecoleId || undefined, regime }),
+                });
+                toast(data.detail || 'Catalogue chargé.', 'success');
+                await chargerMatieresEval();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnAppliquerProgramme')?.addEventListener('click', async () => {
+            const annee = document.getElementById('selectAnneeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            if (!annee || !classe) {
+                toast('Choisissez une année et une classe.', 'warning');
+                return;
+            }
+            try {
+                const data = await api(`${API}/programmes-classe/appliquer-matieres-ecole/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ annee: Number(annee), classe: Number(classe) }),
+                });
+                toast(data.detail || 'Programme appliqué.', 'success');
+                await chargerProgrammes();
+                await chargerGrille();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnNouvelleMatiere')?.addEventListener('click', () => openModal('modalMatiereEval'));
+        document.getElementById('formMatiereEval')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            if (!ecoleId && !estEnseignant) {
+                // Admin national : besoin d'une école — prendre celle de la classe
+                const classeId = document.getElementById('selectClasseEval')?.value;
+                if (!classeId) {
+                    toast('Sélectionnez d\'abord une classe.', 'warning');
+                    return;
+                }
+            }
+            let ecole = ecoleId;
+            if (!ecole) {
+                try {
+                    const classeId = document.getElementById('selectClasseEval')?.value;
+                    const classes = await api(`${API}/classes/${classeId}/`);
+                    ecole = classes.ecole;
+                } catch (err) {
+                    toast(err.message, 'error');
+                    return;
+                }
+            }
+            const payload = {
+                ecole: Number(ecole),
+                nom: form.nom.value.trim(),
+                code: form.code.value.trim(),
+                maximum: Number(form.maximum.value),
+                ordre: Number(form.ordre.value || 1),
+                active: true,
+            };
+            try {
+                await api(`${API}/matieres/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast('Matière créée.', 'success');
+                closeModal('modalMatiereEval');
+                form.reset();
+                await chargerMatieresEval();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        (async () => {
+            try {
+                await chargerAnnees();
+                await chargerClasses();
+                await chargerProgrammes();
+                await chargerGrille();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        })();
+    }
+
     return {
         chargerDashboard,
         initEcoles,
@@ -3007,6 +3337,7 @@ const EducRDC = (() => {
         initRapports,
         initParametres,
         initUtilisateurs,
+        initEvaluations,
         toast,
         api,
     };

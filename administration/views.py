@@ -99,6 +99,23 @@ def vue_eleves(request):
 
 
 @login_required
+def vue_evaluations(request):
+    """Saisie des notes et impression des bulletins (modèle RDC)."""
+    user = request.user
+    # Module école : enseignant, admin_ecole, admin / agents
+    return render(request, 'evaluations.html', {
+        'page': 'evaluations',
+        'est_enseignant': getattr(user, 'est_enseignant', False),
+        'classe_id': getattr(user, 'classe_id', None) or '',
+        'ecole_id': getattr(user, 'ecole_id', None) or '',
+        'peut_configurer': bool(
+            getattr(user, 'est_admin', False)
+            or user.role == 'admin_ecole'
+        ),
+    })
+
+
+@login_required
 def vue_eleve_detail(request, eleve_id):
     """Page détail d'un élève (photo, identité, scolarité, cartes)."""
     eleve = get_object_or_404(

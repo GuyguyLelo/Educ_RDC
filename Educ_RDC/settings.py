@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'cartes',
     'paiements',
     'rapports',
+    'evaluations',
     'administration',
 ]
 

@@ -22,6 +22,14 @@ from biometrie.views import BiometrieViewSet
 from cartes.views import CarteViewSet
 from paiements.views import PaiementViewSet
 from rapports.views import statistiques_dashboard, export_rapport_pdf
+from evaluations.views import (
+    AnneeScolaireViewSet,
+    BulletinViewSet,
+    MatiereViewSet,
+    NoteViewSet,
+    PeriodeEvaluationViewSet,
+    ProgrammeClasseViewSet,
+)
 from administration import views as admin_views
 from administration import import_modeles as admin_import_modeles
 
@@ -39,6 +47,12 @@ router.register(r'eleves', EleveViewSet, basename='eleve')
 router.register(r'biometrie', BiometrieViewSet, basename='biometrie')
 router.register(r'cartes', CarteViewSet, basename='carte')
 router.register(r'paiements', PaiementViewSet, basename='paiement')
+router.register(r'annees-scolaires', AnneeScolaireViewSet, basename='annee-scolaire')
+router.register(r'periodes-evaluation', PeriodeEvaluationViewSet, basename='periode-evaluation')
+router.register(r'matieres', MatiereViewSet, basename='matiere')
+router.register(r'programmes-classe', ProgrammeClasseViewSet, basename='programme-classe')
+router.register(r'notes', NoteViewSet, basename='note')
+router.register(r'bulletins', BulletinViewSet, basename='bulletin')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -51,6 +65,7 @@ urlpatterns = [
     path('ecoles/<int:ecole_id>/', admin_views.vue_ecole_detail, name='ecole_detail'),
     path('eleves/', admin_views.vue_eleves, name='eleves'),
     path('eleves/<int:eleve_id>/', admin_views.vue_eleve_detail, name='eleve_detail'),
+    path('evaluations/', admin_views.vue_evaluations, name='evaluations'),
     path('cartes/', admin_views.vue_cartes, name='cartes'),
     path('rapports/', admin_views.vue_rapports, name='rapports'),
     path('parametres/', admin_views.vue_parametres, name='parametres'),
