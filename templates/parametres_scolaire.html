@@ -1,0 +1,534 @@
+{% extends 'base.html' %}
+
+{% load ui_icons %}
+{% block title %}Structure scolaire{% endblock %}
+{% block page_title %}Structure scolaire{% endblock %}
+{% block page_subtitle %}1. Choisir l’école · 2. Affecter sections, options et classes{% endblock %}
+
+{% block content %}
+<div class="list-shell" id="paramScolaireApp"
+     data-ecole-id="{{ ecole_id }}"
+     data-ecole-figee="{{ ecole_figee|yesno:'1,0' }}">
+
+    <ol class="struct-steps" aria-label="Parcours d'affectation">
+        <li class="struct-step is-active" data-struct-step="1">
+            <span class="struct-step-num">1</span>
+            <div>
+                <strong>Sélectionner l’école</strong>
+                <small>Obligatoire avant toute affectation</small>
+            </div>
+        </li>
+        <li class="struct-step" data-struct-step="2">
+            <span class="struct-step-num">2</span>
+            <div>
+                <strong>Affecter la structure</strong>
+                <small>Sections · options · classes</small>
+            </div>
+        </li>
+    </ol>
+
+    <!-- Étape 1 : école -->
+    <section class="detail-card struct-ecole-card" id="cardSelectEcole">
+        <div class="struct-ecole-head">
+            <div>
+                <h2 class="detail-card-title" style="margin:0">École</h2>
+                <p class="form-hint" style="margin:0.25rem 0 0">Commencez par choisir l’établissement auquel affecter la structure EPSP</p>
+            </div>
+            <span class="badge badge-warning" id="badgeEcoleRequise">École requise</span>
+            <span class="badge badge-success" id="badgeEcoleChoisie" hidden>École sélectionnée</span>
+        </div>
+        <div class="struct-ecole-form">
+            {% if not ecole_figee %}
+            <div class="form-group" style="flex:1; min-width:180px; margin:0">
+                <label for="searchEcoleScolaire">Rechercher</label>
+                <input type="search" id="searchEcoleScolaire" class="input-compact" placeholder="Nom ou code école…" style="width:100%">
+            </div>
+            {% endif %}
+            <div class="form-group" style="flex:2; min-width:240px; margin:0">
+                <label for="filtreEcoleScolaire">École <span class="req">*</span></label>
+                <select id="filtreEcoleScolaire" class="input-compact" {% if ecole_figee %}disabled{% endif %} style="width:100%">
+                    {% if ecole_figee %}
+                    <option value="{{ ecole_id }}">Chargement…</option>
+                    {% else %}
+                    <option value="">— Choisir une école —</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div class="struct-ecole-meta">
+                <span class="form-hint" id="infoEcolesChargees" style="margin:0"></span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshStructure" title="Actualiser">
+                    {% ico 'refresh' %}Actualiser
+                </button>
+            </div>
+        </div>
+        <div class="org-summary structure-summary" id="resumeStructureScolaire" hidden>
+            <div class="org-summary-item"><strong id="statSections">—</strong><span>Sections</span></div>
+            <div class="org-summary-item"><strong id="statOptions">—</strong><span>Options</span></div>
+            <div class="org-summary-item"><strong id="statClasses">—</strong><span>Classes</span></div>
+            <div class="org-summary-item"><strong id="statMatieres">—</strong><span>Matières</span></div>
+        </div>
+        <p class="form-hint" id="hintEcoleSelectionnee" style="margin:0.75rem 0 0" hidden></p>
+    </section>
+
+    <!-- Étape 2 : structure (bloquée tant qu'aucune école) -->
+    <div id="blocStructureEcole" class="struct-locked" hidden>
+    <nav class="tabs-bar" role="tablist">
+        <button type="button" class="tab-btn active" data-tab="affectation" role="tab" aria-selected="true">Affectation</button>
+        <button type="button" class="tab-btn" data-tab="sections" role="tab" aria-selected="false">Sections</button>
+        <button type="button" class="tab-btn" data-tab="options" role="tab" aria-selected="false">Options</button>
+        <button type="button" class="tab-btn" data-tab="classes" role="tab" aria-selected="false">Classes</button>
+        <button type="button" class="tab-btn" data-tab="matieres" role="tab" aria-selected="false">Matières</button>
+    </nav>
+
+    <!-- Affectation référentiel → école -->
+    <div class="tab-panel active" id="tab-affectation" role="tabpanel">
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Affecter sections, options et classes</h2>
+                    <p id="titreAffectationEcole">Cochez les options du référentiel, puis affectez-les à l’école</p>
+                </div>
+                <span class="list-count" id="countAffectation">—</span>
+            </div>
+            <div class="affectation-grid">
+                <div class="affectation-col">
+                    <div class="affectation-col-head">
+                        <h3>Référentiel EPSP</h3>
+                        <span class="form-hint">Disponible à affecter</span>
+                    </div>
+                    <div class="prog-rdc-toolbar">
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnAffToutDispo">Tout</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnAffRienDispo">Rien</button>
+                        <input type="search" id="searchAffectDispo" class="input-compact" placeholder="Filtrer…" style="flex:1;min-width:120px">
+                    </div>
+                    <div id="affectationDispo" class="prog-rdc-tree affectation-tree">
+                        <p class="empty-state">Choisissez une école…</p>
+                    </div>
+                    <div class="affectation-actions">
+                        <button type="button" class="btn btn-primary" id="btnAffecterOptions">
+                            {% ico 'plus' %}Affecter à l’école
+                        </button>
+                    </div>
+                </div>
+                <div class="affectation-col">
+                    <div class="affectation-col-head">
+                        <h3>Affecté à cette école</h3>
+                        <span class="form-hint">Options actives de l’établissement</span>
+                    </div>
+                    <div class="prog-rdc-toolbar">
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnAffToutAffecte">Tout</button>
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnAffRienAffecte">Rien</button>
+                        <input type="search" id="searchAffectAffecte" class="input-compact" placeholder="Filtrer…" style="flex:1;min-width:120px">
+                    </div>
+                    <div id="affectationAffecte" class="prog-rdc-tree affectation-tree">
+                        <p class="empty-state">Aucune option affectée</p>
+                    </div>
+                    <div class="affectation-actions">
+                        <button type="button" class="btn btn-danger" id="btnRetirerOptions">
+                            {% ico 'trash' %}Retirer de l’école
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Sections -->
+    <div class="tab-panel" id="tab-sections" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchSections" placeholder="Rechercher une section…">
+                </div>
+                <button class="btn btn-ghost" id="btnSearchSections" type="button">{% ico 'search' %}Rechercher</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" id="btnNouvelleSection" type="button">{% ico 'plus' %}Nouvelle section</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Sections</h2>
+                    <p>Ex. Scientifique, Technique — Cycle court, Enseignement primaire…</p>
+                </div>
+                <span class="list-count" id="countSections">—</span>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table" id="tableSections">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Code</th>
+                            <th>Options</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="list-footer">
+                <span class="list-footer-info">Niveau 1 — section scolaire</span>
+                <div class="pagination" id="paginationSections"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Options -->
+    <div class="tab-panel" id="tab-options" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchOptions" placeholder="Rechercher une option…">
+                </div>
+                <select id="filtreSectionOptions" class="input-compact">
+                    <option value="">Toutes les sections</option>
+                </select>
+                <button class="btn btn-ghost" id="btnSearchOptions" type="button">{% ico 'search' %}Rechercher</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" id="btnNouvelleOption" type="button">{% ico 'plus' %}Nouvelle option</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Options</h2>
+                    <p>Rattachées à une section (ex. Mathématique-Physique, Coupe et Couture)</p>
+                </div>
+                <span class="list-count" id="countOptions">—</span>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table" id="tableOptions">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Code</th>
+                            <th>Section</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="list-footer">
+                <span class="list-footer-info">Niveau 2 — option</span>
+                <div class="pagination" id="paginationOptions"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Classes -->
+    <div class="tab-panel" id="tab-classes" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchClasses" placeholder="Rechercher une classe…">
+                </div>
+                <select id="filtreSectionClasses" class="input-compact">
+                    <option value="">Toutes les sections</option>
+                </select>
+                <select id="filtreOptionClasses" class="input-compact">
+                    <option value="">Toutes les options</option>
+                </select>
+                <button class="btn btn-ghost" id="btnSearchClasses" type="button">{% ico 'search' %}Rechercher</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-primary" id="btnNouvelleClasseParam" type="button">{% ico 'plus' %}Nouvelle classe</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Classes</h2>
+                    <p>Hiérarchie Section → Option → Classes</p>
+                </div>
+                <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnExpandClasses">{% ico 'expand' %}Tout déplier</button>
+                    <button type="button" class="btn btn-ghost btn-sm" id="btnCollapseClasses">{% ico 'collapse' %}Tout replier</button>
+                    <span class="list-count" id="countClasses">—</span>
+                </div>
+            </div>
+            <div id="classesHierarchy" class="class-hierarchy" aria-live="polite">
+                <p class="empty-state">Chargement des classes…</p>
+            </div>
+            <div class="list-footer">
+                <span class="list-footer-info">Groupées par section et option</span>
+            </div>
+        </section>
+    </div>
+
+    <!-- Matières -->
+    <div class="tab-panel" id="tab-matieres" role="tabpanel" hidden>
+        <section class="toolbar">
+            <div class="search-box">
+                <div class="search-field">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                    <input type="search" id="searchMatieres" placeholder="Rechercher une matière…">
+                </div>
+                <select id="filtreClasseMatieres" class="input-compact">
+                    <option value="">Toutes les classes</option>
+                </select>
+                <button class="btn btn-ghost" id="btnSearchMatieres" type="button">{% ico 'search' %}Rechercher</button>
+            </div>
+            <div class="toolbar-actions">
+                <button class="btn btn-ghost" id="btnCatalogueMatieresParam" type="button">{% ico 'download' %}Catalogue</button>
+                <button class="btn btn-primary" id="btnNouvelleMatiereParam" type="button">{% ico 'plus' %}Nouvelle matière</button>
+            </div>
+        </section>
+        <section class="list-panel">
+            <div class="list-panel-header">
+                <div>
+                    <h2>Matières</h2>
+                    <p>Disciplines du programme (maximum, ordre, rattachement)</p>
+                </div>
+                <span class="list-count" id="countMatieres">—</span>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table" id="tableMatieresParam">
+                    <thead>
+                        <tr>
+                            <th>Ordre</th>
+                            <th>Nom</th>
+                            <th>Code</th>
+                            <th>Max</th>
+                            <th>Section</th>
+                            <th>Option</th>
+                            <th>Classe</th>
+                            <th>Statut</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="list-footer">
+                <span class="list-footer-info">Catalogue des matières</span>
+                <div class="pagination" id="paginationMatieres"></div>
+            </div>
+        </section>
+    </div>
+    </div><!-- /blocStructureEcole -->
+</div><!-- /paramScolaireApp -->
+
+<!-- Modal Section -->
+<div class="modal" id="modalSectionParam" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalSection">Nouvelle section</h3>
+                <p>Section scolaire de l'école</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formSectionParam" novalidate>
+            <input type="hidden" id="sectionParamId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: Scientifique">
+                        </div>
+                        <div class="form-group">
+                            <label>Code</label>
+                            <input name="code" placeholder="Ex: SC" maxlength="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select name="active">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerSection" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Option -->
+<div class="modal" id="modalOptionParam" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalOption">Nouvelle option</h3>
+                <p>Option rattachée à une section</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formOptionParam" novalidate>
+            <input type="hidden" id="optionParamId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Section <span class="req">*</span></label>
+                            <select name="section" id="selectSectionOption" required></select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: Mathématique-Physique">
+                        </div>
+                        <div class="form-group">
+                            <label>Code</label>
+                            <input name="code" placeholder="Ex: MP" maxlength="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select name="active">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerOption" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Classe -->
+<div class="modal" id="modalClasseParam" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalClasseParam">Nouvelle classe</h3>
+                <p>Classe / année scolaire</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formClasseParam" novalidate>
+            <input type="hidden" id="classeParamId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Rattachement</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Section <span class="req">*</span></label>
+                            <select name="section" id="selectSectionClasse" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Option <span class="req">*</span></label>
+                            <select name="option" id="selectOptionClasse" required></select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: 1ère humanités — Mathématique-Physique" maxlength="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Code</label>
+                            <input name="code" placeholder="Ex: 1H-MP" maxlength="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select name="active">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerClasseParam" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Matière -->
+<div class="modal" id="modalMatiereParam" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalMatiereParam">Nouvelle matière</h3>
+                <p>Discipline du programme</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formMatiereParam" novalidate>
+            <input type="hidden" id="matiereParamId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Rattachement</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Section</label>
+                            <select name="section" id="selectSectionMatiere"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Option</label>
+                            <select name="option" id="selectOptionMatiere"></select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Classe</label>
+                            <select name="classe" id="selectClasseMatiere"></select>
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Ex: Mathématiques">
+                        </div>
+                        <div class="form-group">
+                            <label>Code</label>
+                            <input name="code" placeholder="Ex: MATH" maxlength="30">
+                        </div>
+                        <div class="form-group">
+                            <label>Maximum <span class="req">*</span></label>
+                            <input name="maximum" type="number" min="1" step="0.5" value="20" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Ordre</label>
+                            <input name="ordre" type="number" min="0" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select name="active">
+                                <option value="1">Active</option>
+                                <option value="0">Inactive</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerMatiereParam" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% include 'partials/modal_programme_rdc.html' %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initParametresScolaire());
+</script>
+{% endblock %}

@@ -80,37 +80,29 @@
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
                 <h3 class="detail-card-title" style="margin:0">Classes de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Créées par l'administratif — utilisées pour les élèves et les enseignants titulaires</p>
+                <p class="form-hint" style="margin:0.25rem 0 0">Chaque classe est rattachée à une section et une option (ex. Technique · Coupe et Couture)</p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcoleClasses">—</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnProgrammeRdc" title="Affecter sections / options / classes à l'école">
+                    {% ico 'plus' %}Affecter structure
+                </button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnImporterClasses">{% ico 'import' %}Importer Excel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnNouvelleClasse">{% ico 'plus' %}Nouvelle classe</button>
             </div>
         </div>
-        <div class="table-responsive">
-            <table class="data-table compact" id="tableEcoleClasses">
-                <thead>
-                    <tr>
-                        <th>Classe</th>
-                        <th>Code</th>
-                        <th>Élèves</th>
-                        <th>Statut</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+        <div id="ecoleClassesHierarchy" class="class-hierarchy" aria-live="polite">
+            <p class="empty-state">Chargement des classes…</p>
         </div>
     </section>
     {% endif %}
 
-    {% if request.user.est_admin %}
+    {% if request.user.est_admin_ecole %}
     <section class="detail-card" id="comptes-ecole">
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
                 <h3 class="detail-card-title" style="margin:0">Comptes utilisateurs de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Administratifs et enseignants avec accès plateforme</p>
+                <p class="form-hint" style="margin:0.25rem 0 0">Administratifs et enseignants — création, modification et suppression</p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcoleUtilisateurs">—</span>
@@ -126,6 +118,7 @@
                         <th>Rôle</th>
                         <th>Téléphone</th>
                         <th>Statut</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -552,12 +545,26 @@
                 <section class="form-section">
                     <div class="form-grid">
                         <div class="form-group">
+                            <label>Section <span class="req">*</span></label>
+                            <select name="section" id="classeEcoleSection" required>
+                                <option value="">— Choisir —</option>
+                            </select>
+                            <button type="button" class="btn btn-ghost btn-sm" id="btnQuickSection" style="margin-top:0.35rem">{% ico 'plus' %}Nouvelle section</button>
+                        </div>
+                        <div class="form-group">
+                            <label>Option <span class="req">*</span></label>
+                            <select name="option" id="classeEcoleOption" required>
+                                <option value="">— Choisir la section —</option>
+                            </select>
+                            <button type="button" class="btn btn-ghost btn-sm" id="btnQuickOption" style="margin-top:0.35rem">{% ico 'plus' %}Nouvelle option</button>
+                        </div>
+                        <div class="form-group">
                             <label>Nom de la classe <span class="req">*</span></label>
-                            <input name="nom" required placeholder="ex: 6ème Primaire A" maxlength="50">
+                            <input name="nom" required placeholder="ex: 1ère Année" maxlength="50">
                         </div>
                         <div class="form-group">
                             <label>Code</label>
-                            <input name="code" placeholder="ex: 6P-A" maxlength="20">
+                            <input name="code" placeholder="ex: 1A-CC" maxlength="20">
                         </div>
                         <div class="form-group">
                             <label class="checkbox-inline" for="classeEcoleActive" style="margin-top:1.65rem">
@@ -578,17 +585,18 @@
 </div>
 {% endif %}
 
-{% if request.user.est_admin %}
+{% if request.user.est_admin_ecole %}
 <div class="modal" id="modalUserEcole" hidden>
     <div class="modal-dialog">
         <div class="modal-header">
             <div class="modal-header-text">
-                <h3>Créer un compte école</h3>
+                <h3 id="titreModalUserEcole">Créer un compte école</h3>
                 <p id="sousTitreUserEcole">Administratif ou enseignant rattaché à cette école</p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
         <form id="formUserEcole" novalidate>
+            <input type="hidden" id="userEcoleId" value="">
             <div class="form-sections">
                 <section class="form-section">
                     <h4 class="form-section-title">Compte</h4>
@@ -626,21 +634,30 @@
                             <label>Téléphone</label>
                             <input name="telephone" type="tel" placeholder="+243 …">
                         </div>
-                        <div class="form-group full">
-                            <label>Mot de passe <span class="req">*</span></label>
-                            <input name="password" type="password" required autocomplete="new-password" placeholder="••••••••">
+                        <div class="form-group">
+                            <label id="labelPasswordUserEcole">Mot de passe <span class="req">*</span></label>
+                            <input name="password" id="inputPasswordUserEcole" type="password" autocomplete="new-password" placeholder="••••••••">
+                            <span class="form-hint" id="hintPasswordUserEcole">Obligatoire à la création.</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-inline" for="userEcoleActif" style="margin-top:1.65rem">
+                                <input type="checkbox" name="is_active" id="userEcoleActif" value="1" checked>
+                                <span>Compte actif</span>
+                            </label>
                         </div>
                     </div>
                 </section>
             </div>
             <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerUserEcole" hidden>{% ico 'trash' %}Supprimer</button>
                 <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
-                <button type="submit" class="btn btn-primary">{% ico 'user' %}Créer le compte</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitUserEcole">{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>
 </div>
 {% endif %}
+{% include 'partials/modal_programme_rdc.html' %}
 {% endblock %}
 
 {% block extra_js %}

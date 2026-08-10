@@ -24,11 +24,9 @@ PERIODES_PRIMAIRE = [
 # (modèle : 1ère Année Coupe et Couture / Cycle court)
 # Tuple : (nom, code, maximum TJ, ordre)
 MATIERES_SECONDAIRE = [
-    # MAXIMA 10 → Exam 20 · Tot 40 · T.G. 80
     ('Religion', 'REL', '10', 1),
     ('Ed. civ. & morale', 'ECM', '10', 2),
     ('Education à la Vie', 'EV', '10', 3),
-    # MAXIMA 20 → Exam 40 · Tot 80 · T.G. 160
     ('Arithm. géométrie', 'MATH', '20', 10),
     ('Education familiale', 'EFAM', '20', 11),
     ('Education plastique', 'EPL', '20', 12),
@@ -39,13 +37,11 @@ MATIERES_SECONDAIRE = [
     ('Organisation du travail', 'ORG', '20', 17),
     ('Techno. des textiles', 'TTEX', '20', 18),
     ('Techno. du métier', 'TMET', '20', 19),
-    # MAXIMA 40 → Exam 80 · Tot 160 · T.G. 320
     ('Coupe', 'COUPE', '40', 20),
     ('Cours ménagers', 'CMEN', '40', 21),
     ('Couture industrielle', 'CIND', '40', 22),
     ('Exercices techniques', 'EXTECH', '40', 23),
     ('Français', 'FR', '40', 24),
-    # MAXIMA 50 → Exam 100 · Tot 200 · T.G. 400
     ('Couture artisanale', 'CART', '50', 30),
 ]
 
@@ -61,7 +57,6 @@ MATIERES_PRIMAIRE = [
 ]
 
 
-# Anciens libellés → nom officiel (migration douce lors du chargement catalogue)
 ALIAS_MATIERES = {
     'Éducation civique & morale': 'Ed. civ. & morale',
     'Éducation à la Vie': 'Education à la Vie',
@@ -103,19 +98,128 @@ def matieres_catalogue(regime: str):
     return MATIERES_SECONDAIRE
 
 
-def synchroniser_matieres_ecole(ecole_id: int, regime: str = AnneeScolaire.Regime.SECONDAIRE) -> dict:
+def matieres_queryset_pour_classe(qs, classe, *, mode='programme'):
     """
-    Intègre le catalogue bulletin officiel dans la base pour une école.
-    Crée les matières manquantes et met à jour code / maximum / ordre.
+    Filtre les matières pertinentes pour une classe.
+
+    mode='programme' : classe exacte + catalogue option/section (classe non précisée)
+    mode='liste'     : idem + toutes les matières de la même option (ou section)
     """
+    from django.db.models import Q
+
+    if not classe:
+        return qs.none()
+    q = Q(classe_id=classe.id)
+    if classe.option_id:
+        q |= Q(option_id=classe.option_id, classe__isnull=True)
+        if mode == 'liste':
+            q |= Q(option_id=classe.option_id)
+    elif classe.section_id:
+        q |= Q(section_id=classe.section_id, option__isnull=True, classe__isnull=True)
+        if mode == 'liste':
+            q |= Q(section_id=classe.section_id)
+    return qs.filter(q).distinct()
+
+
+def assurer_section_option_classe(ecole_id: int, regime: str, classe_id: int | None = None):
+    """
+    Garantit une section/option (et classe cible) pour rattacher le catalogue.
+    N'installe que l'option minimale utile — jamais tout le référentiel RDC.
+    Retourne (section, option, classe).
+    """
+    from ecoles.models import Classe, OptionScolaire, SectionScolaire
+    from ecoles.programme_rdc import assurer_option_referentiel
+
+    classe = None
+    if classe_id:
+        classe = Classe.objects.select_related('section', 'option').filter(
+            pk=classe_id, ecole_id=ecole_id,
+        ).first()
+        if classe and classe.section_id and classe.option_id:
+            return classe.section, classe.option, classe
+
+    # Une seule option du référentiel (celle déjà offerte par l'école, sinon défaut)
+    if regime == AnneeScolaire.Regime.PRIMAIRE:
+        opt_code, sec_nom, opt_nom = 'TC-PRIM', 'Enseignement primaire', 'Tronc commun'
+        niveau = 'primaire'
+    else:
+        opt_code, sec_nom, opt_nom = 'COUPE', 'Technique — Cycle court', 'Coupe et Couture'
+        niveau = 'secondaire'
+
+    # Préférer une option déjà organisée par l'école
+    option = (
+        OptionScolaire.objects.select_related('section')
+        .filter(section__ecole_id=ecole_id, active=True)
+        .order_by('section__nom', 'nom')
+        .first()
+    )
+    section = option.section if option else None
+
+    if not option:
+        section, option = assurer_option_referentiel(ecole_id, opt_code, niveau=niveau)
+
+    if not section:
+        section = SectionScolaire.objects.filter(ecole_id=ecole_id, nom=sec_nom).first()
+    if not option and section:
+        option = OptionScolaire.objects.filter(section=section, nom=opt_nom).first()
+
+    if classe and section and option:
+        classe.section = section
+        classe.option = option
+        classe.save(update_fields=['section', 'option'])
+        return section, option, classe
+
+    if option and not classe:
+        classe = Classe.objects.filter(ecole_id=ecole_id, option=option).order_by('nom').first()
+
+    return section, option, classe
+
+
+def synchroniser_matieres_ecole(
+    ecole_id: int,
+    regime: str = AnneeScolaire.Regime.SECONDAIRE,
+    classe_id: int | None = None,
+    section_id: int | None = None,
+    option_id: int | None = None,
+) -> dict:
+    """
+    Intègre le catalogue bulletin officiel pour une section / option / classe.
+    """
+    from ecoles.models import Classe, OptionScolaire, SectionScolaire
     from .models import Matiere
 
-    # Renommer les alias éventuels avant sync
+    section = option = classe = None
+    if classe_id:
+        classe = Classe.objects.select_related('section', 'option').filter(
+            pk=classe_id, ecole_id=ecole_id,
+        ).first()
+        if classe:
+            section = classe.section
+            option = classe.option
+    if option_id and not option:
+        option = OptionScolaire.objects.select_related('section').filter(
+            pk=option_id, section__ecole_id=ecole_id,
+        ).first()
+        if option:
+            section = option.section
+    if section_id and not section:
+        section = SectionScolaire.objects.filter(pk=section_id, ecole_id=ecole_id).first()
+
+    if not section or not option:
+        section, option, classe = assurer_section_option_classe(ecole_id, regime, classe_id)
+
+    # Alias uniquement dans le même scope
     for ancien, nouveau in ALIAS_MATIERES.items():
-        qs_ancien = Matiere.objects.filter(ecole_id=ecole_id, nom=ancien)
+        qs_ancien = Matiere.objects.filter(
+            ecole_id=ecole_id, nom=ancien,
+            section=section, option=option, classe=classe,
+        )
         if not qs_ancien.exists():
             continue
-        if Matiere.objects.filter(ecole_id=ecole_id, nom=nouveau).exists():
+        if Matiere.objects.filter(
+            ecole_id=ecole_id, nom=nouveau,
+            section=section, option=option, classe=classe,
+        ).exists():
             qs_ancien.update(active=False)
         else:
             qs_ancien.update(nom=nouveau)
@@ -126,6 +230,9 @@ def synchroniser_matieres_ecole(ecole_id: int, regime: str = AnneeScolaire.Regim
         obj, was_created = Matiere.objects.get_or_create(
             ecole_id=ecole_id,
             nom=nom,
+            section=section,
+            option=option,
+            classe=classe,
             defaults={
                 'code': code,
                 'maximum': Decimal(maximum),
@@ -137,19 +244,23 @@ def synchroniser_matieres_ecole(ecole_id: int, regime: str = AnneeScolaire.Regim
             created += 1
             continue
         changed = False
-        if obj.code != code:
-            obj.code = code
-            changed = True
-        if obj.maximum != Decimal(maximum):
-            obj.maximum = Decimal(maximum)
-            changed = True
-        if obj.ordre != ordre:
-            obj.ordre = ordre
-            changed = True
-        if not obj.active:
-            obj.active = True
-            changed = True
+        for field, value in (
+            ('code', code),
+            ('maximum', Decimal(maximum)),
+            ('ordre', ordre),
+            ('active', True),
+        ):
+            if getattr(obj, field) != value:
+                setattr(obj, field, value)
+                changed = True
         if changed:
-            obj.save(update_fields=['code', 'maximum', 'ordre', 'active'])
+            obj.save()
             updated += 1
-    return {'created': created, 'updated': updated, 'total': created + updated}
+    return {
+        'created': created,
+        'updated': updated,
+        'total': created + updated,
+        'section_id': section.id if section else None,
+        'option_id': option.id if option else None,
+        'classe_id': classe.id if classe else None,
+    }

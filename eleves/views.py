@@ -3,6 +3,7 @@ import hashlib
 import uuid
 
 from django.db.models import Prefetch
+from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -14,7 +15,9 @@ from biometrie.models import Biometrie
 from cartes.models import Carte
 from .models import Eleve
 from .import_utils import importer_eleves, reponse_modele_xlsx
+from .pdf_fiche import generer_pdf_fiche_eleve
 from .serializers import EleveSerializer, EleveDetailSerializer
+from .services import assurer_qr_eleve, generer_qr_eleve
 
 
 def synchroniser_biometrie_photo(eleve):
@@ -37,6 +40,8 @@ class EleveViewSet(viewsets.ModelViewSet):
         'ecole__province_educationnelle__province_administrative',
         'ecole__antenne',
         'classe',
+        'classe__option',
+        'classe__section',
         'biometrie',
     ).prefetch_related(
         Prefetch('cartes', queryset=Carte.objects.order_by('-date_emission')),
@@ -61,9 +66,28 @@ class EleveViewSet(viewsets.ModelViewSet):
         qs = super().get_queryset()
         user = self.request.user
         ecole = self.request.query_params.get('ecole')
+        classe = self.request.query_params.get('classe')
         q = self.request.query_params.get('q')
-        if ecole:
+
+        # Périmètre par rôle (appliqué avant les filtres UI)
+        if getattr(user, 'est_enseignant', False):
+            # Un enseignant ne voit que les élèves de sa classe titulaire
+            if not user.classe_id:
+                return qs.none()
+            qs = qs.filter(classe_id=user.classe_id)
+            if user.ecole_id:
+                qs = qs.filter(ecole_id=user.ecole_id)
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+            qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+        elif user.role == 'agent_antenne' and user.antenne_id:
+            qs = qs.filter(ecole__antenne_id=user.antenne_id)
+        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            qs = qs.filter(ecole_id=user.ecole_id)
+
+        if ecole and not getattr(user, 'est_enseignant', False):
             qs = qs.filter(ecole_id=ecole)
+        if classe and not getattr(user, 'est_enseignant', False):
+            qs = qs.filter(classe_id=classe)
         if q:
             from django.db.models import Q
             qs = qs.filter(
@@ -74,27 +98,43 @@ class EleveViewSet(viewsets.ModelViewSet):
                 | Q(postnom__icontains=q)
                 | Q(prenom__icontains=q)
             )
-        if user.role == 'agent_provincial' and user.province_educationnelle_id:
-            qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
-        elif user.role == 'agent_antenne' and user.antenne_id:
-            qs = qs.filter(ecole__antenne_id=user.antenne_id)
-        elif getattr(user, 'est_enseignant', False) and user.ecole_id:
-            qs = qs.filter(ecole_id=user.ecole_id)
-            if user.classe_id:
-                qs = qs.filter(classe_id=user.classe_id)
-            else:
-                qs = qs.none()
-        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
-            qs = qs.filter(ecole_id=user.ecole_id)
         return qs
 
     def perform_create(self, serializer):
         eleve = serializer.save()
         synchroniser_biometrie_photo(eleve)
+        assurer_qr_eleve(eleve)
 
     def perform_update(self, serializer):
         eleve = serializer.save()
         synchroniser_biometrie_photo(eleve)
+        assurer_qr_eleve(eleve)
+
+    def retrieve(self, request, *args, **kwargs):
+        eleve = self.get_object()
+        assurer_qr_eleve(eleve)
+        serializer = self.get_serializer(eleve)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        """Télécharge la fiche élève en PDF."""
+        eleve = self.get_object()
+        assurer_qr_eleve(eleve)
+        pdf = generer_pdf_fiche_eleve(eleve)
+        filename = f'fiche_eleve_{eleve.matricule}.pdf'.replace('/', '-')
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+
+    @action(detail=True, methods=['post'], url_path='regenerer-qr')
+    def regenerer_qr(self, request, pk=None):
+        """Régénère le QR code unique de l'élève."""
+        eleve = self.get_object()
+        assurer_qr_eleve(eleve)
+        generer_qr_eleve(eleve, force=True)
+        eleve.refresh_from_db()
+        return Response(EleveDetailSerializer(eleve, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def photo(self, request, pk=None):

@@ -658,46 +658,300 @@ const EducRDC = (() => {
     }
 
     /* ---------- Détail école ---------- */
-    async function chargerEcoleClasses(ecoleId) {
-        const tbody = document.querySelector('#tableEcoleClasses tbody');
-        if (!tbody) return;
-        try {
-            const data = await api(`${API}/classes/?ecole=${ecoleId}&page_size=200`);
-            const rows = data.results || data;
-            setCount('countEcoleClasses', data.count ?? rows.length, 'classe');
-            tbody.innerHTML = rows.length ? rows.map((c) => `
-                <tr>
-                    <td data-label="Classe"><strong>${escapeHtml(c.nom)}</strong></td>
-                    <td data-label="Code"><span class="code-chip">${escapeHtml(c.code || '—')}</span></td>
-                    <td data-label="Élèves">${c.nb_eleves ?? 0}</td>
-                    <td data-label="Statut"><span class="badge ${c.active ? 'badge-success' : 'badge-danger'}">${c.active ? 'Active' : 'Inactive'}</span></td>
-                    <td data-label="Actions"><div class="actions-inline">
-                        <button type="button" class="btn btn-ghost btn-sm" data-edit-classe="${c.id}">${ico('edit')}Modifier</button>
-                    </div></td>
-                </tr>
-            `).join('') : emptyRow(5, 'Aucune classe', 'Créez les classes de l\'école avant d\'y rattacher élèves et enseignants.');
+    async function chargerSectionsEcole(ecoleId, selectEl, selectedId = '') {
+        if (!selectEl) return [];
+        const data = await api(`${API}/sections-scolaires/?ecole=${ecoleId}&actif=1&page_size=200`);
+        const rows = data.results || data;
+        selectEl.innerHTML = '<option value="">— Choisir —</option>' + rows.map((s) =>
+            `<option value="${s.id}">${escapeHtml(s.nom)}</option>`
+        ).join('');
+        if (selectedId) selectEl.value = String(selectedId);
+        return rows;
+    }
 
-            tbody.querySelectorAll('[data-edit-classe]').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    const c = rows.find((x) => String(x.id) === String(btn.dataset.editClasse));
-                    if (c) ouvrirModalClasseEcole(c);
+    async function chargerOptionsEcole(ecoleId, sectionId, selectEl, selectedId = '') {
+        if (!selectEl) return [];
+        if (!sectionId) {
+            selectEl.innerHTML = '<option value="">— Choisir la section —</option>';
+            return [];
+        }
+        const data = await api(`${API}/options-scolaires/?ecole=${ecoleId}&section=${sectionId}&actif=1&page_size=200`);
+        const rows = data.results || data;
+        selectEl.innerHTML = '<option value="">— Choisir —</option>' + rows.map((o) =>
+            `<option value="${o.id}">${escapeHtml(o.nom)}</option>`
+        ).join('');
+        if (selectedId) selectEl.value = String(selectedId);
+        return rows;
+    }
+
+    function grouperClassesParOption(rows) {
+        const sections = new Map();
+        const sorted = [...rows].sort((a, b) => {
+            const sa = (a.section_nom || 'Sans section').localeCompare(b.section_nom || 'Sans section', 'fr');
+            if (sa !== 0) return sa;
+            const oa = (a.option_nom || 'Sans option').localeCompare(b.option_nom || 'Sans option', 'fr');
+            if (oa !== 0) return oa;
+            return (a.nom || '').localeCompare(b.nom || '', 'fr');
+        });
+        for (const c of sorted) {
+            const secKey = c.section || c.section_nom || '0';
+            const secNom = c.section_nom || 'Sans section';
+            if (!sections.has(secKey)) {
+                sections.set(secKey, { key: secKey, nom: secNom, code: '', options: new Map() });
+            }
+            const sec = sections.get(secKey);
+            const optKey = c.option || c.option_nom || '0';
+            const optNom = c.option_nom || 'Sans option';
+            if (!sec.options.has(optKey)) {
+                sec.options.set(optKey, { key: optKey, nom: optNom, classes: [] });
+            }
+            sec.options.get(optKey).classes.push(c);
+        }
+        return [...sections.values()].map((s) => ({
+            ...s,
+            options: [...s.options.values()],
+        }));
+    }
+
+    function initialsShort(text) {
+        const parts = String(text || '').trim().split(/[\s—\-]+/).filter(Boolean);
+        if (!parts.length) return '—';
+        if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+
+    function renderClassesHierarchy(container, rows, { onEdit } = {}) {
+        if (!container) return;
+        if (!rows.length) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <strong>Aucune classe</strong>
+                    <span>Créez une section, une option puis une classe — ou chargez le programme RDC.</span>
+                </div>`;
+            return;
+        }
+        const groups = grouperClassesParOption(rows);
+        container.innerHTML = groups.map((sec) => {
+            const nbOpt = sec.options.length;
+            const nbCls = sec.options.reduce((n, o) => n + o.classes.length, 0);
+            const optionsHtml = sec.options.map((opt) => `
+                <div class="class-option">
+                    <div class="class-option-head">
+                        <span class="class-option-dot" aria-hidden="true"></span>
+                        <strong>${escapeHtml(opt.nom)}</strong>
+                        <span class="class-option-count">${opt.classes.length} classe${opt.classes.length > 1 ? 's' : ''}</span>
+                    </div>
+                    <ul class="class-option-list">
+                        ${opt.classes.map((c) => `
+                            <li class="class-item">
+                                <div class="class-item-main">
+                                    <strong>${escapeHtml(c.nom)}</strong>
+                                    ${c.code ? `<span class="code-chip">${escapeHtml(c.code)}</span>` : ''}
+                                </div>
+                                <div class="class-item-meta">
+                                    <span class="class-item-eleves"><strong>${c.nb_eleves ?? 0}</strong> élève${(c.nb_eleves ?? 0) > 1 ? 's' : ''}</span>
+                                    <span class="badge ${c.active ? 'badge-success' : 'badge-neutral'}">${c.active ? 'Active' : 'Inactive'}</span>
+                                    <button type="button" class="btn btn-ghost btn-sm" data-edit-classe="${c.id}">${ico('edit')}Modifier</button>
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `).join('');
+            return `
+                <details class="class-section" open>
+                    <summary class="class-section-head">
+                        <span class="class-section-mark">${escapeHtml(initialsShort(sec.nom))}</span>
+                        <span class="class-section-title">${escapeHtml(sec.nom)}</span>
+                        <span class="class-section-meta">${nbOpt} option${nbOpt > 1 ? 's' : ''} · ${nbCls} classe${nbCls > 1 ? 's' : ''}</span>
+                    </summary>
+                    <div class="class-section-body">${optionsHtml}</div>
+                </details>
+            `;
+        }).join('');
+
+        container.querySelectorAll('[data-edit-classe]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const c = rows.find((x) => String(x.id) === String(btn.dataset.editClasse));
+                if (c && typeof onEdit === 'function') onEdit(c);
+            });
+        });
+    }
+
+    function setHierarchyExpanded(container, open) {
+        container?.querySelectorAll('details.class-section').forEach((d) => {
+            d.open = open;
+        });
+    }
+
+    /**
+     * Modal de sélection des options réellement organisées par l'école.
+     * Ne charge jamais tout le catalogue EPSP d'un coup.
+     */
+    async function ouvrirSelecteurProgrammeRdc(ecoleId, { onDone } = {}) {
+        if (!ecoleId) {
+            toast('Sélectionnez d\'abord une école.', 'warning');
+            return;
+        }
+        bindModalClosers();
+        const tree = document.getElementById('progRdcTree');
+        const countEl = document.getElementById('progRdcCount');
+        if (!tree || !document.getElementById('modalProgrammeRdc')) {
+            toast('Interface de sélection indisponible.', 'error');
+            return;
+        }
+
+        const majCompte = () => {
+            const n = tree.querySelectorAll('input[data-opt-code]:checked').length;
+            if (countEl) countEl.textContent = n ? `${n} option(s) cochée(s)` : 'Aucune option cochée';
+        };
+
+        tree.innerHTML = '<p class="empty-state">Chargement du référentiel…</p>';
+        openModal('modalProgrammeRdc');
+
+        try {
+            const data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?auto_niveau=1`);
+            const sections = data.sections || [];
+            if (!sections.length) {
+                tree.innerHTML = '<div class="empty-state"><strong>Référentiel vide</strong><span>Aucune option pour ce niveau.</span></div>';
+                return;
+            }
+            tree.innerHTML = sections.map((sec) => {
+                const opts = (sec.options || []).map((o) => `
+                    <li class="prog-rdc-option">
+                        <label>
+                            <input type="checkbox" data-opt-code="${escapeHtml(o.code || '')}"
+                                value="${escapeHtml(o.code || '')}"
+                                ${o.deja_present ? 'checked' : ''}>
+                            <span>${escapeHtml(o.nom)}</span>
+                            ${o.code ? `<span class="code-chip">${escapeHtml(o.code)}</span>` : ''}
+                        </label>
+                        <span class="prog-rdc-meta">${o.nb_classes || 0} cl.</span>
+                        ${o.deja_present ? '<span class="prog-rdc-badge">déjà présente</span>' : ''}
+                    </li>
+                `).join('');
+                return `
+                    <div class="prog-rdc-section" data-sec-code="${escapeHtml(sec.code || '')}">
+                        <div class="prog-rdc-section-head">
+                            <label>
+                                <input type="checkbox" data-sec-toggle="${escapeHtml(sec.code || '')}">
+                                <span>${escapeHtml(sec.nom)}</span>
+                                ${sec.code ? `<span class="code-chip">${escapeHtml(sec.code)}</span>` : ''}
+                            </label>
+                        </div>
+                        <ul class="prog-rdc-options">${opts}</ul>
+                    </div>
+                `;
+            }).join('');
+
+            tree.querySelectorAll('[data-sec-toggle]').forEach((cb) => {
+                cb.addEventListener('change', () => {
+                    const box = cb.closest('.prog-rdc-section');
+                    box?.querySelectorAll('input[data-opt-code]').forEach((o) => {
+                        o.checked = cb.checked;
+                    });
+                    majCompte();
                 });
             });
+            tree.querySelectorAll('input[data-opt-code]').forEach((cb) => {
+                cb.addEventListener('change', majCompte);
+            });
+            majCompte();
         } catch (err) {
-            tbody.innerHTML = emptyRow(5, 'Accès limité', err.message || 'Impossible de charger les classes.');
+            tree.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`;
+            toast(err.message, 'error');
+            return;
+        }
+
+        const btnTout = document.getElementById('btnProgRdcTout');
+        const btnRien = document.getElementById('btnProgRdcRien');
+        const btnPres = document.getElementById('btnProgRdcPresents');
+        const btnOk = document.getElementById('btnProgRdcValider');
+
+        const setAll = (checked) => {
+            tree.querySelectorAll('input[data-opt-code]').forEach((o) => { o.checked = checked; });
+            tree.querySelectorAll('[data-sec-toggle]').forEach((o) => { o.checked = checked; });
+            majCompte();
+        };
+
+        btnTout.onclick = () => setAll(true);
+        btnRien.onclick = () => setAll(false);
+        btnPres.onclick = () => {
+            tree.querySelectorAll('.prog-rdc-option').forEach((li) => {
+                const cb = li.querySelector('input[data-opt-code]');
+                if (cb) cb.checked = !!li.querySelector('.prog-rdc-badge');
+            });
+            majCompte();
+        };
+
+        btnOk.onclick = async () => {
+            const codes = [...tree.querySelectorAll('input[data-opt-code]:checked')]
+                .map((el) => (el.value || el.getAttribute('data-opt-code') || '').trim())
+                .filter(Boolean);
+            if (!codes.length) {
+                toast('Cochez au moins une option organisée par l\'école.', 'warning');
+                return;
+            }
+            btnOk.disabled = true;
+            try {
+                const data = await api(`${API}/ecoles/${ecoleId}/affecter-structure/`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        auto_niveau: true,
+                        options: codes,
+                    }),
+                });
+                toast(data.detail || 'Options affectées à l\'école.', 'success');
+                closeModal('modalProgrammeRdc');
+                if (typeof onDone === 'function') await onDone(data);
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                btnOk.disabled = false;
+            }
+        };
+    }
+
+    async function chargerEcoleClasses(ecoleId) {
+        const container = document.getElementById('ecoleClassesHierarchy');
+        if (!container) return;
+        try {
+            const data = await api(`${API}/classes/?ecole=${ecoleId}&page_size=300&ordering=nom`);
+            const rows = data.results || data;
+            setCount('countEcoleClasses', data.count ?? rows.length, 'classe');
+            renderClassesHierarchy(container, rows, {
+                onEdit: (c) => ouvrirModalClasseEcole(c),
+            });
+        } catch (err) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <strong>Accès limité</strong>
+                    <span>${escapeHtml(err.message || 'Impossible de charger les classes.')}</span>
+                </div>`;
             setCount('countEcoleClasses', 0, 'classe');
         }
     }
 
-    function ouvrirModalClasseEcole(classe = null) {
+    async function ouvrirModalClasseEcole(classe = null) {
         const form = document.getElementById('formClasseEcole');
         const titre = document.getElementById('titreModalClasseEcole');
-        if (!form || !titre) return;
+        const root = document.getElementById('ecoleDetail');
+        const ecoleId = root?.dataset?.ecoleId;
+        if (!form || !titre || !ecoleId) return;
         form.reset();
         document.getElementById('classeEcoleId').value = classe?.id || '';
         document.getElementById('classeEcoleActive').checked = classe ? classe.active !== false : true;
         const btnDel = document.getElementById('btnSupprimerClasse');
         if (btnDel) btnDel.hidden = !classe?.id;
+        await chargerSectionsEcole(ecoleId, document.getElementById('classeEcoleSection'), classe?.section || '');
+        await chargerOptionsEcole(
+            ecoleId,
+            classe?.section || document.getElementById('classeEcoleSection')?.value,
+            document.getElementById('classeEcoleOption'),
+            classe?.option || '',
+        );
         if (classe) {
             titre.textContent = 'Modifier la classe';
             form.nom.value = classe.nom || '';
@@ -708,12 +962,85 @@ const EducRDC = (() => {
         openModal('modalClasseEcole');
     }
 
+    let cacheEcoleUtilisateurs = [];
+
+    function syncRoleUserEcoleUI() {
+        const role = document.getElementById('selectRoleUserEcole')?.value || '';
+        const enseignant = role === 'enseignant';
+        const groupe = document.getElementById('groupeClasseUserEcole');
+        const sel = document.getElementById('selectClasseUserEcole');
+        if (groupe) groupe.hidden = !enseignant;
+        if (sel) {
+            sel.required = enseignant;
+            if (!enseignant) sel.value = '';
+        }
+    }
+
+    function setModePasswordUserEcole(edition) {
+        const input = document.getElementById('inputPasswordUserEcole');
+        const label = document.getElementById('labelPasswordUserEcole');
+        const hint = document.getElementById('hintPasswordUserEcole');
+        if (!input || !label || !hint) return;
+        if (edition) {
+            input.required = false;
+            label.innerHTML = 'Nouveau mot de passe';
+            hint.textContent = 'Laisser vide pour conserver le mot de passe actuel.';
+        } else {
+            input.required = true;
+            label.innerHTML = 'Mot de passe <span class="req">*</span>';
+            hint.textContent = 'Obligatoire à la création.';
+        }
+    }
+
+    async function ouvrirModalUserEcole(user = null) {
+        const form = document.getElementById('formUserEcole');
+        if (!form) return;
+        const root = document.getElementById('ecoleDetail');
+        const ecoleId = root?.dataset.ecoleId;
+        const ecole = root?._ecoleCache;
+        form.reset();
+        const titre = document.getElementById('titreModalUserEcole');
+        const sub = document.getElementById('sousTitreUserEcole');
+        const idEl = document.getElementById('userEcoleId');
+        const btnDel = document.getElementById('btnSupprimerUserEcole');
+        const btnSubmit = document.getElementById('btnSubmitUserEcole');
+        if (idEl) idEl.value = user?.id || '';
+        setModePasswordUserEcole(Boolean(user));
+        if (btnDel) btnDel.hidden = !user?.id;
+        if (titre) titre.textContent = user ? 'Modifier le compte' : 'Créer un compte école';
+        if (btnSubmit) btnSubmit.innerHTML = `${ico('save')}${user ? 'Enregistrer' : 'Créer le compte'}`;
+        if (sub && ecole) {
+            sub.textContent = ecole.code
+                ? `${ecole.nom} · ${ecole.code}`
+                : (ecole.nom || 'Compte rattaché à cette école');
+        }
+        if (user) {
+            form.username.value = user.username || '';
+            form.first_name.value = user.first_name || '';
+            form.last_name.value = user.last_name || '';
+            form.email.value = user.email || '';
+            form.telephone.value = user.telephone || '';
+            form.role.value = user.role || 'enseignant';
+            const actif = document.getElementById('userEcoleActif');
+            if (actif) actif.checked = user.is_active !== false;
+        } else {
+            const actif = document.getElementById('userEcoleActif');
+            if (actif) actif.checked = true;
+        }
+        syncRoleUserEcoleUI();
+        if (ecoleId) {
+            await remplirSelectClasses(ecoleId, 'selectClasseUserEcole', user?.classe || '');
+        }
+        openModal('modalUserEcole');
+    }
+
     async function chargerEcoleUtilisateurs(ecoleId) {
         const tbody = document.querySelector('#tableEcoleUtilisateurs tbody');
         if (!tbody) return;
         try {
             const data = await api(`${API}/utilisateurs/?ecole=${ecoleId}&page_size=100`);
             const rows = data.results || data;
+            cacheEcoleUtilisateurs = rows;
             setCount('countEcoleUtilisateurs', data.count ?? rows.length, 'compte');
             tbody.innerHTML = rows.length ? rows.map((u) => {
                 const nom = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username;
@@ -727,10 +1054,20 @@ const EducRDC = (() => {
                     <td data-label="Rôle">${roleHtml}</td>
                     <td data-label="Téléphone">${escapeHtml(u.telephone || '—')}</td>
                     <td data-label="Statut"><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Actif' : 'Inactif'}</span></td>
+                    <td data-label="Actions"><div class="actions-inline">
+                        <button type="button" class="btn btn-ghost btn-sm" data-edit-user-ecole="${u.id}">${ico('edit')}Modifier</button>
+                    </div></td>
                 </tr>`;
-            }).join('') : emptyRow(5, 'Aucun compte école', 'Créez un administratif ou un enseignant pour cette école.');
+            }).join('') : emptyRow(6, 'Aucun compte école', 'Créez un administratif ou un enseignant pour cette école.');
+            tbody.querySelectorAll('[data-edit-user-ecole]').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const user = cacheEcoleUtilisateurs.find((x) => String(x.id) === String(btn.dataset.editUserEcole));
+                    ouvrirModalUserEcole(user || null);
+                });
+            });
         } catch (err) {
-            tbody.innerHTML = emptyRow(5, 'Accès limité', err.message || 'Impossible de charger les comptes.');
+            cacheEcoleUtilisateurs = [];
+            tbody.innerHTML = emptyRow(6, 'Accès limité', err.message || 'Impossible de charger les comptes.');
             setCount('countEcoleUtilisateurs', 0, 'compte');
         }
     }
@@ -920,7 +1257,7 @@ const EducRDC = (() => {
                 </td>
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(el.sexe_display || el.sexe || '—')}</td>
-                <td data-label="Classe">${escapeHtml(el.classe_nom || '—')}</td>
+                <td data-label="Classe">${escapeHtml([el.classe_nom, el.section_nom, el.option_nom].filter(Boolean).join(' · ') || '—')}</td>
                 <td data-label="Statut"><span class="badge ${el.actif ? 'badge-success' : 'badge-danger'}">${el.actif ? 'Actif' : 'Inactif'}</span></td>
             </tr>
         `).join('') : emptyRow(5, 'Aucun élève enregistré', 'Les élèves inscrits dans cette école apparaîtront ici.');
@@ -1088,19 +1425,49 @@ const EducRDC = (() => {
             } catch (err) { toast(err.message, 'error'); }
         });
 
-        function syncRoleUserEcoleUI() {
-            const role = document.getElementById('selectRoleUserEcole')?.value || '';
-            const enseignant = role === 'enseignant';
-            const groupe = document.getElementById('groupeClasseUserEcole');
-            const sel = document.getElementById('selectClasseUserEcole');
-            if (groupe) groupe.hidden = !enseignant;
-            if (sel) {
-                sel.required = enseignant;
-                if (!enseignant) sel.value = '';
-            }
-        }
-
         document.getElementById('btnNouvelleClasse')?.addEventListener('click', () => ouvrirModalClasseEcole());
+
+        document.getElementById('btnProgrammeRdc')?.addEventListener('click', () => {
+            ouvrirSelecteurProgrammeRdc(ecoleId, {
+                onDone: async () => { await chargerEcoleClasses(ecoleId); },
+            });
+        });
+
+        document.getElementById('classeEcoleSection')?.addEventListener('change', async (e) => {
+            await chargerOptionsEcole(ecoleId, e.target.value, document.getElementById('classeEcoleOption'));
+        });
+
+        document.getElementById('btnQuickSection')?.addEventListener('click', async () => {
+            const nom = prompt('Nom de la nouvelle section (ex. Technique) :');
+            if (!nom || !nom.trim()) return;
+            try {
+                const s = await api(`${API}/sections-scolaires/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ ecole: Number(ecoleId), nom: nom.trim(), active: true }),
+                });
+                await chargerSectionsEcole(ecoleId, document.getElementById('classeEcoleSection'), s.id);
+                await chargerOptionsEcole(ecoleId, s.id, document.getElementById('classeEcoleOption'));
+                toast('Section créée.', 'success');
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        document.getElementById('btnQuickOption')?.addEventListener('click', async () => {
+            const sectionId = document.getElementById('classeEcoleSection')?.value;
+            if (!sectionId) {
+                toast('Choisissez d\'abord une section.', 'warning');
+                return;
+            }
+            const nom = prompt('Nom de la nouvelle option (ex. Coupe et Couture) :');
+            if (!nom || !nom.trim()) return;
+            try {
+                const o = await api(`${API}/options-scolaires/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ section: Number(sectionId), nom: nom.trim(), active: true }),
+                });
+                await chargerOptionsEcole(ecoleId, sectionId, document.getElementById('classeEcoleOption'), o.id);
+                toast('Option créée.', 'success');
+            } catch (err) { toast(err.message, 'error'); }
+        });
 
         document.getElementById('btnImporterClasses')?.addEventListener('click', () => {
             const result = document.getElementById('importClassesResult');
@@ -1175,8 +1542,16 @@ const EducRDC = (() => {
                 return;
             }
             const id = document.getElementById('classeEcoleId')?.value;
+            const section = form.section?.value || document.getElementById('classeEcoleSection')?.value;
+            const option = form.option?.value || document.getElementById('classeEcoleOption')?.value;
+            if (!section || !option) {
+                toast('Section et option sont obligatoires.', 'warning');
+                return;
+            }
             const payload = {
                 ecole: Number(ecoleId),
+                section: Number(section),
+                option: Number(option),
                 nom: form.nom.value.trim(),
                 code: form.code.value.trim(),
                 active: document.getElementById('classeEcoleActive')?.checked !== false,
@@ -1201,26 +1576,27 @@ const EducRDC = (() => {
             }
         });
 
-        document.getElementById('btnNouveauUserEcole')?.addEventListener('click', () => {
-            const form = document.getElementById('formUserEcole');
-            const ecole = root?._ecoleCache;
-            if (form) form.reset();
-            const sub = document.getElementById('sousTitreUserEcole');
-            if (sub && ecole) {
-                sub.textContent = ecole.code
-                    ? `${ecole.nom} · ${ecole.code}`
-                    : (ecole.nom || 'Compte rattaché à cette école');
-            }
-            syncRoleUserEcoleUI();
-            if (ecoleId) remplirSelectClasses(ecoleId, 'selectClasseUserEcole');
-            openModal('modalUserEcole');
-        });
+        document.getElementById('btnNouveauUserEcole')?.addEventListener('click', () => ouvrirModalUserEcole());
 
         document.getElementById('selectRoleUserEcole')?.addEventListener('change', syncRoleUserEcoleUI);
+
+        document.getElementById('btnSupprimerUserEcole')?.addEventListener('click', async () => {
+            const id = document.getElementById('userEcoleId')?.value;
+            if (!id || !confirm('Supprimer ce compte utilisateur ?')) return;
+            try {
+                await api(`${API}/utilisateurs/${id}/`, { method: 'DELETE' });
+                toast('Compte supprimé.', 'success');
+                closeModal('modalUserEcole');
+                await chargerEcoleUtilisateurs(ecoleId);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
 
         document.getElementById('formUserEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
+            const id = document.getElementById('userEcoleId')?.value || '';
             const role = form.role.value;
             if (role === 'enseignant' && !form.classe?.value) {
                 toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
@@ -1235,23 +1611,37 @@ const EducRDC = (() => {
                 toast('École introuvable.', 'error');
                 return;
             }
+            const password = (form.password.value || '').trim();
+            if (!id && !password) {
+                toast('Le mot de passe est obligatoire à la création.', 'warning');
+                return;
+            }
             const payload = {
                 username: form.username.value.trim(),
-                password: form.password.value,
                 first_name: form.first_name.value.trim(),
                 last_name: form.last_name.value.trim(),
                 email: form.email.value.trim(),
                 telephone: form.telephone.value.trim(),
                 role,
                 ecole: Number(ecoleId),
-                classe: role === 'enseignant' ? Number(form.classe.value) : null,
-                is_active: true,
+                is_active: document.getElementById('userEcoleActif')?.checked !== false,
             };
+            if (role === 'enseignant') {
+                payload.classe = Number(form.classe.value);
+            } else {
+                payload.classe = null;
+            }
+            if (password) payload.password = password;
             const submitBtn = form.querySelector('button[type="submit"]');
             if (submitBtn) submitBtn.disabled = true;
             try {
-                await api(`${API}/utilisateurs/`, { method: 'POST', body: JSON.stringify(payload) });
-                toast('Compte école créé.', 'success');
+                if (id) {
+                    await api(`${API}/utilisateurs/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                    toast('Compte mis à jour.', 'success');
+                } else {
+                    await api(`${API}/utilisateurs/`, { method: 'POST', body: JSON.stringify(payload) });
+                    toast('Compte école créé.', 'success');
+                }
                 closeModal('modalUserEcole');
                 form.reset();
                 await chargerEcoleUtilisateurs(ecoleId);
@@ -1542,7 +1932,7 @@ const EducRDC = (() => {
                 <td data-label="École / Classe">
                     <div class="entity-meta">
                         <strong title="${escapeHtml(e.ecole_nom || '')}">${escapeHtml(e.ecole_nom || '—')}</strong>
-                        <span>${escapeHtml(e.classe_nom || '')}</span>
+                        <span>${escapeHtml([e.classe_nom, e.section_nom, e.option_nom].filter(Boolean).join(' · ') || '')}</span>
                     </div>
                 </td>
                 <td data-label="Statut"><span class="badge ${e.actif ? 'badge-success' : 'badge-danger'}">${e.actif ? 'Actif' : 'Inactif'}</span></td>
@@ -1845,12 +2235,14 @@ const EducRDC = (() => {
         const eleve = await api(`${API}/eleves/${id}/`);
         cacheEleveDetail = eleve;
 
+        const classeLigne = [eleve.classe_nom, eleve.section_nom, eleve.option_nom]
+            .filter(Boolean).join(' · ') || '—';
         document.getElementById('detailMatricule').textContent = eleve.matricule;
         document.getElementById('detailNom').textContent = eleve.nom_complet;
         document.getElementById('detailSousTitre').textContent =
-            `${eleve.ecole_nom || '—'} · ${eleve.classe_nom || '—'}`;
+            `${eleve.ecole_nom || '—'} · ${classeLigne}`;
         document.getElementById('detailSexe').textContent = eleve.sexe_display || eleve.sexe;
-        document.getElementById('detailClasse').textContent = eleve.classe_nom || '—';
+        document.getElementById('detailClasse').textContent = classeLigne;
         const statut = document.getElementById('detailStatut');
         statut.textContent = eleve.actif ? 'Actif' : 'Inactif';
         statut.className = `badge ${eleve.actif ? 'badge-success' : 'badge-danger'}`;
@@ -1872,7 +2264,7 @@ const EducRDC = (() => {
         fillDetailList('blocScolarite', [
             ['École', eleve.ecole_nom],
             ['Code école', eleve.ecole_code],
-            ['Classe', eleve.classe_nom],
+            ['Classe / Section / Option', classeLigne],
             ['Province admin.', eleve.province_administrative_nom],
             ['Province éduc.', eleve.province_nom],
             ['Antenne', eleve.antenne_nom],
@@ -1882,6 +2274,26 @@ const EducRDC = (() => {
         fillDetailList('blocAdresse', [
             ['Résidence', eleve.adresse],
         ]);
+
+        const codeUnique = document.getElementById('detailCodeUnique');
+        if (codeUnique) codeUnique.textContent = eleve.code_unique || '—';
+        const qrImg = document.getElementById('detailQrEleve');
+        const qrFallback = document.getElementById('detailQrEleveFallback');
+        const lienQr = document.getElementById('lienQrEleve');
+        if (eleve.qr_code_url && qrImg) {
+            qrImg.src = eleve.qr_code_url;
+            qrImg.hidden = false;
+            if (qrFallback) qrFallback.hidden = true;
+            if (lienQr) {
+                lienQr.href = eleve.qr_code_url;
+                lienQr.hidden = false;
+            }
+        } else if (qrImg) {
+            qrImg.removeAttribute('src');
+            qrImg.hidden = true;
+            if (qrFallback) qrFallback.hidden = false;
+            if (lienQr) lienQr.hidden = true;
+        }
 
         renderParentCards(eleve);
 
@@ -1918,6 +2330,18 @@ const EducRDC = (() => {
     function initEleveDetail() {
         bindModalClosers();
         chargerEleveDetail().catch((e) => toast(e.message, 'error'));
+
+        document.getElementById('btnRegenererQrEleve')?.addEventListener('click', async () => {
+            const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+            if (!id || !confirm('Régénérer le QR code de cet élève ?')) return;
+            try {
+                await api(`${API}/eleves/${id}/regenerer-qr/`, { method: 'POST', body: '{}' });
+                toast('QR code régénéré.', 'success');
+                await chargerEleveDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
 
         document.getElementById('btnSupprimerEleve')?.addEventListener('click', async () => {
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
@@ -2100,6 +2524,16 @@ const EducRDC = (() => {
         sidebar.querySelectorAll('.nav-link').forEach((link) => {
             link.addEventListener('click', () => {
                 if (isMobileNav()) setOpen(false);
+            });
+        });
+
+        sidebar.querySelectorAll('.nav-group-toggle').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const group = btn.closest('.nav-group');
+                if (!group) return;
+                const open = !group.classList.contains('open');
+                group.classList.toggle('open', open);
+                btn.setAttribute('aria-expanded', open ? 'true' : 'false');
             });
         });
 
@@ -2664,10 +3098,6 @@ const EducRDC = (() => {
 
     let cacheUserEcoles = [];
 
-    function estRoleEcole(role) {
-        return role === 'admin_ecole' || role === 'enseignant';
-    }
-
     async function remplirSelectClasses(ecoleId, selectId, selectedId = '') {
         const sel = document.getElementById(selectId);
         if (!sel) return;
@@ -2703,22 +3133,11 @@ const EducRDC = (() => {
 
     function syncRoleUtilisateurUI() {
         const role = document.getElementById('selectRoleUtilisateur')?.value || '';
-        const school = estRoleEcole(role);
-        const enseignant = role === 'enseignant';
+        const school = role === 'admin_ecole';
         const req = document.getElementById('reqEcoleUtilisateur');
         const selEcole = document.getElementById('selectUserEcole');
-        const groupeClasse = document.getElementById('groupeClasseUtilisateur');
-        const selClasse = document.getElementById('selectUserClasse');
         if (req) req.hidden = !school;
         if (selEcole) selEcole.required = school;
-        if (groupeClasse) groupeClasse.hidden = !enseignant;
-        if (selClasse) {
-            selClasse.required = enseignant;
-            if (!enseignant) selClasse.value = '';
-        }
-        if (enseignant && selEcole?.value) {
-            remplirSelectClasses(selEcole.value, 'selectUserClasse', selClasse?.value || '');
-        }
     }
 
     function syncSelectsUtilisateur(selected = {}) {
@@ -2769,11 +3188,7 @@ const EducRDC = (() => {
 
     function rattachementLabel(u) {
         if (u.ecole_nom) {
-            const ecole = u.ecole_code ? `${u.ecole_nom} (${u.ecole_code})` : u.ecole_nom;
-            if (u.role === 'enseignant' && u.classe_nom) {
-                return `${ecole} · classe ${u.classe_nom}`;
-            }
-            return ecole;
+            return u.ecole_code ? `${u.ecole_nom} (${u.ecole_code})` : u.ecole_nom;
         }
         const parts = [
             u.antenne_nom,
@@ -2876,23 +3291,9 @@ const EducRDC = (() => {
         } else {
             titre.textContent = 'Nouvel utilisateur';
             document.getElementById('utilisateurActif').checked = true;
-            const selClasse = document.getElementById('selectUserClasse');
-            if (selClasse) selClasse.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
             syncSelectsUtilisateur({});
         }
-        const role = document.getElementById('selectRoleUtilisateur')?.value || '';
-        const ecoleId = document.getElementById('selectUserEcole')?.value || '';
-        const groupeClasse = document.getElementById('groupeClasseUtilisateur');
-        const selClasse = document.getElementById('selectUserClasse');
-        const req = document.getElementById('reqEcoleUtilisateur');
-        const school = estRoleEcole(role);
-        if (req) req.hidden = !school;
-        document.getElementById('selectUserEcole') && (document.getElementById('selectUserEcole').required = school);
-        if (groupeClasse) groupeClasse.hidden = role !== 'enseignant';
-        if (selClasse) selClasse.required = role === 'enseignant';
-        if (role === 'enseignant' && ecoleId) {
-            await remplirSelectClasses(ecoleId, 'selectUserClasse', user?.classe || '');
-        }
+        syncRoleUtilisateurUI();
         openModal('modalUtilisateur');
     }
 
@@ -2921,28 +3322,19 @@ const EducRDC = (() => {
         document.getElementById('selectUserPA')?.addEventListener('change', () => syncSelectsUtilisateur());
         document.getElementById('selectUserPE')?.addEventListener('change', () => syncSelectsUtilisateur());
         document.getElementById('selectRoleUtilisateur')?.addEventListener('change', () => syncRoleUtilisateurUI());
-        document.getElementById('selectUserEcole')?.addEventListener('change', () => {
-            const ecoleId = document.getElementById('selectUserEcole')?.value;
-            if (ecoleId && document.getElementById('selectRoleUtilisateur')?.value === 'enseignant') {
-                remplirSelectClasses(ecoleId, 'selectUserClasse');
-            } else {
-                const selClasse = document.getElementById('selectUserClasse');
-                if (selClasse) selClasse.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
-            }
-            syncRoleUtilisateurUI();
-        });
+        document.getElementById('selectUserEcole')?.addEventListener('change', () => syncRoleUtilisateurUI());
 
         document.getElementById('formUtilisateur')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             const id = document.getElementById('utilisateurId').value;
             const role = form.role.value;
-            if (estRoleEcole(role) && !form.ecole?.value) {
-                toast("Sélectionnez l'école pour un administratif ou un enseignant.", 'warning');
+            if (role === 'enseignant') {
+                toast('Les enseignants se créent depuis la fiche de l’école.', 'warning');
                 return;
             }
-            if (role === 'enseignant' && !form.classe?.value) {
-                toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
+            if (role === 'admin_ecole' && !form.ecole?.value) {
+                toast("Sélectionnez l'école pour un administratif école.", 'warning');
                 return;
             }
             if (!form.checkValidity()) {
@@ -2966,14 +3358,9 @@ const EducRDC = (() => {
                 province_administrative: form.province_administrative.value || null,
                 province_educationnelle: form.province_educationnelle.value || null,
                 antenne: form.antenne.value || null,
-                ecole: form.ecole?.value || null,
-                classe: role === 'enseignant' ? Number(form.classe.value) : null,
+                ecole: role === 'admin_ecole' ? Number(form.ecole.value) : null,
+                classe: null,
             };
-            if (estRoleEcole(role)) {
-                payload.ecole = Number(payload.ecole);
-            } else {
-                payload.ecole = null;
-            }
             if (password) payload.password = password;
 
             const submitBtn = form.querySelector('button[type="submit"]');
@@ -3008,16 +3395,96 @@ const EducRDC = (() => {
         const ecoleId = root.dataset.ecoleId || '';
         const peutConfigurer = root.dataset.peutConfigurer === '1';
         let cacheGrille = null;
+        let periodeVerrouillee = false;
+
+        function selectedLabel(sel) {
+            if (!sel || !sel.value) return '';
+            const opt = sel.options[sel.selectedIndex];
+            return (opt && opt.textContent ? opt.textContent : '').trim();
+        }
+
+        function majBannerPeriode() {
+            const banner = document.getElementById('bannerPeriodeEval');
+            const txt = document.getElementById('txtPeriodeEval');
+            const btnUnlock = document.getElementById('btnDeverrouillerPeriode');
+            const periodeSel = document.getElementById('selectPeriodeEval');
+            if (!banner || !txt || !periodeSel?.value) {
+                if (banner) banner.hidden = true;
+                if (btnUnlock) btnUnlock.hidden = true;
+                return;
+            }
+            banner.hidden = false;
+            banner.classList.toggle('is-locked', periodeVerrouillee);
+            const lab = selectedLabel(periodeSel).replace(/\s*[—-]\s*Verrouillée\s*$/i, '');
+            txt.textContent = periodeVerrouillee
+                ? `${lab} — verrouillée (lecture seule). Les notes ne sont plus modifiables.`
+                : `${lab} — saisie ouverte. En passant à la période suivante, celle-ci sera verrouillée.`;
+            if (btnUnlock) btnUnlock.hidden = !(peutConfigurer && periodeVerrouillee);
+        }
+
+        function majResumeSession() {
+            const anneeSel = document.getElementById('selectAnneeEval');
+            const classeSel = document.getElementById('selectClasseEval');
+            const periodeSel = document.getElementById('selectPeriodeEval');
+            const progSel = document.getElementById('selectProgrammeEval');
+            const chipA = document.getElementById('chipAnneeEval');
+            const chipC = document.getElementById('chipClasseEval');
+            const chipP = document.getElementById('chipPeriodeEval');
+            const chipM = document.getElementById('chipMatiereEval');
+            if (chipA) chipA.textContent = selectedLabel(anneeSel) || 'Année —';
+            if (chipC) chipC.textContent = selectedLabel(classeSel) || 'Classe —';
+            if (chipP) {
+                const lab = selectedLabel(periodeSel);
+                chipP.textContent = lab && !lab.startsWith('—')
+                    ? lab.replace(/\s*[—-]\s*Verrouillée\s*$/i, '')
+                    : 'Période —';
+            }
+            if (chipM) {
+                const lab = selectedLabel(progSel);
+                chipM.textContent = lab && !lab.startsWith('—') ? lab.replace(/\s*\(max.*\)$/, '') : 'Matière —';
+            }
+            const step1 = !!anneeSel?.value && !!classeSel?.value;
+            const step2 = !!periodeSel?.value && !!progSel?.value;
+            const tabBulletins = document.querySelector('[data-eval-tab="bulletins"]')?.classList.contains('active');
+            document.querySelectorAll('[data-eval-step]').forEach((el) => {
+                const n = el.dataset.evalStep;
+                el.classList.remove('is-active', 'is-done');
+                if (n === '1') {
+                    el.classList.add(step1 ? 'is-done' : 'is-active');
+                } else if (n === '2') {
+                    if (step2) el.classList.add(tabBulletins ? 'is-done' : 'is-active');
+                    else if (step1) el.classList.add('is-active');
+                } else if (n === '3' && tabBulletins) {
+                    el.classList.add('is-active');
+                }
+            });
+            majBannerPeriode();
+        }
+
+        function badgeDecision(decision, label) {
+            const map = {
+                passe: 'badge-success',
+                double: 'badge-danger',
+                application: 'badge-warning',
+                en_attente: 'badge-neutral',
+            };
+            return `<span class="badge ${map[decision] || 'badge-info'}">${escapeHtml(label || decision || '—')}</span>`;
+        }
 
         document.querySelectorAll('[data-eval-tab]').forEach((btn) => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('[data-eval-tab]').forEach((b) => b.classList.remove('active'));
+                document.querySelectorAll('[data-eval-tab]').forEach((b) => {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-selected', 'false');
+                });
                 btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
                 const tab = btn.dataset.evalTab;
                 document.getElementById('tabSaisieEval').hidden = tab !== 'saisie';
                 document.getElementById('tabBulletinsEval').hidden = tab !== 'bulletins';
                 const tabMat = document.getElementById('tabMatieresEval');
                 if (tabMat) tabMat.hidden = tab !== 'matieres';
+                majResumeSession();
                 if (tab === 'bulletins') chargerBulletinsEval().catch((e) => toast(e.message, 'error'));
                 if (tab === 'matieres') chargerMatieresEval().catch((e) => toast(e.message, 'error'));
             });
@@ -3030,20 +3497,94 @@ const EducRDC = (() => {
             sel.innerHTML = rows.length
                 ? rows.map((a) => `<option value="${a.id}" ${a.active ? 'selected' : ''}>${escapeHtml(a.libelle)}${a.active ? ' (active)' : ''}</option>`).join('')
                 : '<option value="">— Aucune année —</option>';
+            majResumeSession();
+        }
+
+        function labelClasseEval(c) {
+            const parts = [c.section_nom, c.option_nom].filter(Boolean);
+            const prefix = parts.length ? `${parts.join(' · ')} — ` : '';
+            return `${prefix}${c.nom || ''}`;
         }
 
         async function chargerClasses() {
             const sel = document.getElementById('selectClasseEval');
-            let url = `${API}/classes/?actif=1&page_size=200`;
+            let url = `${API}/classes/?actif=1&page_size=300&ordering=nom`;
             if (ecoleId) url += `&ecole=${ecoleId}`;
             const data = await api(url);
             const rows = data.results || data;
-            sel.innerHTML = rows.map((c) => `<option value="${c.id}">${escapeHtml(c.nom)}</option>`).join('')
-                || '<option value="">— Aucune classe —</option>';
+            // Tri section → option → nom
+            rows.sort((a, b) => labelClasseEval(a).localeCompare(labelClasseEval(b), 'fr'));
+            sel.innerHTML = rows.map((c) => `
+                <option value="${c.id}"
+                    data-section="${c.section || ''}"
+                    data-option="${c.option || ''}"
+                    data-section-nom="${escapeHtml(c.section_nom || '')}"
+                    data-option-nom="${escapeHtml(c.option_nom || '')}"
+                    data-ecole="${c.ecole || ecoleId || ''}">
+                    ${escapeHtml(labelClasseEval(c))}
+                </option>
+            `).join('') || '<option value="">— Aucune classe —</option>';
             if (classeFixe) {
                 sel.value = String(classeFixe);
                 sel.disabled = true;
             }
+            majResumeSession();
+        }
+
+        function classeSessionMeta() {
+            const sel = document.getElementById('selectClasseEval');
+            const opt = sel?.selectedOptions?.[0];
+            if (!sel?.value || !opt) return null;
+            return {
+                id: Number(sel.value),
+                section: opt.dataset.section ? Number(opt.dataset.section) : null,
+                option: opt.dataset.option ? Number(opt.dataset.option) : null,
+                sectionNom: opt.dataset.sectionNom || '',
+                optionNom: opt.dataset.optionNom || '',
+                ecole: opt.dataset.ecole || ecoleId || '',
+                label: (opt.textContent || '').trim(),
+            };
+        }
+
+        async function chargerPeriodes(opts = {}) {
+            const { ouvrir = false } = opts;
+            const annee = document.getElementById('selectAnneeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            const sel = document.getElementById('selectPeriodeEval');
+            if (!sel) return;
+            const prev = sel.value;
+            if (!annee || !classe) {
+                sel.innerHTML = '<option value="">— Choisir la classe —</option>';
+                periodeVerrouillee = false;
+                majResumeSession();
+                return;
+            }
+            const data = await api(`${API}/periodes-evaluation/?annee=${annee}&classe=${classe}&page_size=50`);
+            const rows = data.results || data;
+            sel.innerHTML = rows.length
+                ? rows.map((p) => {
+                    const lock = p.verrouillee ? ' — Verrouillée' : '';
+                    return `<option value="${p.id}" data-verrouillee="${p.verrouillee ? '1' : '0'}">${escapeHtml(p.libelle)}${lock}</option>`;
+                }).join('')
+                : '<option value="">— Aucune période —</option>';
+            if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+            const opt = sel.options[sel.selectedIndex];
+            periodeVerrouillee = opt?.dataset?.verrouillee === '1';
+            if (ouvrir && sel.value && !periodeVerrouillee) {
+                try {
+                    const res = await api(`${API}/periodes-evaluation/${sel.value}/ouvrir/`, {
+                        method: 'POST',
+                        body: JSON.stringify({ classe: Number(classe) }),
+                    });
+                    if (res.verrouilles > 0) toast(res.detail, 'success');
+                    // Recharger pour marquer les périodes antérieures verrouillées
+                    await chargerPeriodes({ ouvrir: false });
+                    return;
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            }
+            majResumeSession();
         }
 
         async function chargerProgrammes() {
@@ -3052,6 +3593,7 @@ const EducRDC = (() => {
             const sel = document.getElementById('selectProgrammeEval');
             if (!annee || !classe) {
                 sel.innerHTML = '<option value="">— Sélectionner —</option>';
+                majResumeSession();
                 return;
             }
             const data = await api(`${API}/programmes-classe/?annee=${annee}&classe=${classe}&page_size=200`);
@@ -3059,45 +3601,58 @@ const EducRDC = (() => {
             sel.innerHTML = rows.length
                 ? rows.map((p) => `<option value="${p.id}">${escapeHtml(p.matiere_nom)} (max ${p.maximum_effectif})</option>`).join('')
                 : '<option value="">— Aucune matière au programme —</option>';
+            majResumeSession();
         }
 
         async function chargerGrille() {
             const programme = document.getElementById('selectProgrammeEval')?.value;
+            const periode = document.getElementById('selectPeriodeEval')?.value;
             const thead = document.querySelector('#tableNotesEval thead');
             const tbody = document.querySelector('#tableNotesEval tbody');
             const btn = document.getElementById('btnEnregistrerNotes');
             const hint = document.getElementById('hintGrilleEval');
+            if (!periode) {
+                thead.innerHTML = '';
+                tbody.innerHTML = emptyRow(3, 'Période requise', 'Sélectionnez d\'abord la période de saisie.');
+                if (btn) btn.disabled = true;
+                return;
+            }
             if (!programme) {
                 thead.innerHTML = '';
                 tbody.innerHTML = emptyRow(3, 'Aucune matière', 'Appliquez un programme de classe ou sélectionnez une matière.');
                 if (btn) btn.disabled = true;
                 return;
             }
-            const data = await api(`${API}/notes/grille/?programme=${programme}`);
+            const data = await api(`${API}/notes/grille/?programme=${programme}&periode=${periode}`);
             cacheGrille = data;
-            const periodes = data.periodes || [];
-            hint.textContent = `${data.programme.matiere_nom} — ${data.eleves.length} élève(s)`;
+            periodeVerrouillee = !!data.verrouillee;
+            const pLib = data.periode?.libelle || 'Période';
+            hint.textContent = periodeVerrouillee
+                ? `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · verrouillée`
+                : `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · max ${data.maximum}`;
             thead.innerHTML = `<tr>
                 <th>Élève</th>
                 <th>Matricule</th>
-                ${periodes.map((p) => `<th>${escapeHtml(p.libelle)}<br><span class="form-hint">/${escapeHtml(data.maxima[p.id] || '')}</span></th>`).join('')}
+                <th>${escapeHtml(pLib)}<br><span class="form-hint">max ${escapeHtml(data.maximum || '')}</span></th>
             </tr>`;
+            const lockedAttr = periodeVerrouillee ? 'disabled' : '';
             tbody.innerHTML = data.eleves.length ? data.eleves.map((el) => `
                 <tr data-eleve="${el.eleve_id}">
                     <td data-label="Élève"><strong>${escapeHtml(el.eleve_nom)}</strong></td>
                     <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule)}</span></td>
-                    ${periodes.map((p) => `
-                        <td data-label="${escapeHtml(p.libelle)}">
-                            <input type="number" class="input-note" min="0" step="0.5"
-                                max="${escapeHtml(data.maxima[p.id] || '')}"
-                                data-periode="${p.id}"
-                                value="${escapeHtml(el.notes[p.id] || '')}"
-                                style="width:4.5rem">
-                        </td>
-                    `).join('')}
+                    <td data-label="${escapeHtml(pLib)}">
+                        <input type="number" class="input-note" min="0" step="0.5"
+                            max="${escapeHtml(data.maximum || '')}"
+                            data-periode="${data.periode.id}"
+                            value="${escapeHtml(el.note || '')}"
+                            inputmode="decimal"
+                            ${lockedAttr}
+                            aria-label="Note ${escapeHtml(el.eleve_nom)} — ${escapeHtml(pLib)}">
+                    </td>
                 </tr>
-            `).join('') : emptyRow(2 + periodes.length, 'Aucun élève', 'Aucun élève actif dans cette classe.');
-            if (btn) btn.disabled = !data.eleves.length;
+            `).join('') : emptyRow(3, 'Aucun élève', 'Aucun élève actif dans cette classe.');
+            if (btn) btn.disabled = !data.eleves.length || periodeVerrouillee;
+            majResumeSession();
         }
 
         async function chargerBulletinsEval() {
@@ -3117,10 +3672,10 @@ const EducRDC = (() => {
                     <td data-label="Total">${b.total_obtenu != null ? `${escapeHtml(String(b.total_obtenu))} / ${escapeHtml(String(b.total_max))}` : '—'}</td>
                     <td data-label="%">${b.pourcentage != null ? `${escapeHtml(String(b.pourcentage))} %` : '—'}</td>
                     <td data-label="Place">${b.place != null ? escapeHtml(String(b.place)) : '—'}</td>
-                    <td data-label="Décision"><span class="badge badge-info">${escapeHtml(b.decision_display || b.decision)}</span></td>
+                    <td data-label="Décision">${badgeDecision(b.decision, b.decision_display || b.decision)}</td>
                     <td data-label="Actions">
                         <a class="btn btn-primary btn-sm" target="_blank"
-                           href="${API}/bulletins/${b.eleve_id}/pdf/?annee=${annee}">${ico('pdf')}Bulletin PDF</a>
+                           href="${API}/bulletins/${b.eleve_id}/pdf/?annee=${annee}">${ico('pdf')}PDF</a>
                     </td>
                 </tr>
             `).join('') : emptyRow(7, 'Aucun bulletin', 'Saisissez des notes puis actualisez le classement.');
@@ -3129,46 +3684,189 @@ const EducRDC = (() => {
         async function chargerMatieresEval() {
             if (!peutConfigurer) return;
             const tbody = document.querySelector('#tableMatieresEval tbody');
-            let url = `${API}/matieres/?page_size=200`;
-            if (ecoleId) url += `&ecole=${ecoleId}`;
+            const hint = document.getElementById('hintMatieresEval');
+            const meta = classeSessionMeta();
+            if (!meta) {
+                if (hint) hint.textContent = 'Sélectionnez une classe — les matières de sa section / option s’affichent';
+                tbody.innerHTML = emptyRow(8, 'Classe requise', 'Choisissez une classe dans la barre de session.');
+                return;
+            }
+            if (hint) {
+                const scope = [meta.sectionNom, meta.optionNom].filter(Boolean).join(' · ') || meta.label;
+                hint.textContent = `Catalogue pour ${scope} — maximum = note d’une période TJ`;
+            }
+            let url = `${API}/matieres/?page_size=300&actif=1&scope=hierarchie&classe=${meta.id}`;
+            if (meta.ecole) url += `&ecole=${meta.ecole}`;
+            else if (ecoleId) url += `&ecole=${ecoleId}`;
             const data = await api(url);
             const rows = data.results || data;
             tbody.innerHTML = rows.length ? rows.map((m) => `
                 <tr>
                     <td data-label="Nom"><strong>${escapeHtml(m.nom)}</strong></td>
+                    <td data-label="Section">${escapeHtml(m.section_nom || '—')}</td>
+                    <td data-label="Option">${escapeHtml(m.option_nom || '—')}</td>
+                    <td data-label="Classe">${escapeHtml(m.classe_nom || '—')}</td>
                     <td data-label="Code"><span class="code-chip">${escapeHtml(m.code || '—')}</span></td>
                     <td data-label="Maximum">${escapeHtml(String(m.maximum))}</td>
                     <td data-label="Ordre">${escapeHtml(String(m.ordre))}</td>
                     <td data-label="Statut"><span class="badge ${m.active ? 'badge-success' : 'badge-danger'}">${m.active ? 'Active' : 'Inactive'}</span></td>
                 </tr>
-            `).join('') : emptyRow(5, 'Aucune matière', 'Chargez le catalogue ou créez une matière.');
+            `).join('') : emptyRow(8, 'Aucune matière', 'Cliquez sur « Catalogue option » pour charger les branches de cette section / option.');
+        }
+
+        async function regimeAnneeCourante() {
+            const anneeSel = document.getElementById('selectAnneeEval');
+            let regime = 'secondaire';
+            try {
+                const annees = await api(`${API}/annees-scolaires/?page_size=50`);
+                const rows = annees.results || annees;
+                const cur = rows.find((a) => String(a.id) === String(anneeSel?.value));
+                if (cur?.regime) regime = cur.regime;
+            } catch (_) { /* ignore */ }
+            return regime;
+        }
+
+        async function chargerCataloguePourClasse() {
+            const meta = classeSessionMeta();
+            if (!meta) {
+                toast('Sélectionnez d\'abord une classe.', 'warning');
+                return null;
+            }
+            const regime = await regimeAnneeCourante();
+            const data = await api(`${API}/matieres/charger-catalogue/`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    ecole: meta.ecole || ecoleId || undefined,
+                    regime,
+                    classe: meta.id,
+                    section: meta.section || undefined,
+                    option: meta.option || undefined,
+                }),
+            });
+            return data;
+        }
+
+        async function remplirSelectsMatiereEval() {
+            const sec = document.getElementById('matiereEvalSection');
+            const opt = document.getElementById('matiereEvalOption');
+            const cla = document.getElementById('matiereEvalClasse');
+            if (!sec || !ecoleId) return;
+            const sections = await api(`${API}/sections-scolaires/?ecole=${ecoleId}&actif=1&page_size=200`);
+            const secRows = sections.results || sections;
+            sec.innerHTML = '<option value="">—</option>' + secRows.map((s) =>
+                `<option value="${s.id}">${escapeHtml(s.nom)}</option>`
+            ).join('');
+            const fillOptions = async () => {
+                const sid = sec.value;
+                if (!sid) {
+                    opt.innerHTML = '<option value="">—</option>';
+                    return;
+                }
+                const options = await api(`${API}/options-scolaires/?ecole=${ecoleId}&section=${sid}&actif=1&page_size=200`);
+                const oRows = options.results || options;
+                opt.innerHTML = '<option value="">—</option>' + oRows.map((o) =>
+                    `<option value="${o.id}">${escapeHtml(o.nom)}</option>`
+                ).join('');
+            };
+            const fillClasses = async () => {
+                const oid = opt.value;
+                let url = `${API}/classes/?ecole=${ecoleId}&actif=1&page_size=200`;
+                if (oid) url += `&option=${oid}`;
+                else if (sec.value) url += `&section=${sec.value}`;
+                const classes = await api(url);
+                const cRows = classes.results || classes;
+                cla.innerHTML = '<option value="">—</option>' + cRows.map((c) =>
+                    `<option value="${c.id}">${escapeHtml(c.nom)}</option>`
+                ).join('');
+            };
+            sec.onchange = async () => { await fillOptions(); await fillClasses(); };
+            opt.onchange = async () => { await fillClasses(); };
+            await fillOptions();
+            await fillClasses();
+            // Préremplir depuis la session
+            const classeSel = document.getElementById('selectClasseEval');
+            if (classeSel?.value) {
+                try {
+                    const c = await api(`${API}/classes/${classeSel.value}/`);
+                    if (c.section) {
+                        sec.value = String(c.section);
+                        await fillOptions();
+                    }
+                    if (c.option) {
+                        opt.value = String(c.option);
+                        await fillClasses();
+                    }
+                    cla.value = String(c.id);
+                } catch (_) { /* ignore */ }
+            }
         }
 
         document.getElementById('selectAnneeEval')?.addEventListener('change', async () => {
+            majResumeSession();
+            await chargerPeriodes({ ouvrir: false });
             await chargerProgrammes();
             await chargerGrille().catch((e) => toast(e.message, 'error'));
         });
         document.getElementById('selectClasseEval')?.addEventListener('change', async () => {
+            majResumeSession();
+            await chargerPeriodes({ ouvrir: false });
             await chargerProgrammes();
+            await chargerGrille().catch((e) => toast(e.message, 'error'));
+            const tabMat = document.getElementById('tabMatieresEval');
+            if (tabMat && !tabMat.hidden) {
+                await chargerMatieresEval().catch((e) => toast(e.message, 'error'));
+            }
+        });
+        document.getElementById('selectPeriodeEval')?.addEventListener('change', async () => {
+            const opt = document.getElementById('selectPeriodeEval')?.selectedOptions?.[0];
+            periodeVerrouillee = opt?.dataset?.verrouillee === '1';
+            majResumeSession();
+            // Ouvrir la période = verrouiller les périodes antérieures
+            if (!periodeVerrouillee) {
+                await chargerPeriodes({ ouvrir: true });
+            }
             await chargerGrille().catch((e) => toast(e.message, 'error'));
         });
         document.getElementById('selectProgrammeEval')?.addEventListener('change', () => {
+            majResumeSession();
             chargerGrille().catch((e) => toast(e.message, 'error'));
+        });
+
+        document.getElementById('btnDeverrouillerPeriode')?.addEventListener('click', async () => {
+            const periode = document.getElementById('selectPeriodeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            if (!periode || !classe) return;
+            try {
+                await api(`${API}/periodes-evaluation/${periode}/deverrouiller/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ classe: Number(classe) }),
+                });
+                toast('Période déverrouillée.', 'success');
+                await chargerPeriodes({ ouvrir: false });
+                await chargerGrille();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
         });
 
         document.getElementById('btnEnregistrerNotes')?.addEventListener('click', async () => {
             const programme = document.getElementById('selectProgrammeEval')?.value;
-            if (!programme || !cacheGrille) return;
+            const periode = document.getElementById('selectPeriodeEval')?.value;
+            if (!programme || !periode || !cacheGrille) return;
+            if (periodeVerrouillee || cacheGrille.verrouillee) {
+                toast('Cette période est verrouillée.', 'error');
+                return;
+            }
             const notes = [];
             document.querySelectorAll('#tableNotesEval tbody tr[data-eleve]').forEach((tr) => {
                 const eleve = Number(tr.dataset.eleve);
-                tr.querySelectorAll('.input-note').forEach((input) => {
-                    const raw = (input.value || '').trim();
-                    notes.push({
-                        eleve,
-                        periode: Number(input.dataset.periode),
-                        valeur: raw === '' ? null : Number(raw),
-                    });
+                const input = tr.querySelector('.input-note');
+                if (!input) return;
+                const raw = (input.value || '').trim();
+                notes.push({
+                    eleve,
+                    periode: Number(periode),
+                    valeur: raw === '' ? null : Number(raw),
                 });
             });
             try {
@@ -3226,42 +3924,34 @@ const EducRDC = (() => {
             }
         });
 
-        document.getElementById('btnCatalogueMatieres')?.addEventListener('click', async () => {
-            const anneeSel = document.getElementById('selectAnneeEval');
-            const regimeOpt = anneeSel?.selectedOptions?.[0];
-            // régime récupéré via API si besoin — défaut secondaire
-            let regime = 'secondaire';
+        async function onCatalogueClick() {
             try {
-                const annees = await api(`${API}/annees-scolaires/?page_size=50`);
-                const rows = annees.results || annees;
-                const cur = rows.find((a) => String(a.id) === String(anneeSel.value));
-                if (cur?.regime) regime = cur.regime;
-            } catch (_) { /* ignore */ }
-            try {
-                const data = await api(`${API}/matieres/charger-catalogue/`, {
-                    method: 'POST',
-                    body: JSON.stringify({ ecole: ecoleId || undefined, regime }),
-                });
-                toast(data.detail || 'Catalogue chargé.', 'success');
+                const data = await chargerCataloguePourClasse();
+                if (!data) return;
+                toast(data.detail || 'Catalogue chargé pour l\'option / classe.', 'success');
                 await chargerMatieresEval();
+                await chargerProgrammes();
             } catch (err) {
                 toast(err.message, 'error');
             }
-        });
+        }
+        document.getElementById('btnCatalogueMatieres')?.addEventListener('click', onCatalogueClick);
+        document.getElementById('btnCatalogueMatieresTab')?.addEventListener('click', onCatalogueClick);
 
         document.getElementById('btnAppliquerProgramme')?.addEventListener('click', async () => {
             const annee = document.getElementById('selectAnneeEval')?.value;
-            const classe = document.getElementById('selectClasseEval')?.value;
-            if (!annee || !classe) {
+            const meta = classeSessionMeta();
+            if (!annee || !meta) {
                 toast('Choisissez une année et une classe.', 'warning');
                 return;
             }
             try {
                 const data = await api(`${API}/programmes-classe/appliquer-matieres-ecole/`, {
                     method: 'POST',
-                    body: JSON.stringify({ annee: Number(annee), classe: Number(classe) }),
+                    body: JSON.stringify({ annee: Number(annee), classe: meta.id }),
                 });
                 toast(data.detail || 'Programme appliqué.', 'success');
+                await chargerMatieresEval().catch(() => {});
                 await chargerProgrammes();
                 await chargerGrille();
             } catch (err) {
@@ -3269,12 +3959,24 @@ const EducRDC = (() => {
             }
         });
 
-        document.getElementById('btnNouvelleMatiere')?.addEventListener('click', () => openModal('modalMatiereEval'));
+        document.getElementById('btnNouvelleMatiere')?.addEventListener('click', async () => {
+            try {
+                await remplirSelectsMatiereEval();
+            } catch (err) {
+                toast(err.message, 'error');
+                return;
+            }
+            openModal('modalMatiereEval');
+        });
         document.getElementById('formMatiereEval')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
             if (!form.checkValidity()) {
                 form.reportValidity();
+                return;
+            }
+            if (!form.section.value || !form.option.value || !form.classe.value) {
+                toast('Section, option et classe sont obligatoires.', 'warning');
                 return;
             }
             if (!ecoleId && !estEnseignant) {
@@ -3298,6 +4000,9 @@ const EducRDC = (() => {
             }
             const payload = {
                 ecole: Number(ecole),
+                section: Number(form.section.value),
+                option: Number(form.option.value),
+                classe: Number(form.classe.value),
                 nom: form.nom.value.trim(),
                 code: form.code.value.trim(),
                 maximum: Number(form.maximum.value),
@@ -3319,12 +4024,1049 @@ const EducRDC = (() => {
             try {
                 await chargerAnnees();
                 await chargerClasses();
+                await chargerPeriodes({ ouvrir: false });
                 await chargerProgrammes();
                 await chargerGrille();
             } catch (err) {
                 toast(err.message, 'error');
             }
         })();
+    }
+
+    /* ---------- Paramètres — Structure scolaire (CRUD) ---------- */
+    function initParametresScolaire() {
+        const app = document.getElementById('paramScolaireApp');
+        if (!app) return;
+        bindModalClosers();
+
+        const ecoleFigee = app.dataset.ecoleFigee === '1';
+        let ecoleId = app.dataset.ecoleId || '';
+        let pageSections = 1;
+        let pageOptions = 1;
+        let pageClasses = 1;
+        let pageMatieres = 1;
+        let cacheSections = [];
+        let cacheOptions = [];
+        let cacheClasses = [];
+        let cacheMatieres = [];
+
+        const selEcole = document.getElementById('filtreEcoleScolaire');
+
+        function requireEcole() {
+            if (!ecoleId) {
+                toast('Étape 1 : sélectionnez d\'abord une école.', 'warning');
+                document.getElementById('filtreEcoleScolaire')?.focus();
+                return false;
+            }
+            return true;
+        }
+
+        function majEtatEcoleSelection() {
+            const hasEcole = !!ecoleId;
+            const bloc = document.getElementById('blocStructureEcole');
+            const resume = document.getElementById('resumeStructureScolaire');
+            const hint = document.getElementById('hintEcoleSelectionnee');
+            const badgeReq = document.getElementById('badgeEcoleRequise');
+            const badgeOk = document.getElementById('badgeEcoleChoisie');
+            const step1 = document.querySelector('[data-struct-step="1"]');
+            const step2 = document.querySelector('[data-struct-step="2"]');
+            const titreAff = document.getElementById('titreAffectationEcole');
+
+            if (bloc) {
+                bloc.hidden = !hasEcole;
+                bloc.classList.toggle('struct-locked', !hasEcole);
+            }
+            if (resume) resume.hidden = !hasEcole;
+            if (badgeReq) badgeReq.hidden = hasEcole;
+            if (badgeOk) badgeOk.hidden = !hasEcole;
+            step1?.classList.toggle('is-active', !hasEcole);
+            step1?.classList.toggle('is-done', hasEcole);
+            step2?.classList.toggle('is-active', hasEcole);
+            step2?.classList.toggle('is-done', false);
+
+            if (hint) {
+                if (hasEcole && selEcole) {
+                    const lab = selEcole.options[selEcole.selectedIndex]?.textContent || '';
+                    hint.hidden = false;
+                    hint.innerHTML = `École sélectionnée : <strong>${escapeHtml(lab.trim())}</strong> — vous pouvez maintenant affecter sections, options et classes.`;
+                } else {
+                    hint.hidden = true;
+                    hint.textContent = '';
+                }
+            }
+            if (titreAff) {
+                titreAff.textContent = hasEcole
+                    ? 'Cochez les options du référentiel, puis affectez-les à cette école'
+                    : 'Sélectionnez d\'abord une école (étape 1)';
+            }
+        }
+
+        function statutBadge(active) {
+            return active
+                ? '<span class="badge badge-success">Active</span>'
+                : '<span class="badge badge-neutral">Inactive</span>';
+        }
+
+        function setStat(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value == null ? '—' : String(value);
+        }
+
+        async function actualiserResume() {
+            if (!ecoleId) {
+                setStat('statSections', '—');
+                setStat('statOptions', '—');
+                setStat('statClasses', '—');
+                setStat('statMatieres', '—');
+                return;
+            }
+            try {
+                const [sec, opt, cls, mat] = await Promise.all([
+                    api(`${API}/sections-scolaires/?ecole=${ecoleId}&actif=1&page_size=1`),
+                    api(`${API}/options-scolaires/?ecole=${ecoleId}&actif=1&page_size=1`),
+                    api(`${API}/classes/?ecole=${ecoleId}&actif=1&page_size=1`),
+                    api(`${API}/matieres/?ecole=${ecoleId}&actif=1&page_size=1`),
+                ]);
+                setStat('statSections', sec.count ?? (sec.results || sec).length);
+                setStat('statOptions', opt.count ?? (opt.results || opt).length);
+                setStat('statClasses', cls.count ?? (cls.results || cls).length);
+                setStat('statMatieres', mat.count ?? (mat.results || mat).length);
+            } catch (_) {
+                /* résumé non bloquant */
+            }
+        }
+
+        async function chargerSelectEcoles(search = '') {
+            if (!selEcole) return;
+            const info = document.getElementById('infoEcolesChargees');
+            try {
+                if (ecoleFigee && ecoleId) {
+                    const e = await api(`${API}/ecoles/${ecoleId}/?leger=1`);
+                    selEcole.innerHTML = `<option value="${e.id}">${escapeHtml(e.nom)} (${escapeHtml(e.code || '')})</option>`;
+                    ecoleId = String(e.id);
+                    if (info) info.textContent = '';
+                    majEtatEcoleSelection();
+                    return;
+                }
+
+                selEcole.innerHTML = '<option value="">Chargement…</option>';
+                const q = (search || '').trim();
+                // Liste complète des écoles actives (pas seulement celles déjà structurées)
+                let url = `${API}/ecoles/choix/?active=1&page_size=200&ordering=nom`;
+                if (q) url += `&search=${encodeURIComponent(q)}`;
+
+                let data;
+                try {
+                    data = await api(url);
+                } catch (err) {
+                    data = await api(`${API}/ecoles/?leger=1&active=1&page_size=200&ordering=nom${q ? `&search=${encodeURIComponent(q)}` : ''}`);
+                }
+                let rows = data.results || data;
+                if (!Array.isArray(rows)) rows = [];
+
+                const total = data.count ?? rows.length;
+                if (info) {
+                    info.textContent = rows.length
+                        ? `${rows.length}${total > rows.length ? ` / ${total}` : ''} école(s)`
+                        : 'Aucune école';
+                }
+
+                if (!rows.length) {
+                    selEcole.innerHTML = '<option value="">Aucune école trouvée</option>';
+                    ecoleId = '';
+                    majEtatEcoleSelection();
+                    return;
+                }
+
+                // Pas de sélection automatique : l'utilisateur choisit l'école (étape 1)
+                const previous = ecoleId || '';
+                selEcole.innerHTML = `<option value="">— Choisir une école —</option>${
+                    rows.map((e) => (
+                        `<option value="${e.id}">${escapeHtml(e.nom)} (${escapeHtml(e.code || '')})</option>`
+                    )).join('')
+                }`;
+
+                if (previous && [...selEcole.options].some((o) => o.value === String(previous))) {
+                    selEcole.value = String(previous);
+                    ecoleId = String(previous);
+                } else {
+                    ecoleId = '';
+                    selEcole.value = '';
+                }
+                majEtatEcoleSelection();
+            } catch (err) {
+                selEcole.innerHTML = '<option value="">Erreur de chargement</option>';
+                if (info) info.textContent = '';
+                ecoleId = '';
+                majEtatEcoleSelection();
+                toast(err.message || 'Impossible de charger les écoles.', 'error');
+            }
+        }
+
+        async function remplirSelectSections(selectEl, selected = '', includeEmpty = true) {
+            if (!selectEl) return;
+            selectEl.innerHTML = includeEmpty ? '<option value="">— Section —</option>' : '';
+            if (!ecoleId) return;
+            try {
+                const data = await api(`${API}/sections-scolaires/?ecole=${ecoleId}&page_size=200`);
+                const rows = data.results || data;
+                selectEl.innerHTML = (includeEmpty ? '<option value="">— Section —</option>' : '')
+                    + rows.map((s) => `<option value="${s.id}">${escapeHtml(s.nom)}${s.code ? ` (${escapeHtml(s.code)})` : ''}</option>`).join('');
+                if (selected) selectEl.value = String(selected);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function remplirSelectOptions(selectEl, sectionId, selected = '', includeEmpty = true) {
+            if (!selectEl) return;
+            selectEl.innerHTML = includeEmpty ? '<option value="">— Option —</option>' : '';
+            if (!ecoleId) return;
+            let url = `${API}/options-scolaires/?ecole=${ecoleId}&page_size=200`;
+            if (sectionId) url += `&section=${sectionId}`;
+            try {
+                const data = await api(url);
+                const rows = data.results || data;
+                selectEl.innerHTML = (includeEmpty ? '<option value="">— Option —</option>' : '')
+                    + rows.map((o) => `<option value="${o.id}">${escapeHtml(o.nom)}${o.code ? ` (${escapeHtml(o.code)})` : ''}</option>`).join('');
+                if (selected) selectEl.value = String(selected);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function remplirSelectClasses(selectEl, selected = '', includeEmpty = true) {
+            if (!selectEl) return;
+            selectEl.innerHTML = includeEmpty ? '<option value="">— Classe —</option>' : '';
+            if (!ecoleId) return;
+            try {
+                const data = await api(`${API}/classes/?ecole=${ecoleId}&page_size=300`);
+                const rows = data.results || data;
+                selectEl.innerHTML = (includeEmpty ? '<option value="">— Classe —</option>' : '')
+                    + rows.map((c) => `<option value="${c.id}">${escapeHtml(c.nom)}</option>`).join('');
+                if (selected) selectEl.value = String(selected);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function rafraichirFiltres() {
+            await Promise.all([
+                remplirSelectSections(document.getElementById('filtreSectionOptions'), document.getElementById('filtreSectionOptions')?.value || '', true),
+                remplirSelectSections(document.getElementById('filtreSectionClasses'), document.getElementById('filtreSectionClasses')?.value || '', true),
+                remplirSelectClasses(document.getElementById('filtreClasseMatieres'), document.getElementById('filtreClasseMatieres')?.value || '', true),
+            ]);
+            const secCl = document.getElementById('filtreSectionClasses')?.value || '';
+            await remplirSelectOptions(
+                document.getElementById('filtreOptionClasses'),
+                secCl,
+                document.getElementById('filtreOptionClasses')?.value || '',
+                true,
+            );
+            // Relabel empty options for filters
+            const fo = document.getElementById('filtreSectionOptions');
+            if (fo?.options[0]) fo.options[0].textContent = 'Toutes les sections';
+            const fs = document.getElementById('filtreSectionClasses');
+            if (fs?.options[0]) fs.options[0].textContent = 'Toutes les sections';
+            const fop = document.getElementById('filtreOptionClasses');
+            if (fop?.options[0]) fop.options[0].textContent = 'Toutes les options';
+            const fc = document.getElementById('filtreClasseMatieres');
+            if (fc?.options[0]) fc.options[0].textContent = 'Toutes les classes';
+        }
+
+        async function chargerSections(page = 1) {
+            pageSections = page;
+            const tbody = document.querySelector('#tableSections tbody');
+            if (!tbody) return;
+            if (!ecoleId) {
+                tbody.innerHTML = emptyRow(5, 'Aucune école', 'Choisissez une école pour gérer les sections.');
+                setCount('countSections', 0, 'section');
+                return;
+            }
+            const q = (document.getElementById('searchSections')?.value || '').trim();
+            let url = `${API}/sections-scolaires/?ecole=${ecoleId}&page=${page}&page_size=25`;
+            if (q) url += `&search=${encodeURIComponent(q)}`;
+            try {
+                const data = await api(url);
+                const rows = data.results || data;
+                cacheSections = rows;
+                const total = data.count ?? rows.length;
+                setCount('countSections', total, 'section');
+                if (!rows.length) {
+                    tbody.innerHTML = emptyRow(5, 'Aucune section', 'Créez une section ou chargez le programme RDC.');
+                    renderPagination('paginationSections', 1, 1, chargerSections);
+                    return;
+                }
+                tbody.innerHTML = rows.map((s) => `
+                    <tr>
+                        <td data-label="Nom"><strong>${escapeHtml(s.nom)}</strong></td>
+                        <td data-label="Code"><span class="code-chip">${escapeHtml(s.code || '—')}</span></td>
+                        <td data-label="Options">${s.nb_options ?? 0}</td>
+                        <td data-label="Statut">${statutBadge(s.active)}</td>
+                        <td data-label="Actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-edit-section="${s.id}">${ico('edit')}Modifier</button>
+                        </td>
+                    </tr>
+                `).join('');
+                tbody.querySelectorAll('[data-edit-section]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const s = cacheSections.find((x) => String(x.id) === btn.dataset.editSection);
+                        if (s) ouvrirModalSection(s);
+                    });
+                });
+                const pages = data.count ? Math.ceil(data.count / 25) : 1;
+                renderPagination('paginationSections', page, pages, chargerSections);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function chargerOptions(page = 1) {
+            pageOptions = page;
+            const tbody = document.querySelector('#tableOptions tbody');
+            if (!tbody) return;
+            if (!ecoleId) {
+                tbody.innerHTML = emptyRow(5, 'Aucune école', 'Choisissez une école.');
+                setCount('countOptions', 0, 'option');
+                return;
+            }
+            const q = (document.getElementById('searchOptions')?.value || '').trim();
+            const section = document.getElementById('filtreSectionOptions')?.value || '';
+            let url = `${API}/options-scolaires/?ecole=${ecoleId}&page=${page}&page_size=25`;
+            if (section) url += `&section=${section}`;
+            if (q) url += `&search=${encodeURIComponent(q)}`;
+            try {
+                const data = await api(url);
+                const rows = data.results || data;
+                cacheOptions = rows;
+                setCount('countOptions', data.count ?? rows.length, 'option');
+                if (!rows.length) {
+                    tbody.innerHTML = emptyRow(5, 'Aucune option', 'Créez une option pour une section.');
+                    renderPagination('paginationOptions', 1, 1, chargerOptions);
+                    return;
+                }
+                tbody.innerHTML = rows.map((o) => `
+                    <tr>
+                        <td data-label="Nom"><strong>${escapeHtml(o.nom)}</strong></td>
+                        <td data-label="Code"><span class="code-chip">${escapeHtml(o.code || '—')}</span></td>
+                        <td data-label="Section">${escapeHtml(o.section_nom || '—')}</td>
+                        <td data-label="Statut">${statutBadge(o.active)}</td>
+                        <td data-label="Actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-edit-option="${o.id}">${ico('edit')}Modifier</button>
+                        </td>
+                    </tr>
+                `).join('');
+                tbody.querySelectorAll('[data-edit-option]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const o = cacheOptions.find((x) => String(x.id) === btn.dataset.editOption);
+                        if (o) ouvrirModalOption(o);
+                    });
+                });
+                const pages = data.count ? Math.ceil(data.count / 25) : 1;
+                renderPagination('paginationOptions', page, pages, chargerOptions);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        async function chargerClassesParam() {
+            const container = document.getElementById('classesHierarchy');
+            if (!container) return;
+            if (!ecoleId) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <strong>Aucune école</strong>
+                        <span>Choisissez une école pour afficher les classes.</span>
+                    </div>`;
+                setCount('countClasses', 0, 'classe');
+                return;
+            }
+            const q = (document.getElementById('searchClasses')?.value || '').trim();
+            const section = document.getElementById('filtreSectionClasses')?.value || '';
+            const option = document.getElementById('filtreOptionClasses')?.value || '';
+            let url = `${API}/classes/?ecole=${ecoleId}&page_size=300&ordering=nom`;
+            if (section) url += `&section=${section}`;
+            if (option) url += `&option=${option}`;
+            if (q) url += `&search=${encodeURIComponent(q)}`;
+            container.innerHTML = '<p class="empty-state">Chargement des classes…</p>';
+            try {
+                const data = await api(url);
+                const rows = data.results || data;
+                cacheClasses = rows;
+                setCount('countClasses', data.count ?? rows.length, 'classe');
+                renderClassesHierarchy(container, rows, {
+                    onEdit: (c) => ouvrirModalClasseParam(c),
+                });
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <strong>Erreur</strong>
+                        <span>${escapeHtml(err.message)}</span>
+                    </div>`;
+                toast(err.message, 'error');
+            }
+        }
+
+        async function chargerMatieresParam(page = 1) {
+            pageMatieres = page;
+            const tbody = document.querySelector('#tableMatieresParam tbody');
+            if (!tbody) return;
+            if (!ecoleId) {
+                tbody.innerHTML = emptyRow(9, 'Aucune école', 'Choisissez une école.');
+                setCount('countMatieres', 0, 'matière');
+                return;
+            }
+            const q = (document.getElementById('searchMatieres')?.value || '').trim();
+            const classe = document.getElementById('filtreClasseMatieres')?.value || '';
+            let url = `${API}/matieres/?ecole=${ecoleId}&page=${page}&page_size=25`;
+            if (classe) url += `&classe=${classe}`;
+            if (q) url += `&search=${encodeURIComponent(q)}`;
+            try {
+                const data = await api(url);
+                const rows = data.results || data;
+                cacheMatieres = rows;
+                setCount('countMatieres', data.count ?? rows.length, 'matière');
+                if (!rows.length) {
+                    tbody.innerHTML = emptyRow(9, 'Aucune matière', 'Créez une matière ou chargez le catalogue.');
+                    renderPagination('paginationMatieres', 1, 1, chargerMatieresParam);
+                    return;
+                }
+                tbody.innerHTML = rows.map((m) => `
+                    <tr>
+                        <td data-label="Ordre">${m.ordre ?? 0}</td>
+                        <td data-label="Nom"><strong>${escapeHtml(m.nom)}</strong></td>
+                        <td data-label="Code"><span class="code-chip">${escapeHtml(m.code || '—')}</span></td>
+                        <td data-label="Max">${m.maximum ?? '—'}</td>
+                        <td data-label="Section">${escapeHtml(m.section_nom || '—')}</td>
+                        <td data-label="Option">${escapeHtml(m.option_nom || '—')}</td>
+                        <td data-label="Classe">${escapeHtml(m.classe_nom || '—')}</td>
+                        <td data-label="Statut">${statutBadge(m.active)}</td>
+                        <td data-label="Actions">
+                            <button type="button" class="btn btn-ghost btn-sm" data-edit-matiere="${m.id}">${ico('edit')}Modifier</button>
+                        </td>
+                    </tr>
+                `).join('');
+                tbody.querySelectorAll('[data-edit-matiere]').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const m = cacheMatieres.find((x) => String(x.id) === btn.dataset.editMatiere);
+                        if (m) ouvrirModalMatiereParam(m);
+                    });
+                });
+                const pages = data.count ? Math.ceil(data.count / 25) : 1;
+                renderPagination('paginationMatieres', page, pages, chargerMatieresParam);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        }
+
+        function ouvrirModalSection(row = null) {
+            if (!requireEcole()) return;
+            const form = document.getElementById('formSectionParam');
+            form.reset();
+            document.getElementById('sectionParamId').value = row?.id || '';
+            document.getElementById('titreModalSection').textContent = row ? 'Modifier la section' : 'Nouvelle section';
+            if (row) {
+                form.nom.value = row.nom || '';
+                form.code.value = row.code || '';
+                form.active.value = row.active ? '1' : '0';
+            }
+            document.getElementById('btnSupprimerSection').hidden = !row;
+            openModal('modalSectionParam');
+        }
+
+        async function ouvrirModalOption(row = null) {
+            if (!requireEcole()) return;
+            const form = document.getElementById('formOptionParam');
+            form.reset();
+            document.getElementById('optionParamId').value = row?.id || '';
+            document.getElementById('titreModalOption').textContent = row ? 'Modifier l\'option' : 'Nouvelle option';
+            await remplirSelectSections(document.getElementById('selectSectionOption'), row?.section || '', false);
+            if (row) {
+                form.nom.value = row.nom || '';
+                form.code.value = row.code || '';
+                form.active.value = row.active ? '1' : '0';
+            }
+            document.getElementById('btnSupprimerOption').hidden = !row;
+            openModal('modalOptionParam');
+        }
+
+        async function ouvrirModalClasseParam(row = null) {
+            if (!requireEcole()) return;
+            const form = document.getElementById('formClasseParam');
+            form.reset();
+            document.getElementById('classeParamId').value = row?.id || '';
+            document.getElementById('titreModalClasseParam').textContent = row ? 'Modifier la classe' : 'Nouvelle classe';
+            await remplirSelectSections(document.getElementById('selectSectionClasse'), row?.section || '', false);
+            await remplirSelectOptions(
+                document.getElementById('selectOptionClasse'),
+                row?.section || document.getElementById('selectSectionClasse')?.value,
+                row?.option || '',
+                false,
+            );
+            if (row) {
+                form.nom.value = row.nom || '';
+                form.code.value = row.code || '';
+                form.active.value = row.active ? '1' : '0';
+            }
+            document.getElementById('btnSupprimerClasseParam').hidden = !row;
+            openModal('modalClasseParam');
+        }
+
+        async function ouvrirModalMatiereParam(row = null) {
+            if (!requireEcole()) return;
+            const form = document.getElementById('formMatiereParam');
+            form.reset();
+            document.getElementById('matiereParamId').value = row?.id || '';
+            document.getElementById('titreModalMatiereParam').textContent = row ? 'Modifier la matière' : 'Nouvelle matière';
+            await remplirSelectSections(document.getElementById('selectSectionMatiere'), row?.section || '', true);
+            await remplirSelectOptions(
+                document.getElementById('selectOptionMatiere'),
+                row?.section || '',
+                row?.option || '',
+                true,
+            );
+            await remplirSelectClasses(document.getElementById('selectClasseMatiere'), row?.classe || '', true);
+            if (row) {
+                form.nom.value = row.nom || '';
+                form.code.value = row.code || '';
+                form.maximum.value = row.maximum ?? 20;
+                form.ordre.value = row.ordre ?? 0;
+                form.active.value = row.active ? '1' : '0';
+            } else {
+                form.maximum.value = 20;
+                form.ordre.value = 0;
+            }
+            document.getElementById('btnSupprimerMatiereParam').hidden = !row;
+            openModal('modalMatiereParam');
+        }
+
+        function renderArbreAffectation(container, sections, { mode, filter = '' } = {}) {
+            if (!container) return;
+            const q = (filter || '').trim().toLowerCase();
+            const filtered = (sections || []).map((sec) => {
+                const options = (sec.options || []).filter((o) => {
+                    const affectee = !!(o.deja_present && o.active);
+                    if (mode === 'dispo' && affectee) return false;
+                    if (mode === 'affecte' && !affectee) return false;
+                    if (!q) return true;
+                    const hay = `${sec.nom} ${sec.code} ${o.nom} ${o.code}`.toLowerCase();
+                    return hay.includes(q);
+                });
+                return { ...sec, options };
+            }).filter((sec) => sec.options.length);
+
+            if (!filtered.length) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <strong>${mode === 'affecte' ? 'Aucune option affectée' : 'Rien à affecter'}</strong>
+                        <span>${mode === 'affecte'
+                            ? 'Affectez des options depuis le référentiel à gauche.'
+                            : 'Toutes les options visibles sont déjà affectées, ou aucun résultat.'}</span>
+                    </div>`;
+                return;
+            }
+
+            const side = mode === 'affecte' ? 'aff' : 'dispo';
+            container.innerHTML = filtered.map((sec) => `
+                <div class="prog-rdc-section" data-aff-side="${side}">
+                    <div class="prog-rdc-section-head">
+                        <label>
+                            <input type="checkbox" class="aff-sec-check" data-side="${side}">
+                            <span>${escapeHtml(sec.nom)}</span>
+                        </label>
+                    </div>
+                    <ul class="prog-rdc-options">
+                        ${sec.options.map((o) => `
+                            <li class="prog-rdc-option">
+                                <label>
+                                    <input type="checkbox" class="aff-opt-check" data-side="${side}"
+                                        value="${escapeHtml(o.code || '')}"
+                                        data-opt-code="${escapeHtml(o.code || '')}"
+                                        data-option-id="${o.option_id || ''}">
+                                    <span>${escapeHtml(o.nom)}</span>
+                                    ${o.code ? `<span class="code-chip">${escapeHtml(o.code)}</span>` : ''}
+                                </label>
+                                <span class="prog-rdc-meta">${o.nb_classes || 0} cl.</span>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `).join('');
+
+            container.querySelectorAll('.aff-sec-check').forEach((cb) => {
+                cb.addEventListener('change', () => {
+                    const box = cb.closest('.prog-rdc-section');
+                    box?.querySelectorAll('.aff-opt-check').forEach((o) => {
+                        o.checked = cb.checked;
+                    });
+                });
+            });
+        }
+
+        let cacheReferentielAffect = { sections: [] };
+
+        async function chargerAffectation() {
+            const dispo = document.getElementById('affectationDispo');
+            const affecte = document.getElementById('affectationAffecte');
+            const countEl = document.getElementById('countAffectation');
+            if (!dispo || !affecte) return;
+            if (!ecoleId) {
+                dispo.innerHTML = '<p class="empty-state">Choisissez une école…</p>';
+                affecte.innerHTML = '<p class="empty-state">Choisissez une école…</p>';
+                if (countEl) countEl.textContent = '—';
+                return;
+            }
+            dispo.innerHTML = '<p class="empty-state">Chargement…</p>';
+            affecte.innerHTML = '<p class="empty-state">Chargement…</p>';
+            try {
+                const data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?auto_niveau=1`);
+                cacheReferentielAffect = data;
+                const sections = data.sections || [];
+                const nAff = sections.reduce(
+                    (n, s) => n + (s.options || []).filter((o) => o.deja_present && o.active).length,
+                    0,
+                );
+                if (countEl) countEl.textContent = `${nAff} option(s) affectée(s)`;
+                renderArbreAffectation(dispo, sections, {
+                    mode: 'dispo',
+                    filter: document.getElementById('searchAffectDispo')?.value || '',
+                });
+                renderArbreAffectation(affecte, sections, {
+                    mode: 'affecte',
+                    filter: document.getElementById('searchAffectAffecte')?.value || '',
+                });
+            } catch (err) {
+                dispo.innerHTML = `<div class="empty-state"><strong>Erreur</strong><span>${escapeHtml(err.message)}</span></div>`;
+                affecte.innerHTML = '';
+                toast(err.message, 'error');
+            }
+        }
+
+        function lireCodesOpt(side) {
+            const rootId = side === 'aff' ? 'affectationAffecte' : 'affectationDispo';
+            const root = document.getElementById(rootId);
+            if (!root) return [];
+            const codes = [];
+            root.querySelectorAll('input.aff-opt-check:checked').forEach((el) => {
+                const code = (el.value || el.getAttribute('data-opt-code') || '').trim();
+                if (code && !codes.includes(code)) codes.push(code);
+            });
+            return codes;
+        }
+
+        async function rechargerOngletCourant() {
+            const active = document.querySelector('#paramScolaireApp .tab-btn.active')?.dataset.tab || 'affectation';
+            await Promise.all([rafraichirFiltres(), actualiserResume()]);
+            if (active === 'affectation') await chargerAffectation();
+            else if (active === 'sections') await chargerSections(1);
+            else if (active === 'options') await chargerOptions(1);
+            else if (active === 'classes') await chargerClassesParam();
+            else if (active === 'matieres') await chargerMatieresParam(1);
+        }
+
+        // Tabs (scopés à cette page) + sync sous-menu Paramètres (?onglet=)
+        document.querySelectorAll('#paramScolaireApp .tab-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                const tab = activerOngletStructure(btn.dataset.tab);
+                const url = new URL(window.location.href);
+                url.searchParams.set('onglet', tab);
+                window.history.replaceState({}, '', url);
+                // Mettre en évidence le lien du sous-menu
+                document.querySelectorAll('.nav-group[data-nav-group="parametres"] .nav-sublink').forEach((a) => {
+                    try {
+                        const u = new URL(a.href, window.location.origin);
+                        a.classList.toggle('active', u.searchParams.get('onglet') === tab);
+                    } catch (_) { /* ignore */ }
+                });
+                try {
+                    if (!ecoleId && tab !== 'affectation') {
+                        toast('Étape 1 : sélectionnez d\'abord une école.', 'warning');
+                        return;
+                    }
+                    if (tab === 'affectation') await chargerAffectation();
+                    if (tab === 'sections') await chargerSections(1);
+                    if (tab === 'options') {
+                        await rafraichirFiltres();
+                        await chargerOptions(1);
+                    }
+                    if (tab === 'classes') {
+                        await rafraichirFiltres();
+                        await chargerClassesParam();
+                    }
+                    if (tab === 'matieres') {
+                        await rafraichirFiltres();
+                        await chargerMatieresParam(1);
+                    }
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            });
+        });
+
+        selEcole?.addEventListener('change', async () => {
+            ecoleId = selEcole.value || '';
+            app.dataset.ecoleId = ecoleId;
+            if (ecoleId) localStorage.setItem('educrdc_structure_ecole', ecoleId);
+            else localStorage.removeItem('educrdc_structure_ecole');
+            majEtatEcoleSelection();
+            if (!ecoleId) {
+                await actualiserResume();
+                return;
+            }
+            // Après choix de l'école → ouvrir l'étape 2 sur Affectation
+            document.querySelectorAll('#paramScolaireApp .tab-btn').forEach((b) => {
+                const on = b.dataset.tab === 'affectation';
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('#paramScolaireApp .tab-panel').forEach((panel) => {
+                const on = panel.id === 'tab-affectation';
+                panel.hidden = !on;
+                panel.classList.toggle('active', on);
+            });
+            await rechargerOngletCourant();
+        });
+
+        let searchEcoleTimer;
+        document.getElementById('searchEcoleScolaire')?.addEventListener('input', (e) => {
+            clearTimeout(searchEcoleTimer);
+            searchEcoleTimer = setTimeout(async () => {
+                try {
+                    await chargerSelectEcoles(e.target.value || '');
+                    await rechargerOngletCourant();
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            }, 350);
+        });
+
+        document.getElementById('btnRefreshStructure')?.addEventListener('click', async () => {
+            const q = document.getElementById('searchEcoleScolaire')?.value || '';
+            try {
+                await chargerSelectEcoles(q);
+                await rechargerOngletCourant();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('searchAffectDispo')?.addEventListener('input', (e) => {
+            renderArbreAffectation(document.getElementById('affectationDispo'), cacheReferentielAffect.sections || [], {
+                mode: 'dispo', filter: e.target.value,
+            });
+        });
+        document.getElementById('searchAffectAffecte')?.addEventListener('input', (e) => {
+            renderArbreAffectation(document.getElementById('affectationAffecte'), cacheReferentielAffect.sections || [], {
+                mode: 'affecte', filter: e.target.value,
+            });
+        });
+        document.getElementById('btnAffToutDispo')?.addEventListener('click', () => {
+            document.querySelectorAll('#affectationDispo .aff-opt-check, #affectationDispo .aff-sec-check')
+                .forEach((o) => { o.checked = true; });
+        });
+        document.getElementById('btnAffRienDispo')?.addEventListener('click', () => {
+            document.querySelectorAll('#affectationDispo .aff-opt-check, #affectationDispo .aff-sec-check')
+                .forEach((o) => { o.checked = false; });
+        });
+        document.getElementById('btnAffToutAffecte')?.addEventListener('click', () => {
+            document.querySelectorAll('#affectationAffecte .aff-opt-check, #affectationAffecte .aff-sec-check')
+                .forEach((o) => { o.checked = true; });
+        });
+        document.getElementById('btnAffRienAffecte')?.addEventListener('click', () => {
+            document.querySelectorAll('#affectationAffecte .aff-opt-check, #affectationAffecte .aff-sec-check')
+                .forEach((o) => { o.checked = false; });
+        });
+
+        document.getElementById('btnAffecterOptions')?.addEventListener('click', async () => {
+            if (!requireEcole()) return;
+            const codes = lireCodesOpt('dispo');
+            if (!codes.length) {
+                toast('Cochez au moins une option dans la colonne « Référentiel EPSP » (à gauche).', 'warning');
+                return;
+            }
+            try {
+                const data = await api(`${API}/ecoles/${ecoleId}/affecter-structure/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ auto_niveau: true, options: codes }),
+                });
+                toast(data.detail || 'Structure affectée.', 'success');
+                await Promise.all([chargerAffectation(), actualiserResume()]);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('btnRetirerOptions')?.addEventListener('click', async () => {
+            if (!requireEcole()) return;
+            const codes = lireCodesOpt('aff');
+            if (!codes.length) {
+                toast('Cochez au moins une option dans la colonne « Affecté à cette école » (à droite).', 'warning');
+                return;
+            }
+            if (!confirm(`Retirer ${codes.length} option(s) de cette école ?\nLes classes associées seront désactivées (pas supprimées).`)) {
+                return;
+            }
+            try {
+                const data = await api(`${API}/ecoles/${ecoleId}/retirer-structure/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ options: codes }),
+                });
+                toast(data.detail || 'Options retirées.', 'success');
+                await Promise.all([chargerAffectation(), actualiserResume()]);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        // Sections CRUD
+        document.getElementById('btnNouvelleSection')?.addEventListener('click', () => ouvrirModalSection());
+        document.getElementById('btnSearchSections')?.addEventListener('click', () => chargerSections(1));
+        document.getElementById('searchSections')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') chargerSections(1);
+        });
+        document.getElementById('btnSupprimerSection')?.addEventListener('click', async () => {
+            const id = document.getElementById('sectionParamId')?.value;
+            if (!id || !confirm('Supprimer cette section ?')) return;
+            try {
+                await api(`${API}/sections-scolaires/${id}/`, { method: 'DELETE' });
+                toast('Section supprimée.', 'success');
+                closeModal('modalSectionParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+        document.getElementById('formSectionParam')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!requireEcole()) return;
+            const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const id = document.getElementById('sectionParamId').value;
+            const payload = {
+                ecole: Number(ecoleId),
+                nom: form.nom.value.trim(),
+                code: (form.code.value || '').trim(),
+                active: form.active.value === '1',
+            };
+            try {
+                if (id) await api(`${API}/sections-scolaires/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                else await api(`${API}/sections-scolaires/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Section mise à jour.' : 'Section créée.', 'success');
+                closeModal('modalSectionParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        // Options CRUD
+        document.getElementById('btnNouvelleOption')?.addEventListener('click', () => ouvrirModalOption());
+        document.getElementById('btnSearchOptions')?.addEventListener('click', () => chargerOptions(1));
+        document.getElementById('filtreSectionOptions')?.addEventListener('change', () => chargerOptions(1));
+        document.getElementById('searchOptions')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') chargerOptions(1);
+        });
+        document.getElementById('btnSupprimerOption')?.addEventListener('click', async () => {
+            const id = document.getElementById('optionParamId')?.value;
+            if (!id || !confirm('Supprimer cette option ?')) return;
+            try {
+                await api(`${API}/options-scolaires/${id}/`, { method: 'DELETE' });
+                toast('Option supprimée.', 'success');
+                closeModal('modalOptionParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+        document.getElementById('formOptionParam')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const id = document.getElementById('optionParamId').value;
+            const payload = {
+                section: Number(form.section.value),
+                nom: form.nom.value.trim(),
+                code: (form.code.value || '').trim(),
+                active: form.active.value === '1',
+            };
+            try {
+                if (id) await api(`${API}/options-scolaires/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                else await api(`${API}/options-scolaires/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Option mise à jour.' : 'Option créée.', 'success');
+                closeModal('modalOptionParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        // Classes CRUD
+        document.getElementById('btnNouvelleClasseParam')?.addEventListener('click', () => ouvrirModalClasseParam());
+        document.getElementById('btnSearchClasses')?.addEventListener('click', () => chargerClassesParam());
+        document.getElementById('btnExpandClasses')?.addEventListener('click', () => {
+            setHierarchyExpanded(document.getElementById('classesHierarchy'), true);
+        });
+        document.getElementById('btnCollapseClasses')?.addEventListener('click', () => {
+            setHierarchyExpanded(document.getElementById('classesHierarchy'), false);
+        });
+        document.getElementById('filtreSectionClasses')?.addEventListener('change', async () => {
+            await remplirSelectOptions(
+                document.getElementById('filtreOptionClasses'),
+                document.getElementById('filtreSectionClasses').value,
+                '',
+                true,
+            );
+            const fop = document.getElementById('filtreOptionClasses');
+            if (fop?.options[0]) fop.options[0].textContent = 'Toutes les options';
+            chargerClassesParam();
+        });
+        document.getElementById('filtreOptionClasses')?.addEventListener('change', () => chargerClassesParam());
+        document.getElementById('searchClasses')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') chargerClassesParam();
+        });
+        document.getElementById('selectSectionClasse')?.addEventListener('change', async (e) => {
+            await remplirSelectOptions(document.getElementById('selectOptionClasse'), e.target.value, '', false);
+        });
+        document.getElementById('btnSupprimerClasseParam')?.addEventListener('click', async () => {
+            const id = document.getElementById('classeParamId')?.value;
+            if (!id || !confirm('Supprimer cette classe ?')) return;
+            try {
+                await api(`${API}/classes/${id}/`, { method: 'DELETE' });
+                toast('Classe supprimée.', 'success');
+                closeModal('modalClasseParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+        document.getElementById('formClasseParam')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!requireEcole()) return;
+            const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const id = document.getElementById('classeParamId').value;
+            const payload = {
+                ecole: Number(ecoleId),
+                section: Number(form.section.value),
+                option: Number(form.option.value),
+                nom: form.nom.value.trim(),
+                code: (form.code.value || '').trim(),
+                active: form.active.value === '1',
+            };
+            try {
+                if (id) await api(`${API}/classes/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                else await api(`${API}/classes/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Classe mise à jour.' : 'Classe créée.', 'success');
+                closeModal('modalClasseParam');
+                await rechargerOngletCourant();
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        // Matières CRUD
+        document.getElementById('btnNouvelleMatiereParam')?.addEventListener('click', () => ouvrirModalMatiereParam());
+        document.getElementById('btnSearchMatieres')?.addEventListener('click', () => chargerMatieresParam(1));
+        document.getElementById('filtreClasseMatieres')?.addEventListener('change', () => chargerMatieresParam(1));
+        document.getElementById('searchMatieres')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') chargerMatieresParam(1);
+        });
+        document.getElementById('selectSectionMatiere')?.addEventListener('change', async (e) => {
+            await remplirSelectOptions(document.getElementById('selectOptionMatiere'), e.target.value, '', true);
+        });
+        document.getElementById('btnCatalogueMatieresParam')?.addEventListener('click', async () => {
+            if (!requireEcole()) return;
+            const regime = prompt('Régime du catalogue : primaire | secondaire', 'secondaire');
+            if (regime === null) return;
+            const r = (regime || 'secondaire').trim().toLowerCase();
+            if (!['primaire', 'secondaire'].includes(r)) {
+                toast('Régime invalide.', 'warning');
+                return;
+            }
+            const classe = document.getElementById('filtreClasseMatieres')?.value || '';
+            try {
+                const data = await api(`${API}/matieres/charger-catalogue/`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        ecole: Number(ecoleId),
+                        regime: r,
+                        classe: classe ? Number(classe) : null,
+                    }),
+                });
+                toast(data.detail || 'Catalogue chargé.', 'success');
+                await chargerMatieresParam(1);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+        document.getElementById('btnSupprimerMatiereParam')?.addEventListener('click', async () => {
+            const id = document.getElementById('matiereParamId')?.value;
+            if (!id || !confirm('Supprimer cette matière ?')) return;
+            try {
+                await api(`${API}/matieres/${id}/`, { method: 'DELETE' });
+                toast('Matière supprimée.', 'success');
+                closeModal('modalMatiereParam');
+                await chargerMatieresParam(pageMatieres);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+        document.getElementById('formMatiereParam')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!requireEcole()) return;
+            const form = e.target;
+            if (!form.checkValidity()) { form.reportValidity(); return; }
+            const id = document.getElementById('matiereParamId').value;
+            const payload = {
+                ecole: Number(ecoleId),
+                section: form.section.value ? Number(form.section.value) : null,
+                option: form.option.value ? Number(form.option.value) : null,
+                classe: form.classe.value ? Number(form.classe.value) : null,
+                nom: form.nom.value.trim(),
+                code: (form.code.value || '').trim(),
+                maximum: Number(form.maximum.value),
+                ordre: Number(form.ordre.value || 0),
+                active: form.active.value === '1',
+            };
+            try {
+                if (id) await api(`${API}/matieres/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                else await api(`${API}/matieres/`, { method: 'POST', body: JSON.stringify(payload) });
+                toast(id ? 'Matière mise à jour.' : 'Matière créée.', 'success');
+                closeModal('modalMatiereParam');
+                await chargerMatieresParam(1);
+            } catch (err) { toast(err.message, 'error'); }
+        });
+
+        function activerOngletStructure(tabName) {
+            const allowed = ['affectation', 'sections', 'options', 'classes', 'matieres'];
+            const tab = allowed.includes(tabName) ? tabName : 'affectation';
+            document.querySelectorAll('#paramScolaireApp .tab-btn').forEach((b) => {
+                const on = b.dataset.tab === tab;
+                b.classList.toggle('active', on);
+                b.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            document.querySelectorAll('#paramScolaireApp .tab-panel').forEach((panel) => {
+                const on = panel.id === `tab-${tab}`;
+                panel.hidden = !on;
+                panel.classList.toggle('active', on);
+            });
+            return tab;
+        }
+
+        // Boot — étape 1 : école, puis onglet demandé par le sous-menu (?onglet=)
+        (async () => {
+            majEtatEcoleSelection();
+            if (ecoleFigee && app.dataset.ecoleId) {
+                ecoleId = String(app.dataset.ecoleId);
+            } else {
+                ecoleId = '';
+            }
+            await chargerSelectEcoles();
+            app.dataset.ecoleId = ecoleId || '';
+            majEtatEcoleSelection();
+
+            const params = new URLSearchParams(window.location.search);
+            const onglet = activerOngletStructure(params.get('onglet') || 'affectation');
+            // Mettre à jour l’URL sans recharger si absente
+            if (!params.get('onglet')) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('onglet', onglet);
+                window.history.replaceState({}, '', url);
+            }
+
+            if (ecoleId) {
+                await rechargerOngletCourant();
+            } else {
+                await actualiserResume();
+                if (onglet !== 'affectation') {
+                    toast('Sélectionnez d\'abord une école, puis l\'onglet demandé.', 'info');
+                }
+            }
+        })().catch((err) => toast(err.message, 'error'));
     }
 
     return {
@@ -3336,6 +5078,7 @@ const EducRDC = (() => {
         initCartes,
         initRapports,
         initParametres,
+        initParametresScolaire,
         initUtilisateurs,
         initEvaluations,
         toast,

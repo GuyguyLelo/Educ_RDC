@@ -3,87 +3,159 @@
 
 {% block title %}Évaluation{% endblock %}
 {% block page_title %}Évaluation scolaire{% endblock %}
-{% block page_subtitle %}Saisie des notes (titulaire) et bulletins modèle RDC / IGE{% endblock %}
+{% block page_subtitle %}Notes, programme de classe et bulletins officiels IGE/EPSP{% endblock %}
 
 {% block content %}
 <div
     id="evaluationsPage"
+    class="eval-page"
     data-enseignant="{{ est_enseignant|yesno:'1,0' }}"
     data-classe-id="{{ classe_id }}"
     data-ecole-id="{{ ecole_id }}"
     data-peut-configurer="{{ peut_configurer|yesno:'1,0' }}"
 >
-    <section class="panel">
-        <div class="panel-header">
+    <section class="eval-banner">
+        <div class="eval-banner-main">
+            <div class="eval-banner-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <path d="M4 19V5h12v14H4z"/><path d="M8 8h4M8 12h4M8 16h2"/><path d="M16 8h4v8a2 2 0 01-2 2h-2"/>
+                </svg>
+            </div>
             <div>
-                <h2>Paramètres de session</h2>
-                <p>Année scolaire, classe et matière pour la saisie</p>
+                <strong>Espace évaluation</strong>
+                <p>Saisie par le titulaire, maxima du bulletin officiel, impression PDF conforme IGE/EPSP./172.</p>
             </div>
         </div>
-        <div class="form-grid" style="padding:0 0 0.5rem">
-            <div class="form-group">
-                <label>Année scolaire</label>
-                <select id="selectAnneeEval"></select>
-            </div>
-            <div class="form-group">
-                <label>Classe</label>
-                <select id="selectClasseEval" {% if est_enseignant %}disabled{% endif %}></select>
-            </div>
-            <div class="form-group">
-                <label>Matière (saisie)</label>
-                <select id="selectProgrammeEval"></select>
-            </div>
-            {% if peut_configurer %}
-            <div class="form-group" style="display:flex;align-items:flex-end;gap:0.5rem;flex-wrap:wrap">
-                <button type="button" class="btn btn-secondary btn-sm" id="btnNouvelleAnnee">{% ico 'plus' %}Année</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="btnCatalogueMatieres">{% ico 'download' %}Catalogue matières</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="btnAppliquerProgramme">{% ico 'save' %}Programme classe</button>
-            </div>
+        <div class="eval-banner-meta">
+            <span class="eval-pill eval-pill-blue">Modèle RDC</span>
+            <span class="eval-pill eval-pill-gold">Portrait A4</span>
+            {% if est_enseignant %}
+            <span class="eval-pill">Titulaire de classe</span>
+            {% elif peut_configurer %}
+            <span class="eval-pill">Configuration école</span>
             {% endif %}
         </div>
     </section>
 
-    <div class="tabs-bar" style="margin:1rem 0 0.75rem">
-        <button type="button" class="tab-btn active" data-eval-tab="saisie">Saisie des notes</button>
-        <button type="button" class="tab-btn" data-eval-tab="bulletins">Bulletins</button>
-        {% if peut_configurer %}
-        <button type="button" class="tab-btn" data-eval-tab="matieres">Matières</button>
-        {% endif %}
-    </div>
+    <section class="eval-session panel">
+        <div class="eval-session-head">
+            <div>
+                <h2>Session de travail</h2>
+                <p>Choisissez l’année, la classe et la matière avant de saisir ou d’imprimer</p>
+            </div>
+            <div class="eval-session-summary" id="evalSessionSummary">
+                <span class="eval-chip" id="chipAnneeEval">Année —</span>
+                <span class="eval-chip" id="chipClasseEval">Classe —</span>
+                <span class="eval-chip" id="chipPeriodeEval">Période —</span>
+                <span class="eval-chip" id="chipMatiereEval">Matière —</span>
+            </div>
+        </div>
 
-    <section class="panel" id="tabSaisieEval">
-        <div class="panel-header">
+        <div class="eval-filters">
+            <div class="eval-filter">
+                <label for="selectAnneeEval">Année scolaire</label>
+                <select id="selectAnneeEval"></select>
+            </div>
+            <div class="eval-filter">
+                <label for="selectClasseEval">Classe</label>
+                <select id="selectClasseEval" {% if est_enseignant %}disabled{% endif %}></select>
+            </div>
+            <div class="eval-filter">
+                <label for="selectPeriodeEval">Période de saisie</label>
+                <select id="selectPeriodeEval"></select>
+            </div>
+            <div class="eval-filter eval-filter-grow">
+                <label for="selectProgrammeEval">Matière</label>
+                <select id="selectProgrammeEval"></select>
+            </div>
+            {% if peut_configurer %}
+            <div class="eval-filter-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnNouvelleAnnee">{% ico 'plus' %}Année</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnCatalogueMatieres">{% ico 'download' %}Catalogue</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnAppliquerProgramme">{% ico 'save' %}Programme</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnDeverrouillerPeriode" hidden>{% ico 'reset' %}Déverrouiller</button>
+            </div>
+            {% endif %}
+        </div>
+        <div class="eval-periode-banner" id="bannerPeriodeEval" hidden>
+            <span id="txtPeriodeEval"></span>
+        </div>
+
+        <ol class="eval-steps" aria-label="Parcours d'évaluation">
+            <li class="eval-step is-active" data-eval-step="1">
+                <span class="eval-step-num">1</span>
+                <div>
+                    <strong>Configurer</strong>
+                    <small>Année · classe · période</small>
+                </div>
+            </li>
+            <li class="eval-step" data-eval-step="2">
+                <span class="eval-step-num">2</span>
+                <div>
+                    <strong>Saisir</strong>
+                    <small>Une période à la fois</small>
+                </div>
+            </li>
+            <li class="eval-step" data-eval-step="3">
+                <span class="eval-step-num">3</span>
+                <div>
+                    <strong>Publier</strong>
+                    <small>Classement · bulletin PDF</small>
+                </div>
+            </li>
+        </ol>
+    </section>
+
+    <nav class="eval-tabs tabs-bar" role="tablist" aria-label="Sections évaluation">
+        <button type="button" class="tab-btn active" data-eval-tab="saisie" role="tab" aria-selected="true">
+            <span class="eval-tab-label">{% ico 'edit' %}Saisie des notes</span>
+        </button>
+        <button type="button" class="tab-btn" data-eval-tab="bulletins" role="tab" aria-selected="false">
+            <span class="eval-tab-label">{% ico 'pdf' %}Bulletins</span>
+        </button>
+        {% if peut_configurer %}
+        <button type="button" class="tab-btn" data-eval-tab="matieres" role="tab" aria-selected="false">
+            <span class="eval-tab-label">{% ico 'class' %}Matières</span>
+        </button>
+        {% endif %}
+    </nav>
+
+    <section class="panel eval-workspace" id="tabSaisieEval">
+        <div class="panel-header eval-workspace-header">
             <div>
                 <h2>Grille de notes</h2>
-                <p id="hintGrilleEval">Sélectionnez une année, une classe et une matière</p>
+                <p id="hintGrilleEval">Sélectionnez une année, une classe, une période puis une matière</p>
             </div>
             <div class="panel-actions">
-                <button type="button" class="btn btn-primary btn-sm" id="btnEnregistrerNotes" disabled>
-                    {% ico 'save' %}Enregistrer
+                <button type="button" class="btn btn-primary" id="btnEnregistrerNotes" disabled>
+                    {% ico 'save' %}Enregistrer les notes
                 </button>
             </div>
         </div>
-        <div class="table-responsive">
-            <table class="data-table compact" id="tableNotesEval">
+        <div class="eval-table-wrap table-responsive">
+            <table class="data-table compact eval-notes-table" id="tableNotesEval">
                 <thead></thead>
                 <tbody></tbody>
             </table>
         </div>
+        <div class="eval-workspace-foot">
+            <span>Les maxima affichés correspondent à chaque période du régime (TJ / examen).</span>
+        </div>
     </section>
 
-    <section class="panel" id="tabBulletinsEval" hidden>
-        <div class="panel-header">
+    <section class="panel eval-workspace" id="tabBulletinsEval" hidden>
+        <div class="panel-header eval-workspace-header">
             <div>
                 <h2>Bulletins scolaires</h2>
-                <p>Impression PDF conforme au modèle officiel RDC (périodes / examens / totaux / %)</p>
+                <p>PDF officiel RDC — semestres, maxima, T.G., repêchage, décision PASSE / DOUBLE</p>
             </div>
             <div class="panel-actions">
-                <button type="button" class="btn btn-secondary btn-sm" id="btnClasserBulletins">
-                    {% ico 'refresh' %}Actualiser classement
+                <button type="button" class="btn btn-secondary" id="btnClasserBulletins">
+                    {% ico 'refresh' %}Actualiser le classement
                 </button>
             </div>
         </div>
-        <div class="table-responsive">
+        <div class="eval-table-wrap table-responsive">
             <table class="data-table compact" id="tableBulletinsEval">
                 <thead>
                     <tr>
@@ -93,7 +165,7 @@
                         <th>%</th>
                         <th>Place</th>
                         <th>Décision</th>
-                        <th></th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -102,21 +174,25 @@
     </section>
 
     {% if peut_configurer %}
-    <section class="panel" id="tabMatieresEval" hidden>
-        <div class="panel-header">
+    <section class="panel eval-workspace" id="tabMatieresEval" hidden>
+        <div class="panel-header eval-workspace-header">
             <div>
-                <h2>Matières de l'école</h2>
-                <p>Maximum = note maximale d'une période de travaux journaliers</p>
+                <h2>Matières</h2>
+                <p id="hintMatieresEval">Sélectionnez une classe — les matières de sa section / option s’affichent</p>
             </div>
             <div class="panel-actions">
-                <button type="button" class="btn btn-primary btn-sm" id="btnNouvelleMatiere">{% ico 'plus' %}Matière</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnCatalogueMatieresTab">{% ico 'download' %}Catalogue option</button>
+                <button type="button" class="btn btn-primary" id="btnNouvelleMatiere">{% ico 'plus' %}Nouvelle matière</button>
             </div>
         </div>
-        <div class="table-responsive">
+        <div class="eval-table-wrap table-responsive">
             <table class="data-table compact" id="tableMatieresEval">
                 <thead>
                     <tr>
                         <th>Nom</th>
+                        <th>Section</th>
+                        <th>Option</th>
+                        <th>Classe</th>
                         <th>Code</th>
                         <th>Maximum TJ</th>
                         <th>Ordre</th>
@@ -180,12 +256,24 @@
         <div class="modal-header">
             <div class="modal-header-text">
                 <h3>Nouvelle matière</h3>
-                <p>Branche du bulletin (maximum d'une période TJ)</p>
+                <p>Branche du bulletin (maximum d’une période TJ)</p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
         <form id="formMatiereEval" novalidate>
             <div class="form-grid">
+                <div class="form-group">
+                    <label>Section <span class="req">*</span></label>
+                    <select name="section" id="matiereEvalSection" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Option <span class="req">*</span></label>
+                    <select name="option" id="matiereEvalOption" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Classe <span class="req">*</span></label>
+                    <select name="classe" id="matiereEvalClasse" required></select>
+                </div>
                 <div class="form-group">
                     <label>Nom <span class="req">*</span></label>
                     <input name="nom" required placeholder="Français">

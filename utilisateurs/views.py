@@ -2,6 +2,7 @@
 from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -9,7 +10,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Utilisateur
 from .serializers import UtilisateurSerializer, UtilisateurCreateSerializer
-from .permissions import EstAdmin
+from .permissions import GestionUtilisateurs
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -49,27 +50,51 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
     search_fields = ['username', 'first_name', 'last_name', 'email', 'telephone']
     ordering_fields = ['username', 'date_creation', 'role']
 
+    ROLES_ECOLE = Utilisateur.ROLES_ECOLE
+
     def get_serializer_class(self):
         if self.action == 'create':
             return UtilisateurCreateSerializer
         return UtilisateurSerializer
 
     def get_permissions(self):
-        # Liste / CRUD réservés à l'administrateur ; `moi` reste accessible à tous
         if self.action == 'moi':
             return [IsAuthenticated()]
-        return [EstAdmin()]
+        return [GestionUtilisateurs()]
+
+    def _est_admin_global(self):
+        user = self.request.user
+        return bool(user.est_admin or user.is_superuser)
+
+    def _est_admin_ecole(self):
+        user = self.request.user
+        return (
+            not self._est_admin_global()
+            and user.role == Utilisateur.Role.ADMIN_ECOLE
+            and bool(user.ecole_id)
+        )
 
     def get_queryset(self):
         qs = super().get_queryset()
+        user = self.request.user
         role = self.request.query_params.get('role')
         ecole = self.request.query_params.get('ecole')
         q = self.request.query_params.get('q')
         actif = self.request.query_params.get('actif')
+
+        if self._est_admin_ecole():
+            qs = qs.filter(ecole_id=user.ecole_id, role__in=self.ROLES_ECOLE)
+        else:
+            if ecole:
+                qs = qs.filter(ecole_id=ecole)
+            elif self.action == 'list':
+                # Liste nationale : enseignants gérés depuis la fiche école
+                # (ne pas exclure sur retrieve/update/delete — sinon PATCH 404)
+                if role != Utilisateur.Role.ENSEIGNANT:
+                    qs = qs.exclude(role=Utilisateur.Role.ENSEIGNANT)
+
         if role:
             qs = qs.filter(role=role)
-        if ecole:
-            qs = qs.filter(ecole_id=ecole)
         if q:
             qs = qs.filter(
                 Q(username__icontains=q)
@@ -83,6 +108,62 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         elif actif in ('0', 'false', 'False'):
             qs = qs.filter(is_active=False)
         return qs
+
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        if self._est_admin_ecole():
+            # Injection école côté serveur (ignore toute autre école envoyée)
+            mutable = data.copy() if hasattr(data, 'copy') else dict(data)
+            mutable['ecole'] = request.user.ecole_id
+            role = mutable.get('role')
+            if role not in self.ROLES_ECOLE:
+                raise ValidationError({
+                    'role': "Rôle non autorisé. Utilisez administratif école ou enseignant.",
+                })
+            if role != Utilisateur.Role.ENSEIGNANT:
+                mutable['classe'] = None
+            serializer = self.get_serializer(data=mutable)
+        else:
+            serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        if self._est_admin_ecole():
+            # Double contrôle objet école
+            ecole = serializer.validated_data.get('ecole')
+            if not ecole or ecole.id != request.user.ecole_id:
+                raise PermissionDenied("Vous ne pouvez créer des comptes que pour votre école.")
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        if self._est_admin_ecole():
+            if instance.ecole_id != request.user.ecole_id:
+                raise PermissionDenied("Compte hors de votre école.")
+            data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+            data['ecole'] = request.user.ecole_id
+            role = data.get('role', instance.role)
+            if role not in self.ROLES_ECOLE:
+                raise ValidationError({
+                    'role': "Rôle non autorisé pour un compte école.",
+                })
+            if role != Utilisateur.Role.ENSEIGNANT:
+                data['classe'] = None
+            serializer = self.get_serializer(instance, data=data, partial=partial)
+        else:
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.pk == request.user.pk:
+            raise ValidationError({'detail': 'Vous ne pouvez pas supprimer votre propre compte.'})
+        if self._est_admin_ecole() and instance.ecole_id != request.user.ecole_id:
+            raise PermissionDenied("Compte hors de votre école.")
+        return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def moi(self, request):

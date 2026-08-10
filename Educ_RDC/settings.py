@@ -17,9 +17,11 @@ SECRET_KEY = 'django-insecure-educ-rdc-dev-key-change-in-production-2024'
 #DEBUG = True
 DEBUG = config('DEBUG', default='True', cast = bool)
 
-#ALLOWED_HOSTS = ['*']
-
-ALLOWED_HOST = config("ALLOWED_HOST", default='localhost,127.0.0.1')
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
+    if h.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -75,14 +77,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'Educ_RDC.wsgi.application'
 
-DATABASES =  {
+DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config("DB_NAME"),
-        'USER': config("DB_USER"),
-        'PASSWORD': config("DB_PASSWORD"),
-        'HOSTS': config("DB_HOSTS"),
-        'PORT': config("DB_PORT"),
+        'NAME': config('DB_NAME', default='Educ_RDC'),
+        'USER': config('DB_USER', default='postgres'),
+        'PASSWORD': config('DB_PASSWORD', default='123456'),
+        'HOST': config('DB_HOST', default='localhost'),
+        'PORT': config('DB_PORT', default='5432'),
     }
 }
 

@@ -200,6 +200,62 @@ class Ecole(models.Model):
         return self.latitude is not None and self.longitude is not None
 
 
+class SectionScolaire(models.Model):
+    """Section d'enseignement (ex. Technique, Scientifique, Pédagogique)."""
+
+    ecole = models.ForeignKey(
+        Ecole,
+        on_delete=models.CASCADE,
+        related_name='sections',
+        verbose_name='École',
+    )
+    nom = models.CharField(max_length=120, verbose_name='Nom')
+    code = models.CharField(max_length=30, blank=True, verbose_name='Code')
+    active = models.BooleanField(default=True, verbose_name='Active')
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Section scolaire'
+        verbose_name_plural = 'Sections scolaires'
+        ordering = ['nom']
+        constraints = [
+            models.UniqueConstraint(fields=['ecole', 'nom'], name='uniq_section_nom_ecole'),
+        ]
+
+    def __str__(self):
+        return f'{self.nom} ({self.ecole.code})'
+
+
+class OptionScolaire(models.Model):
+    """Option rattachée à une section (ex. Coupe et Couture)."""
+
+    section = models.ForeignKey(
+        SectionScolaire,
+        on_delete=models.CASCADE,
+        related_name='options',
+        verbose_name='Section',
+    )
+    nom = models.CharField(max_length=150, verbose_name='Nom')
+    code = models.CharField(max_length=30, blank=True, verbose_name='Code')
+    active = models.BooleanField(default=True, verbose_name='Active')
+    date_creation = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Option scolaire'
+        verbose_name_plural = 'Options scolaires'
+        ordering = ['section__nom', 'nom']
+        constraints = [
+            models.UniqueConstraint(fields=['section', 'nom'], name='uniq_option_nom_section'),
+        ]
+
+    def __str__(self):
+        return f'{self.nom} — {self.section.nom}'
+
+    @property
+    def ecole(self):
+        return self.section.ecole
+
+
 class Classe(models.Model):
     """Classe scolaire créée par l'administratif de l'école."""
 
@@ -209,8 +265,24 @@ class Classe(models.Model):
         related_name='classes',
         verbose_name='École',
     )
-    nom = models.CharField(max_length=50, verbose_name='Nom de la classe')
-    code = models.CharField(max_length=20, blank=True, verbose_name='Code')
+    section = models.ForeignKey(
+        SectionScolaire,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='classes',
+        verbose_name='Section',
+    )
+    option = models.ForeignKey(
+        OptionScolaire,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='classes',
+        verbose_name='Option',
+    )
+    nom = models.CharField(max_length=100, verbose_name='Nom de la classe')
+    code = models.CharField(max_length=30, blank=True, verbose_name='Code')
     active = models.BooleanField(default=True, verbose_name='Active')
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
 
@@ -231,6 +303,11 @@ class Classe(models.Model):
     def save(self, *args, **kwargs):
         self.nom = (self.nom or '').strip()
         self.code = (self.code or '').strip()
+        # Aligner section sur l'option si besoin
+        if self.option_id and not self.section_id:
+            self.section_id = self.option.section_id
+        elif self.option_id and self.section_id and self.option.section_id != self.section_id:
+            self.section_id = self.option.section_id
         super().save(*args, **kwargs)
 
 

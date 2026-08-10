@@ -11,6 +11,7 @@ from .models import (
     Note,
     PeriodeEvaluation,
     ProgrammeClasse,
+    VerrouillagePeriode,
 )
 
 
@@ -201,6 +202,47 @@ def actualiser_classement(annee: AnneeScolaire, classe_id: int) -> None:
                 else BulletinDecision.Decision.DOUBLE
             )
         decision.save()
+
+
+def ids_periodes_verrouillees(annee_id: int, classe_id: int) -> set[int]:
+    return set(
+        VerrouillagePeriode.objects.filter(
+            annee_id=annee_id, classe_id=classe_id,
+        ).values_list('periode_id', flat=True)
+    )
+
+
+def periode_est_verrouillee(annee_id: int, classe_id: int, periode_id: int) -> bool:
+    return VerrouillagePeriode.objects.filter(
+        annee_id=annee_id, classe_id=classe_id, periode_id=periode_id,
+    ).exists()
+
+
+def verrouiller_periodes_anterieures(
+    annee: AnneeScolaire,
+    classe_id: int,
+    periode: PeriodeEvaluation,
+    user=None,
+) -> int:
+    """
+    Verrouille toutes les périodes d'ordre strictement inférieur
+    à la période ouverte (saisie de la période suivante).
+    """
+    anterieures = PeriodeEvaluation.objects.filter(
+        annee=annee,
+        ordre__lt=periode.ordre,
+    )
+    created = 0
+    for p in anterieures:
+        _, was = VerrouillagePeriode.objects.get_or_create(
+            annee=annee,
+            classe_id=classe_id,
+            periode=p,
+            defaults={'verrouille_par': user},
+        )
+        if was:
+            created += 1
+    return created
 
 
 def generer_pdf_bulletin(eleve: Eleve, annee: AnneeScolaire) -> bytes:

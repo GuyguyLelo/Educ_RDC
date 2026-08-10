@@ -6,6 +6,8 @@ from .models import (
     ProvinceEducationnelle,
     Antenne,
     Ecole,
+    SectionScolaire,
+    OptionScolaire,
     Classe,
     PhotoEcole,
     PersonnelEcole,
@@ -112,6 +114,14 @@ class PhotoEcoleSerializer(serializers.ModelSerializer):
         return url
 
 
+class EcoleOptionSerializer(serializers.ModelSerializer):
+    """Liste légère pour sélecteurs (sans photos ni agrégats)."""
+
+    class Meta:
+        model = Ecole
+        fields = ['id', 'nom', 'code', 'niveau', 'active']
+
+
 class EcoleSerializer(serializers.ModelSerializer):
     province_educationnelle_nom = serializers.CharField(
         source='province_educationnelle.nom', read_only=True,
@@ -166,18 +176,56 @@ class EcoleSerializer(serializers.ModelSerializer):
         return f'https://www.google.com/maps?q={obj.latitude},{obj.longitude}'
 
 
+class SectionScolaireSerializer(serializers.ModelSerializer):
+    ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
+    nb_options = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SectionScolaire
+        fields = [
+            'id', 'ecole', 'ecole_nom', 'nom', 'code', 'active',
+            'nb_options', 'date_creation',
+        ]
+        read_only_fields = ['date_creation']
+
+    def get_nb_options(self, obj):
+        return obj.options.filter(active=True).count()
+
+
+class OptionScolaireSerializer(serializers.ModelSerializer):
+    section_nom = serializers.CharField(source='section.nom', read_only=True)
+    ecole = serializers.IntegerField(source='section.ecole_id', read_only=True)
+
+    class Meta:
+        model = OptionScolaire
+        fields = [
+            'id', 'section', 'section_nom', 'ecole',
+            'nom', 'code', 'active', 'date_creation',
+        ]
+        read_only_fields = ['date_creation']
+
+
 class ClasseSerializer(serializers.ModelSerializer):
     ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
     ecole_code = serializers.CharField(source='ecole.code', read_only=True)
+    section_nom = serializers.SerializerMethodField()
+    option_nom = serializers.SerializerMethodField()
     nb_eleves = serializers.SerializerMethodField()
 
     class Meta:
         model = Classe
         fields = [
             'id', 'ecole', 'ecole_nom', 'ecole_code',
+            'section', 'section_nom', 'option', 'option_nom',
             'nom', 'code', 'active', 'nb_eleves', 'date_creation',
         ]
         read_only_fields = ['date_creation']
+
+    def get_section_nom(self, obj):
+        return obj.section.nom if obj.section_id else ''
+
+    def get_option_nom(self, obj):
+        return obj.option.nom if obj.option_id else ''
 
     def get_nb_eleves(self, obj):
         return obj.eleves.filter(actif=True).count()
@@ -185,6 +233,14 @@ class ClasseSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         ecole = attrs.get('ecole') or getattr(self.instance, 'ecole', None)
         nom = (attrs.get('nom') or getattr(self.instance, 'nom', '') or '').strip()
+        option = attrs.get('option', getattr(self.instance, 'option', None) if self.instance else None)
+        section = attrs.get('section', getattr(self.instance, 'section', None) if self.instance else None)
+        if option and ecole and option.section.ecole_id != ecole.id:
+            raise serializers.ValidationError({'option': 'Option hors de cette école.'})
+        if option and section and option.section_id != section.id:
+            raise serializers.ValidationError({'option': "L'option ne correspond pas à la section."})
+        if option and not section:
+            attrs['section'] = option.section
         if ecole and nom:
             qs = Classe.objects.filter(ecole=ecole, nom__iexact=nom)
             if self.instance:

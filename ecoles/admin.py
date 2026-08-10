@@ -5,6 +5,8 @@ from .models import (
     ProvinceEducationnelle,
     Antenne,
     Ecole,
+    SectionScolaire,
+    OptionScolaire,
     Classe,
     PhotoEcole,
     PersonnelEcole,
@@ -58,10 +60,24 @@ class EcoleAdmin(admin.ModelAdmin):
     search_fields = ('nom', 'code', 'numero_agrement', 'directeur', 'email')
 
 
+@admin.register(SectionScolaire)
+class SectionScolaireAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'code', 'ecole', 'active')
+    list_filter = ('active', 'ecole')
+    search_fields = ('nom', 'code', 'ecole__nom')
+
+
+@admin.register(OptionScolaire)
+class OptionScolaireAdmin(admin.ModelAdmin):
+    list_display = ('nom', 'code', 'section', 'active')
+    list_filter = ('active', 'section__ecole')
+    search_fields = ('nom', 'code', 'section__nom')
+
+
 @admin.register(Classe)
 class ClasseAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'code', 'ecole', 'active', 'date_creation')
-    list_filter = ('active', 'ecole__antenne')
+    list_display = ('nom', 'code', 'section', 'option', 'ecole', 'active', 'date_creation')
+    list_filter = ('active', 'section', 'ecole__antenne')
     search_fields = ('nom', 'code', 'ecole__nom', 'ecole__code')
 
 

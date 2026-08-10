@@ -14,6 +14,8 @@ from ecoles.views import (
     ProvinceEducationnelleViewSet,
     AntenneViewSet,
     EcoleViewSet,
+    SectionScolaireViewSet,
+    OptionScolaireViewSet,
     ClasseViewSet,
     PersonnelEcoleViewSet,
 )
@@ -41,6 +43,8 @@ router.register(r'provinces-educationnelles', ProvinceEducationnelleViewSet, bas
 router.register(r'provinces', ProvinceAdministrativeViewSet, basename='province')  # alias
 router.register(r'antennes', AntenneViewSet, basename='antenne')
 router.register(r'ecoles', EcoleViewSet, basename='ecole')
+router.register(r'sections-scolaires', SectionScolaireViewSet, basename='section-scolaire')
+router.register(r'options-scolaires', OptionScolaireViewSet, basename='option-scolaire')
 router.register(r'classes', ClasseViewSet, basename='classe')
 router.register(r'personnels', PersonnelEcoleViewSet, basename='personnel')
 router.register(r'eleves', EleveViewSet, basename='eleve')
@@ -69,6 +73,11 @@ urlpatterns = [
     path('cartes/', admin_views.vue_cartes, name='cartes'),
     path('rapports/', admin_views.vue_rapports, name='rapports'),
     path('parametres/', admin_views.vue_parametres, name='parametres'),
+    path(
+        'parametres/structure-scolaire/',
+        admin_views.vue_parametres_scolaire,
+        name='parametres_scolaire',
+    ),
     path(
         'parametres/structure/nouvelle/',
         admin_views.vue_structure_formulaire,

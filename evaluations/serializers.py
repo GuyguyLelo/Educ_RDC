@@ -34,12 +34,27 @@ class PeriodeEvaluationSerializer(serializers.ModelSerializer):
 
 
 class MatiereSerializer(serializers.ModelSerializer):
+    section_nom = serializers.SerializerMethodField()
+    option_nom = serializers.SerializerMethodField()
+    classe_nom = serializers.SerializerMethodField()
+
     class Meta:
         model = Matiere
         fields = [
-            'id', 'ecole', 'nom', 'code', 'maximum', 'ordre', 'active', 'date_creation',
+            'id', 'ecole',
+            'section', 'section_nom', 'option', 'option_nom', 'classe', 'classe_nom',
+            'nom', 'code', 'maximum', 'ordre', 'active', 'date_creation',
         ]
         read_only_fields = ['date_creation']
+
+    def get_section_nom(self, obj):
+        return obj.section.nom if obj.section_id else ''
+
+    def get_option_nom(self, obj):
+        return obj.option.nom if obj.option_id else ''
+
+    def get_classe_nom(self, obj):
+        return obj.classe.nom if obj.classe_id else ''
 
 
 class ProgrammeClasseSerializer(serializers.ModelSerializer):

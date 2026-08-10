@@ -1,0 +1,28 @@
+{% load ui_icons %}
+<!-- Modal d'affectation rapide (fiche école) -->
+<div class="modal" id="modalProgrammeRdc" hidden>
+    <div class="modal-dialog modal-dialog-lg">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Affecter une structure scolaire</h3>
+                <p>Choisissez les options EPSP que cette école organise réellement</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="form-sections" style="padding:0 1.25rem 0.5rem">
+            <div class="prog-rdc-toolbar">
+                <button type="button" class="btn btn-ghost btn-sm" id="btnProgRdcTout">Tout cocher</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnProgRdcRien">Tout décocher</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnProgRdcPresents">Déjà affectées</button>
+                <span class="form-hint" id="progRdcCount" style="margin:0 0 0 auto"></span>
+            </div>
+            <div id="progRdcTree" class="prog-rdc-tree">
+                <p class="empty-state">Chargement du référentiel…</p>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+            <button type="button" class="btn btn-primary" id="btnProgRdcValider">{% ico 'plus' %}Affecter à l’école</button>
+        </div>
+    </div>
+</div>

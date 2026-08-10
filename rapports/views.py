@@ -30,24 +30,30 @@ def _scoped_querysets(user):
     ecole_nom = None
     classe = None
 
-    if getattr(user, 'est_enseignant', False) and user.ecole_id:
+    if getattr(user, 'est_enseignant', False):
         scope = 'classe'
-        ecole = user.ecole
-        ecole_id = ecole.id
-        ecole_nom = ecole.nom
+        ecole = user.ecole if user.ecole_id else None
+        ecole_id = user.ecole_id
+        ecole_nom = ecole.nom if ecole else None
         classe = user.classe_nom or ''
         scope_label = (
-            f'Classe {classe} — {ecole.nom}' if classe else f'École — {ecole.nom}'
+            f'Classe {classe}' + (f' — {ecole.nom}' if ecole else '')
+            if classe else 'Classe titulaire non définie'
         )
-        ecoles_qs = ecoles_qs.filter(pk=ecole_id)
-        eleves_qs = eleves_qs.filter(ecole_id=ecole_id)
+        if ecole_id:
+            ecoles_qs = ecoles_qs.filter(pk=ecole_id)
+            personnel_qs = personnel_qs.filter(ecole_id=ecole_id)
+        else:
+            ecoles_qs = ecoles_qs.none()
+            personnel_qs = personnel_qs.none()
         if user.classe_id:
             eleves_qs = eleves_qs.filter(classe_id=user.classe_id)
+            if ecole_id:
+                eleves_qs = eleves_qs.filter(ecole_id=ecole_id)
         else:
             eleves_qs = eleves_qs.none()
         cartes_qs = cartes_qs.filter(eleve_id__in=eleves_qs.values('id'))
         biometrie_qs = biometrie_qs.filter(eleve_id__in=eleves_qs.values('id'))
-        personnel_qs = personnel_qs.filter(ecole_id=ecole_id)
     elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
         scope = 'ecole'
         ecole = user.ecole

@@ -6,6 +6,7 @@ from .models import (
     Note,
     PeriodeEvaluation,
     ProgrammeClasse,
+    VerrouillagePeriode,
 )
 
 
@@ -23,8 +24,8 @@ class PeriodeEvaluationAdmin(admin.ModelAdmin):
 
 @admin.register(Matiere)
 class MatiereAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'ecole', 'maximum', 'ordre', 'active')
-    list_filter = ('ecole', 'active')
+    list_display = ('nom', 'section', 'option', 'classe', 'ecole', 'maximum', 'ordre', 'active')
+    list_filter = ('ecole', 'section', 'active')
     search_fields = ('nom', 'code')
 
 
@@ -46,3 +47,9 @@ class BulletinDecisionAdmin(admin.ModelAdmin):
         'eleve', 'annee', 'decision', 'pourcentage', 'place', 'effectif',
     )
     list_filter = ('annee', 'decision')
+
+
+@admin.register(VerrouillagePeriode)
+class VerrouillagePeriodeAdmin(admin.ModelAdmin):
+    list_display = ('classe', 'periode', 'annee', 'verrouille_par', 'date_verrouillage')
+    list_filter = ('annee',)

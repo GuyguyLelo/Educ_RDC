@@ -15,6 +15,12 @@ class EleveSerializer(serializers.ModelSerializer):
         source='ecole.province_administrative.nom', read_only=True,
     )
     classe_nom = serializers.CharField(source='classe.nom', read_only=True, allow_null=True, default=None)
+    section_nom = serializers.CharField(
+        source='classe.section.nom', read_only=True, allow_null=True, default=None,
+    )
+    option_nom = serializers.CharField(
+        source='classe.option.nom', read_only=True, allow_null=True, default=None,
+    )
     sexe_display = serializers.CharField(source='get_sexe_display', read_only=True)
     lien_tuteur_display = serializers.CharField(source='get_lien_tuteur_display', read_only=True)
     photo_url = serializers.SerializerMethodField()
@@ -22,16 +28,18 @@ class EleveSerializer(serializers.ModelSerializer):
     photo_pere_url = serializers.SerializerMethodField()
     photo_mere_url = serializers.SerializerMethodField()
     photo_tuteur_url = serializers.SerializerMethodField()
+    qr_code_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Eleve
         fields = [
             'id', 'matricule', 'numero_identification', 'numero_permanent',
+            'code_unique', 'qr_code', 'qr_code_url',
             'nom', 'postnom', 'prenom', 'nom_complet',
             'date_naissance', 'lieu_naissance', 'sexe', 'sexe_display',
             'ecole', 'ecole_nom', 'ecole_code',
             'province_nom', 'province_administrative_nom', 'antenne_nom',
-            'classe', 'classe_nom', 'adresse',
+            'classe', 'classe_nom', 'section_nom', 'option_nom', 'adresse',
             'nom_pere', 'postnom_pere', 'prenom_pere', 'nom_complet_pere',
             'telephone_pere', 'email_pere', 'profession_pere',
             'photo_pere', 'photo_pere_url',
@@ -44,7 +52,8 @@ class EleveSerializer(serializers.ModelSerializer):
             'photo', 'photo_url', 'a_photo', 'actif', 'date_inscription',
         ]
         read_only_fields = [
-            'photo_url', 'a_photo', 'classe_nom',
+            'code_unique', 'qr_code', 'qr_code_url',
+            'photo_url', 'a_photo', 'classe_nom', 'section_nom', 'option_nom',
             'photo_pere_url', 'photo_mere_url', 'photo_tuteur_url',
             'nom_complet_pere', 'nom_complet_mere', 'lien_tuteur_display',
         ]
@@ -99,6 +108,9 @@ class EleveSerializer(serializers.ModelSerializer):
 
     def get_photo_tuteur_url(self, obj):
         return self._abs_url(obj.photo_tuteur)
+
+    def get_qr_code_url(self, obj):
+        return self._abs_url(obj.qr_code)
 
 
 class EleveDetailSerializer(EleveSerializer):

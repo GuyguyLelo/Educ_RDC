@@ -23,6 +23,9 @@
                 </div>
                 <div class="detail-hero-actions">
                     <a href="{% url 'eleves' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
+                    <a href="/api/eleves/{{ eleve_id }}/pdf/" class="btn btn-primary btn-sm" id="btnPdfFicheEleve" target="_blank" rel="noopener">
+                        {% ico 'pdf' %}Imprimer PDF
+                    </a>
                     <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">{% ico 'photo' %}Changer photo</label>
                     <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
                     {% if not request.user.est_enseignant %}
@@ -57,6 +60,29 @@
             <div>
                 <h3 class="detail-card-title">Biométrie</h3>
                 <dl class="detail-list compact" id="blocBiometrie"></dl>
+            </div>
+        </div>
+    </section>
+
+    <section class="detail-card" id="sectionQrEleve">
+        <div class="detail-card-head">
+            <h3 class="detail-card-title" style="margin:0;border:0;padding:0">QR code unique</h3>
+            <button type="button" class="btn btn-ghost btn-sm" id="btnRegenererQrEleve">{% ico 'qr' %}Régénérer</button>
+        </div>
+        <div class="eleve-qr-panel">
+            <div class="eleve-qr-preview">
+                <img id="detailQrEleve" alt="QR code de l'élève" hidden>
+                <div id="detailQrEleveFallback" class="eleve-qr-fallback">QR non généré</div>
+            </div>
+            <div class="eleve-qr-meta">
+                <dl class="detail-list compact">
+                    <div><dt>Code unique</dt><dd id="detailCodeUnique">—</dd></div>
+                    <div><dt>Usage</dt><dd>Identification de l’élève (fiche, contrôle, badge)</dd></div>
+                </dl>
+                <div class="actions-inline" style="margin-top:0.75rem">
+                    <a class="btn btn-secondary btn-sm" id="lienQrEleve" href="#" target="_blank" rel="noopener" hidden>{% ico 'qr' %}Ouvrir le QR</a>
+                    <a class="btn btn-primary btn-sm" id="lienPdfFicheQr" href="/api/eleves/{{ eleve_id }}/pdf/" target="_blank" rel="noopener">{% ico 'pdf' %}Fiche PDF</a>
+                </div>
             </div>
         </div>
     </section>

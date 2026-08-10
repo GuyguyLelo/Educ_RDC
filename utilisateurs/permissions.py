@@ -51,11 +51,42 @@ class LecturePourTousEcritureAdmin(BasePermission):
 
 
 class GestionClassesEcole(BasePermission):
-    """Lecture pour authentifiés ; création/édition des classes par admin ou administratif école."""
+    """Lecture pour authentifiés ; écriture admin, national ou administratif école."""
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
             return True
-        return bool(request.user.est_admin or request.user.role == 'admin_ecole')
+        user = request.user
+        return bool(
+            user.est_admin
+            or getattr(user, 'est_national', False)
+            or user.role == 'admin_ecole'
+        )
+
+
+class GestionUtilisateurs(BasePermission):
+    """
+    Admin national : CRUD global.
+    Administratif école : CRUD des comptes de son école (admin_ecole / enseignant).
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        if user.est_admin or user.is_superuser:
+            return True
+        return user.role == 'admin_ecole' and bool(user.ecole_id)
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.est_admin or user.is_superuser:
+            return True
+        if user.role != 'admin_ecole' or not user.ecole_id:
+            return False
+        return (
+            obj.ecole_id == user.ecole_id
+            and obj.role in ('admin_ecole', 'enseignant')
+        )

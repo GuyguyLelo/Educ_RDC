@@ -88,14 +88,83 @@ class PeriodeEvaluation(models.Model):
         return f'{self.libelle} ({self.annee.libelle})'
 
 
+class VerrouillagePeriode(models.Model):
+    """Période verrouillée pour une classe (plus de saisie possible)."""
+
+    annee = models.ForeignKey(
+        AnneeScolaire,
+        on_delete=models.CASCADE,
+        related_name='verrouillages_periodes',
+        verbose_name='Année scolaire',
+    )
+    classe = models.ForeignKey(
+        'ecoles.Classe',
+        on_delete=models.CASCADE,
+        related_name='verrouillages_periodes',
+        verbose_name='Classe',
+    )
+    periode = models.ForeignKey(
+        PeriodeEvaluation,
+        on_delete=models.CASCADE,
+        related_name='verrouillages',
+        verbose_name='Période',
+    )
+    verrouille_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='periodes_verrouillees',
+        verbose_name='Verrouillé par',
+    )
+    date_verrouillage = models.DateTimeField(auto_now_add=True, verbose_name='Date de verrouillage')
+
+    class Meta:
+        verbose_name = 'Verrouillage de période'
+        verbose_name_plural = 'Verrouillages de périodes'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['annee', 'classe', 'periode'],
+                name='uniq_verrou_periode_classe',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.classe} — {self.periode.libelle} (verrouillée)'
+
+
 class Matiere(models.Model):
-    """Branche / matière d'une école (maximum = max d'une période TJ)."""
+    """Branche liée à une section, une option et une classe de l'école."""
 
     ecole = models.ForeignKey(
         'ecoles.Ecole',
         on_delete=models.CASCADE,
         related_name='matieres',
         verbose_name='École',
+    )
+    section = models.ForeignKey(
+        'ecoles.SectionScolaire',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='matieres',
+        verbose_name='Section',
+    )
+    option = models.ForeignKey(
+        'ecoles.OptionScolaire',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='matieres',
+        verbose_name='Option',
+    )
+    classe = models.ForeignKey(
+        'ecoles.Classe',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='matieres_catalogue',
+        verbose_name='Classe',
     )
     nom = models.CharField(max_length=120, verbose_name='Nom')
     code = models.CharField(max_length=20, blank=True, verbose_name='Code')
@@ -115,11 +184,25 @@ class Matiere(models.Model):
         verbose_name_plural = 'Matières'
         ordering = ['ordre', 'nom']
         constraints = [
-            models.UniqueConstraint(fields=['ecole', 'nom'], name='uniq_matiere_nom_ecole'),
+            models.UniqueConstraint(
+                fields=['ecole', 'nom', 'section', 'option', 'classe'],
+                name='uniq_matiere_scope_ecole',
+            ),
         ]
 
     def __str__(self):
         return f'{self.nom} (/{self.maximum})'
+
+    def save(self, *args, **kwargs):
+        # Cohérence section ← option ← classe
+        if self.classe_id:
+            if self.classe.option_id:
+                self.option_id = self.classe.option_id
+            if self.classe.section_id:
+                self.section_id = self.classe.section_id
+        elif self.option_id and not self.section_id:
+            self.section_id = self.option.section_id
+        super().save(*args, **kwargs)
 
 
 class ProgrammeClasse(models.Model):

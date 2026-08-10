@@ -11,18 +11,29 @@ from .models import (
     ProvinceEducationnelle,
     Antenne,
     Ecole,
+    SectionScolaire,
+    OptionScolaire,
     Classe,
     PhotoEcole,
     PersonnelEcole,
 )
 from .import_personnel import importer_personnel, reponse_modele_xlsx
 from .import_classes import importer_classes, reponse_modele_xlsx as reponse_modele_classes
+from .programme_rdc import (
+    affecter_structure_ecole,
+    catalogue_referentiel_rdc,
+    charger_programme_rdc,
+    retirer_structure_ecole,
+)
 from administration.import_modeles import reponse_modele as reponse_modele_catalogue
 from .serializers import (
     ProvinceAdministrativeSerializer,
     ProvinceEducationnelleSerializer,
     AntenneSerializer,
     EcoleSerializer,
+    EcoleOptionSerializer,
+    SectionScolaireSerializer,
+    OptionScolaireSerializer,
     ClasseSerializer,
     PhotoEcoleSerializer,
     PersonnelEcoleSerializer,
@@ -88,9 +99,20 @@ class EcoleViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     search_fields = ['nom', 'code', 'numero_agrement', 'directeur', 'adresse', 'email']
     ordering_fields = ['nom', 'date_creation']
+    ordering = ['nom']
+
+    def get_serializer_class(self):
+        leger = self.request.query_params.get('leger') in ('1', 'true', 'True')
+        if leger or getattr(self, 'action', None) == 'choix':
+            return EcoleOptionSerializer
+        return EcoleSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        leger = self.request.query_params.get('leger') in ('1', 'true', 'True')
+        if leger or getattr(self, 'action', None) == 'choix':
+            qs = Ecole.objects.only('id', 'nom', 'code', 'niveau', 'active', 'antenne_id', 'province_educationnelle_id')
+        else:
+            qs = super().get_queryset()
         user = self.request.user
         pe = self.request.query_params.get('province_educationnelle')
         pa = self.request.query_params.get('province_administrative')
@@ -106,7 +128,10 @@ class EcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(antenne_id=antenne)
         type_ecole = self.request.query_params.get('type_ecole')
         niveau = self.request.query_params.get('niveau')
-        active = self.request.query_params.get('active')
+        active = (
+            self.request.query_params.get('active')
+            or self.request.query_params.get('actif')
+        )
         if type_ecole:
             qs = qs.filter(type_ecole=type_ecole)
         if niveau:
@@ -115,6 +140,11 @@ class EcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(active=True)
         elif active in ('false', '0', 'False'):
             qs = qs.filter(active=False)
+        # Écoles ayant déjà sections / options / classes (programme chargé)
+        avec_structure = self.request.query_params.get('avec_structure')
+        if avec_structure in ('true', '1', 'True'):
+            from django.db.models import Exists, OuterRef
+            qs = qs.filter(Exists(SectionScolaire.objects.filter(ecole_id=OuterRef('pk'))))
         if user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
@@ -122,6 +152,131 @@ class EcoleViewSet(viewsets.ModelViewSet):
         elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(id=user.ecole_id)
         return qs
+
+    @action(detail=False, methods=['get'], url_path='choix')
+    def choix(self, request):
+        """Liste légère id/nom/code pour les listes déroulantes."""
+        qs = self.filter_queryset(self.get_queryset()).order_by('nom')
+        page = self.paginate_queryset(qs)
+        ser = EcoleOptionSerializer(page or qs, many=True)
+        if page is not None:
+            return self.get_paginated_response(ser.data)
+        return Response(ser.data)
+
+    def _peut_gerer_programme_ecole(self, user, ecole):
+        if user.role == 'admin_ecole' and user.ecole_id != ecole.id:
+            return False
+        return bool(
+            user.est_admin
+            or getattr(user, 'est_national', False)
+            or user.role == 'admin_ecole'
+        )
+
+    @action(detail=True, methods=['get'], url_path='referentiel-rdc')
+    def referentiel_rdc(self, request, pk=None):
+        """Catalogue EPSP (sections/options) pour sélection par l'école."""
+        ecole = self.get_object()
+        niveau = (request.query_params.get('niveau') or 'tous').lower()
+        if request.query_params.get('auto_niveau'):
+            if ecole.niveau == Ecole.Niveau.PRIMAIRE:
+                niveau = 'primaire'
+            elif ecole.niveau == Ecole.Niveau.SECONDAIRE:
+                niveau = 'secondaire'
+        data = catalogue_referentiel_rdc(niveau=niveau, ecole_id=ecole.id)
+        data['ecole'] = ecole.id
+        data['ecole_nom'] = ecole.nom
+        return Response(data)
+
+    def _niveau_ecole(self, ecole, request_data_or_params):
+        niveau = (request_data_or_params.get('niveau') or 'tous').lower()
+        if niveau not in ('primaire', 'secondaire', 'tous', 'all'):
+            return None
+        if request_data_or_params.get('auto_niveau'):
+            if ecole.niveau == Ecole.Niveau.PRIMAIRE:
+                return 'primaire'
+            if ecole.niveau == Ecole.Niveau.SECONDAIRE:
+                return 'secondaire'
+            return 'tous'
+        return niveau
+
+    def _codes_liste(self, data, *keys):
+        values = []
+        for key in keys:
+            raw = data.get(key)
+            if raw is None:
+                continue
+            if isinstance(raw, str):
+                values.extend(c.strip() for c in raw.split(',') if c.strip())
+            elif isinstance(raw, (list, tuple)):
+                values.extend(str(c).strip() for c in raw if str(c).strip())
+        return values
+
+    @action(detail=True, methods=['post'], url_path='affecter-structure')
+    def affecter_structure(self, request, pk=None):
+        """
+        Affecte des options du référentiel EPSP à l'école
+        (crée section + option + classes associées).
+        Body: { options: ['COUPE','MP'], auto_niveau?: true }
+        """
+        ecole = self.get_object()
+        if not self._peut_gerer_programme_ecole(request.user, ecole):
+            return Response(
+                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        niveau = self._niveau_ecole(ecole, request.data)
+        if niveau is None:
+            return Response(
+                {'detail': 'niveau invalide (primaire | secondaire | tous).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        options = self._codes_liste(request.data, 'options', 'option_codes')
+        if not options:
+            return Response(
+                {'detail': 'Sélectionnez au moins une option à affecter à l\'école.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            result = affecter_structure_ecole(ecole.id, options, niveau=niveau)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'detail': (
+                f"{result['options_created']} option(s) et "
+                f"{result['classes_created']} classe(s) affectée(s) à l'école."
+            ),
+            **result,
+        })
+
+    @action(detail=True, methods=['post'], url_path='retirer-structure')
+    def retirer_structure(self, request, pk=None):
+        """
+        Retire (désactive) des options affectées à l'école.
+        Body: { options: ['COUPE','MP'] }
+        """
+        ecole = self.get_object()
+        if not self._peut_gerer_programme_ecole(request.user, ecole):
+            return Response(
+                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        options = self._codes_liste(request.data, 'options', 'option_codes')
+        try:
+            result = retirer_structure_ecole(ecole.id, options)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'detail': (
+                f"{result['options_retirees']} option(s) et "
+                f"{result['classes_retirees']} classe(s) retirée(s) de l'école."
+            ),
+            **result,
+        })
+
+    @action(detail=True, methods=['post'], url_path='charger-programme-rdc')
+    def charger_programme_rdc_action(self, request, pk=None):
+        """Alias de compatibilité → affecter-structure."""
+        return self.affecter_structure(request, pk=pk)
 
     @action(detail=True, methods=['get', 'post'], parser_classes=[MultiPartParser, FormParser, JSONParser])
     def photos(self, request, pk=None):
@@ -231,10 +386,73 @@ class EcoleViewSet(viewsets.ModelViewSet):
         return reponse_modele_catalogue('ecoles')
 
 
+def _scope_classes_ecole(qs, user, request):
+    ecole = request.query_params.get('ecole')
+    actif = request.query_params.get('actif') or request.query_params.get('active')
+    if ecole:
+        qs = qs.filter(ecole_id=ecole)
+    if actif in ('true', '1', 'True'):
+        qs = qs.filter(active=True)
+    elif actif in ('false', '0', 'False'):
+        qs = qs.filter(active=False)
+    if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+        qs = qs.filter(ecole_id=user.ecole_id)
+    elif user.role == 'agent_antenne' and user.antenne_id:
+        qs = qs.filter(ecole__antenne_id=user.antenne_id)
+    elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+        qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+    return qs
+
+
+class SectionScolaireViewSet(viewsets.ModelViewSet):
+    queryset = SectionScolaire.objects.select_related('ecole').all()
+    serializer_class = SectionScolaireSerializer
+    permission_classes = [IsAuthenticated, GestionClassesEcole]
+    search_fields = ['nom', 'code']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return _scope_classes_ecole(qs, self.request.user, self.request)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == 'admin_ecole' and user.ecole_id:
+            serializer.save(ecole_id=user.ecole_id)
+        else:
+            serializer.save()
+
+
+class OptionScolaireViewSet(viewsets.ModelViewSet):
+    queryset = OptionScolaire.objects.select_related('section', 'section__ecole').all()
+    serializer_class = OptionScolaireSerializer
+    permission_classes = [IsAuthenticated, GestionClassesEcole]
+    search_fields = ['nom', 'code', 'section__nom']
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        ecole = self.request.query_params.get('ecole')
+        section = self.request.query_params.get('section')
+        actif = self.request.query_params.get('actif') or self.request.query_params.get('active')
+        if ecole:
+            qs = qs.filter(section__ecole_id=ecole)
+        if section:
+            qs = qs.filter(section_id=section)
+        if actif in ('true', '1', 'True'):
+            qs = qs.filter(active=True)
+        if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            qs = qs.filter(section__ecole_id=user.ecole_id)
+        elif user.role == 'agent_antenne' and user.antenne_id:
+            qs = qs.filter(section__ecole__antenne_id=user.antenne_id)
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+            qs = qs.filter(section__ecole__province_educationnelle_id=user.province_educationnelle_id)
+        return qs
+
+
 class ClasseViewSet(viewsets.ModelViewSet):
     """Classes scolaires — créées par l'administratif de l'école."""
 
-    queryset = Classe.objects.select_related('ecole').all()
+    queryset = Classe.objects.select_related('ecole', 'section', 'option').all()
     serializer_class = ClasseSerializer
     permission_classes = [IsAuthenticated, GestionClassesEcole]
     search_fields = ['nom', 'code', 'ecole__nom', 'ecole__code']
@@ -242,21 +460,13 @@ class ClasseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        user = self.request.user
-        ecole = self.request.query_params.get('ecole')
-        actif = self.request.query_params.get('actif') or self.request.query_params.get('active')
-        if ecole:
-            qs = qs.filter(ecole_id=ecole)
-        if actif in ('true', '1', 'True'):
-            qs = qs.filter(active=True)
-        elif actif in ('false', '0', 'False'):
-            qs = qs.filter(active=False)
-        if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
-            qs = qs.filter(ecole_id=user.ecole_id)
-        elif user.role == 'agent_antenne' and user.antenne_id:
-            qs = qs.filter(ecole__antenne_id=user.antenne_id)
-        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
-            qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+        qs = _scope_classes_ecole(qs, self.request.user, self.request)
+        section = self.request.query_params.get('section')
+        option = self.request.query_params.get('option')
+        if section:
+            qs = qs.filter(section_id=section)
+        if option:
+            qs = qs.filter(option_id=option)
         return qs
 
     def perform_create(self, serializer):

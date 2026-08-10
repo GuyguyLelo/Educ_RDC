@@ -118,16 +118,30 @@ def vue_evaluations(request):
 @login_required
 def vue_eleve_detail(request, eleve_id):
     """Page détail d'un élève (photo, identité, scolarité, cartes)."""
-    eleve = get_object_or_404(
-        Eleve.objects.select_related(
-            'ecole',
-            'ecole__province_educationnelle',
-            'ecole__province_educationnelle__province_administrative',
-            'ecole__antenne',
-            'biometrie',
-        ),
-        pk=eleve_id,
+    user = request.user
+    qs = Eleve.objects.select_related(
+        'ecole',
+        'ecole__province_educationnelle',
+        'ecole__province_educationnelle__province_administrative',
+        'ecole__antenne',
+        'classe',
+        'biometrie',
     )
+    if getattr(user, 'est_enseignant', False):
+        if not user.classe_id:
+            messages.warning(request, "Aucune classe titulaire n'est associée à votre compte.")
+            return redirect('eleves')
+        qs = qs.filter(classe_id=user.classe_id)
+        if user.ecole_id:
+            qs = qs.filter(ecole_id=user.ecole_id)
+    elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+        qs = qs.filter(ecole_id=user.ecole_id)
+    elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+        qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+    elif user.role == 'agent_antenne' and user.antenne_id:
+        qs = qs.filter(ecole__antenne_id=user.antenne_id)
+
+    eleve = get_object_or_404(qs, pk=eleve_id)
     return render(request, 'eleve_detail.html', {
         'page': 'eleves',
         'eleve_id': eleve.id,
@@ -153,6 +167,27 @@ def vue_parametres(request):
         messages.warning(request, 'Accès réservé aux agents nationaux.')
         return redirect('dashboard')
     return render(request, 'parametres.html', {'page': 'parametres'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_parametres_scolaire(request):
+    """CRUD sections, options, classes et matières (programme scolaire)."""
+    user = request.user
+    peut = (
+        getattr(user, 'est_admin', False)
+        or getattr(user, 'est_national', False)
+        or user.role == 'admin_ecole'
+    )
+    if not peut:
+        messages.warning(request, 'Accès réservé à l\'administration.')
+        return redirect('dashboard')
+    ecole_id = user.ecole_id if user.role == 'admin_ecole' else None
+    return render(request, 'parametres_scolaire.html', {
+        'page': 'parametres_scolaire',
+        'ecole_id': ecole_id or '',
+        'ecole_figee': bool(ecole_id),
+    })
 
 
 @login_required

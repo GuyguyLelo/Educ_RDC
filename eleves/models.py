@@ -1,7 +1,13 @@
 """
 Modèle Élève — identification scolaire.
 """
+import uuid
+
 from django.db import models
+
+
+def _default_code_unique_eleve():
+    return f'ELV-{uuid.uuid4().hex[:16].upper()}'
 
 
 class Eleve(models.Model):
@@ -12,6 +18,20 @@ class Eleve(models.Model):
         FEMININ = 'F', 'Féminin'
 
     matricule = models.CharField(max_length=30, unique=True, verbose_name='Matricule')
+    code_unique = models.CharField(
+        max_length=40,
+        unique=True,
+        default=_default_code_unique_eleve,
+        editable=False,
+        verbose_name='Code unique QR',
+        help_text='Identifiant stable encodé dans le QR code de l’élève.',
+    )
+    qr_code = models.ImageField(
+        upload_to='eleves/qr/',
+        blank=True,
+        null=True,
+        verbose_name='QR Code',
+    )
     numero_identification = models.CharField(
         max_length=50,
         blank=True,
@@ -124,6 +144,8 @@ class Eleve(models.Model):
             self.numero_identification = self.numero_identification.strip() or None
         if self.numero_permanent is not None:
             self.numero_permanent = self.numero_permanent.strip() or None
+        if not self.code_unique:
+            self.code_unique = f'ELV-{uuid.uuid4().hex[:16].upper()}'
         super().save(*args, **kwargs)
 
     @staticmethod

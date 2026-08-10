@@ -61,7 +61,7 @@
                     Rapports
                 </a>
 
-                {% if request.user.est_national %}
+                {% if request.user.est_national or request.user.est_admin or request.user.role == 'admin_ecole' %}
                 <div class="nav-section">Administration</div>
                 {% if request.user.est_admin %}
                 <a href="{% url 'utilisateurs' %}" class="nav-link {% if page == 'utilisateurs' %}active{% endif %}">
@@ -69,10 +69,21 @@
                     Gestion Utilisateurs
                 </a>
                 {% endif %}
-                <a href="{% url 'parametres' %}" class="nav-link {% if page == 'parametres' %}active{% endif %}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.3.6.9 1.1 1.5 1.1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-                    Paramètres
-                </a>
+                <div class="nav-group {% if page == 'parametres' or page == 'parametres_scolaire' %}open{% endif %}" data-nav-group="parametres">
+                    <button type="button" class="nav-group-toggle {% if page == 'parametres' or page == 'parametres_scolaire' %}active{% endif %}" aria-expanded="{% if page == 'parametres' or page == 'parametres_scolaire' %}true{% else %}false{% endif %}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.3.6.9 1.1 1.5 1.1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
+                        <span>Paramètres</span>
+                        <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                    </button>
+                    <div class="nav-submenu">
+                        {% if request.user.est_national %}
+                        <div class="nav-subheading">Territoire</div>
+                        <a href="{% url 'parametres' %}" class="nav-link nav-sublink {% if page == 'parametres' %}active{% endif %}">Organisation territoriale</a>
+                        {% endif %}
+                        <div class="nav-subheading">École</div>
+                        <a href="{% url 'parametres_scolaire' %}" class="nav-link nav-sublink {% if page == 'parametres_scolaire' %}active{% endif %}">Affectation</a>
+                    </div>
+                </div>
                 {% endif %}
             </nav>
 
@@ -95,6 +106,40 @@
                     <h1>{% block page_title %}Tableau de bord{% endblock %}</h1>
                     <p>{% block page_subtitle %}Plateforme nationale d'identification scolaire{% endblock %}</p>
                 </div>
+                {% if request.user.est_enseignant and request.user.ecole %}
+                {% with ens_nom=request.user.get_full_name|default:request.user.username %}
+                <div class="topbar-ecole-marquee" role="status" aria-label="Enseignant {{ ens_nom }} — École {{ request.user.ecole.nom }}">
+                    <div class="topbar-ecole-track">
+                        <span class="topbar-ecole-item">
+                            <span class="topbar-ecole-label">Enseignant</span>
+                            <strong>{{ ens_nom }}</strong>
+                            <span class="topbar-ecole-sep" aria-hidden="true">·</span>
+                            <span class="topbar-ecole-label">École</span>
+                            <strong>{{ request.user.ecole.nom }}</strong>
+                            {% if request.user.ecole.code %}<span class="topbar-ecole-code">{{ request.user.ecole.code }}</span>{% endif %}
+                            {% if request.user.classe_nom %}
+                            <span class="topbar-ecole-sep" aria-hidden="true">·</span>
+                            <span class="topbar-ecole-label">Classe</span>
+                            <strong>{{ request.user.classe_nom }}</strong>
+                            {% endif %}
+                        </span>
+                        <span class="topbar-ecole-item" aria-hidden="true">
+                            <span class="topbar-ecole-label">Enseignant</span>
+                            <strong>{{ ens_nom }}</strong>
+                            <span class="topbar-ecole-sep" aria-hidden="true">·</span>
+                            <span class="topbar-ecole-label">École</span>
+                            <strong>{{ request.user.ecole.nom }}</strong>
+                            {% if request.user.ecole.code %}<span class="topbar-ecole-code">{{ request.user.ecole.code }}</span>{% endif %}
+                            {% if request.user.classe_nom %}
+                            <span class="topbar-ecole-sep" aria-hidden="true">·</span>
+                            <span class="topbar-ecole-label">Classe</span>
+                            <strong>{{ request.user.classe_nom }}</strong>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+                {% endwith %}
+                {% endif %}
                 <div class="topbar-meta">
                     <div class="flag-ribbon" aria-hidden="true"></div>
                 </div>

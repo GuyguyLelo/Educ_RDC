@@ -10,7 +10,11 @@ from rest_framework.response import Response
 
 from ecoles.models import Classe
 from eleves.models import Eleve
-from .defaults import creer_periodes_pour_annee, synchroniser_matieres_ecole
+from .defaults import (
+    creer_periodes_pour_annee,
+    matieres_queryset_pour_classe,
+    synchroniser_matieres_ecole,
+)
 from .models import (
     AnneeScolaire,
     BulletinDecision,
@@ -18,6 +22,7 @@ from .models import (
     Note,
     PeriodeEvaluation,
     ProgrammeClasse,
+    VerrouillagePeriode,
 )
 from .serializers import (
     AnneeScolaireSerializer,
@@ -28,7 +33,15 @@ from .serializers import (
     PeriodeEvaluationSerializer,
     ProgrammeClasseSerializer,
 )
-from .services import actualiser_classement, calculer_bulletin_eleve, generer_pdf_bulletin, maximum_periode
+from .services import (
+    actualiser_classement,
+    calculer_bulletin_eleve,
+    generer_pdf_bulletin,
+    ids_periodes_verrouillees,
+    maximum_periode,
+    periode_est_verrouillee,
+    verrouiller_periodes_anterieures,
+)
 
 
 class GestionEvaluation(BasePermission):
@@ -50,7 +63,7 @@ class GestionEvaluation(BasePermission):
             # Notes et décisions de sa classe uniquement (vérifié dans perform_*)
             return view.action in (
                 'create', 'update', 'partial_update', 'saisie_bulk',
-                'destroy', 'classer', 'decision',
+                'destroy', 'classer', 'decision', 'ouvrir',
             )
         return user.role in ('agent_provincial', 'agent_antenne', 'agent_national')
 
@@ -101,22 +114,93 @@ class AnneeScolaireViewSet(viewsets.ModelViewSet):
 
 class PeriodeEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PeriodeEvaluationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, GestionEvaluation]
 
     def get_queryset(self):
         qs = PeriodeEvaluation.objects.select_related('annee').all()
         annee = self.request.query_params.get('annee')
         if annee:
             qs = qs.filter(annee_id=annee)
-        return qs
+        return qs.order_by('ordre')
+
+    def list(self, request, *args, **kwargs):
+        """Liste des périodes + statut verrouillé si classe fournie."""
+        response = super().list(request, *args, **kwargs)
+        annee = request.query_params.get('annee')
+        classe = request.query_params.get('classe')
+        if not annee or not classe:
+            return response
+        locked = ids_periodes_verrouillees(int(annee), int(classe))
+        data = response.data
+        rows = data.get('results', data) if isinstance(data, dict) else data
+        for row in rows:
+            row['verrouillee'] = row.get('id') in locked
+        return response
+
+    @action(detail=True, methods=['post'], url_path='ouvrir')
+    def ouvrir(self, request, pk=None):
+        """
+        Ouvre une période pour saisie : verrouille automatiquement
+        toutes les périodes antérieures de la classe.
+        """
+        periode = self.get_object()
+        classe_id = request.data.get('classe')
+        if getattr(request.user, 'est_enseignant', False):
+            classe_id = request.user.classe_id
+        if not classe_id:
+            return Response({'detail': 'classe requise.'}, status=status.HTTP_400_BAD_REQUEST)
+        classe = get_object_or_404(Classe, pk=classe_id)
+        if not _peut_saisir_classe(request.user, classe):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Classe non autorisée.')
+        if periode_est_verrouillee(periode.annee_id, classe.id, periode.id):
+            return Response({
+                'detail': 'Cette période est déjà verrouillée. Saisie en lecture seule.',
+                'verrouillee': True,
+                'verrouilles': 0,
+            })
+        n = verrouiller_periodes_anterieures(
+            periode.annee, classe.id, periode, user=request.user,
+        )
+        return Response({
+            'detail': (
+                f'Période « {periode.libelle} » ouverte.'
+                + (f' {n} période(s) précédente(s) verrouillée(s).' if n else '')
+            ),
+            'verrouillee': False,
+            'verrouilles': n,
+            'periode': PeriodeEvaluationSerializer(periode).data,
+        })
+
+    @action(detail=True, methods=['post'], url_path='deverrouiller')
+    def deverrouiller(self, request, pk=None):
+        """Déverrouille une période (admin école / admin uniquement)."""
+        user = request.user
+        if not (user.est_admin or user.role == 'admin_ecole'):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Seul l\'administratif peut déverrouiller.')
+        periode = self.get_object()
+        classe_id = request.data.get('classe')
+        if not classe_id:
+            return Response({'detail': 'classe requise.'}, status=status.HTTP_400_BAD_REQUEST)
+        deleted, _ = VerrouillagePeriode.objects.filter(
+            annee_id=periode.annee_id, classe_id=classe_id, periode=periode,
+        ).delete()
+        return Response({
+            'detail': 'Période déverrouillée.' if deleted else 'Période déjà ouverte.',
+            'verrouillee': False,
+        })
 
 
 class MatiereViewSet(viewsets.ModelViewSet):
     serializer_class = MatiereSerializer
     permission_classes = [IsAuthenticated, GestionEvaluation]
+    search_fields = ['nom', 'code', 'section__nom', 'option__nom', 'classe__nom']
 
     def get_queryset(self):
-        qs = Matiere.objects.select_related('ecole').all()
+        qs = Matiere.objects.select_related(
+            'ecole', 'section', 'option', 'classe',
+        ).all()
         ecole = self.request.query_params.get('ecole')
         user = self.request.user
         ids = _scope_ecole_ids(user)
@@ -124,9 +208,33 @@ class MatiereViewSet(viewsets.ModelViewSet):
             qs = qs.filter(ecole_id__in=ids)
         if ecole:
             qs = qs.filter(ecole_id=ecole)
+
+        classe_id = self.request.query_params.get('classe')
+        option_id = self.request.query_params.get('option')
+        section_id = self.request.query_params.get('section')
+        # scope=hierarchie (défaut si classe fournie) : classe + option (+ section)
+        scope = (self.request.query_params.get('scope') or '').lower()
+        use_hierarchie = scope in ('hierarchie', '1', 'true') or (
+            bool(classe_id) and scope not in ('exact', 'strict')
+        )
+
+        if classe_id and use_hierarchie:
+            classe = Classe.objects.select_related('section', 'option').filter(pk=classe_id).first()
+            if classe:
+                qs = matieres_queryset_pour_classe(qs, classe, mode='liste')
+            else:
+                qs = qs.none()
+        else:
+            if section_id:
+                qs = qs.filter(section_id=section_id)
+            if option_id:
+                qs = qs.filter(option_id=option_id)
+            if classe_id:
+                qs = qs.filter(classe_id=classe_id)
+
         if self.request.query_params.get('actif') in ('1', 'true'):
             qs = qs.filter(active=True)
-        return qs
+        return qs.order_by('ordre', 'nom')
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -141,20 +249,54 @@ class MatiereViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='charger-catalogue')
     def charger_catalogue(self, request):
-        """Charge les matières types (primaire/secondaire) pour une école."""
+        """Charge les matières types pour une section / option / classe."""
         ecole_id = request.data.get('ecole')
         regime = request.data.get('regime') or AnneeScolaire.Regime.SECONDAIRE
+        classe_id = request.data.get('classe')
+        section_id = request.data.get('section')
+        option_id = request.data.get('option')
         user = request.user
         if user.role == 'admin_ecole' and user.ecole_id:
             ecole_id = user.ecole_id
+
+        # Résoudre école / section / option depuis la classe si fournie
+        classe = None
+        if classe_id:
+            classe = Classe.objects.select_related('section', 'option', 'ecole').filter(
+                pk=classe_id,
+            ).first()
+            if classe:
+                ecole_id = ecole_id or classe.ecole_id
+                section_id = section_id or classe.section_id
+                option_id = option_id or classe.option_id
+
         if not ecole_id:
-            return Response({'detail': 'École requise.'}, status=status.HTTP_400_BAD_REQUEST)
-        result = synchroniser_matieres_ecole(int(ecole_id), regime)
+            return Response({'detail': 'École ou classe requise.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not classe_id and not option_id and not section_id:
+            return Response(
+                {'detail': 'Sélectionnez une classe (ou section / option) pour charger le catalogue.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = synchroniser_matieres_ecole(
+            int(ecole_id),
+            regime,
+            classe_id=int(classe_id) if classe_id else None,
+            section_id=int(section_id) if section_id else None,
+            option_id=int(option_id) if option_id else None,
+        )
+        scope_label = ''
+        if classe:
+            parts = [p for p in (classe.section.nom if classe.section_id else '',
+                                 classe.option.nom if classe.option_id else '',
+                                 classe.nom) if p]
+            scope_label = ' · '.join(parts)
         return Response({
             'detail': (
                 f"{result['created']} matière(s) ajoutée(s), "
-                f"{result['updated']} mise(s) à jour "
-                f"(catalogue bulletin IGE/EPSP)."
+                f"{result['updated']} mise(s) à jour"
+                + (f' — {scope_label}' if scope_label else ' (section / option / classe)')
+                + '.'
             ),
             **result,
         })
@@ -197,16 +339,41 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
                 {'detail': 'annee et classe sont requis.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        classe = get_object_or_404(Classe, pk=classe_id)
+        classe = get_object_or_404(
+            Classe.objects.select_related('section', 'option'),
+            pk=classe_id,
+        )
         if not (
             request.user.est_admin
+            or getattr(request.user, 'est_national', False)
             or (request.user.role == 'admin_ecole' and request.user.ecole_id == classe.ecole_id)
         ):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Réservé à l\'administratif de l\'école.')
-        matieres = Matiere.objects.filter(ecole_id=classe.ecole_id, active=True)
+
+        # Si aucune matière pour cette option/classe → charger le catalogue d'abord
+        matieres = matieres_queryset_pour_classe(
+            Matiere.objects.filter(ecole_id=classe.ecole_id, active=True),
+            classe,
+        )
+        sync_info = None
+        if not matieres.exists():
+            annee = AnneeScolaire.objects.filter(pk=annee_id).first()
+            regime = annee.regime if annee else AnneeScolaire.Regime.SECONDAIRE
+            sync_info = synchroniser_matieres_ecole(
+                classe.ecole_id,
+                regime,
+                classe_id=classe.id,
+                section_id=classe.section_id,
+                option_id=classe.option_id,
+            )
+            matieres = matieres_queryset_pour_classe(
+                Matiere.objects.filter(ecole_id=classe.ecole_id, active=True),
+                classe,
+            )
+
         created = 0
-        for m in matieres:
+        for m in matieres.order_by('ordre', 'nom'):
             _, was = ProgrammeClasse.objects.get_or_create(
                 annee_id=annee_id,
                 classe=classe,
@@ -215,7 +382,18 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
             )
             if was:
                 created += 1
-        return Response({'detail': f'{created} matière(s) programmée(s).', 'created': created})
+        opt = classe.option.nom if classe.option_id else ''
+        sec = classe.section.nom if classe.section_id else ''
+        scope = ' · '.join(p for p in (sec, opt, classe.nom) if p)
+        detail = f'{created} matière(s) programmée(s) pour {scope or "la classe"}.'
+        if sync_info and sync_info.get('created'):
+            detail += f" Catalogue : {sync_info['created']} créée(s)."
+        return Response({
+            'detail': detail,
+            'created': created,
+            'matieres': matieres.count(),
+            'sync': sync_info,
+        })
 
 
 class NoteViewSet(viewsets.ModelViewSet):
@@ -247,18 +425,26 @@ class NoteViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         programme = serializer.validated_data['programme']
+        periode = serializer.validated_data['periode']
         if not _peut_saisir_classe(self.request.user, programme.classe):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Seul le titulaire ou l\'administratif peut saisir.')
+        if periode_est_verrouillee(programme.annee_id, programme.classe_id, periode.id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Cette période est verrouillée.')
         self._valider_note(serializer.validated_data)
         serializer.save(saisi_par=self.request.user)
 
     def perform_update(self, serializer):
         programme = serializer.instance.programme
+        periode = serializer.validated_data.get('periode', serializer.instance.periode)
         if not _peut_saisir_classe(self.request.user, programme.classe):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Seul le titulaire ou l\'administratif peut modifier.')
-        self._valider_note({**{'programme': programme, 'periode': serializer.instance.periode}, **serializer.validated_data})
+        if periode_est_verrouillee(programme.annee_id, programme.classe_id, periode.id):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Cette période est verrouillée.')
+        self._valider_note({**{'programme': programme, 'periode': periode}, **serializer.validated_data})
         serializer.save(saisi_par=self.request.user)
 
     def _valider_note(self, data):
@@ -284,6 +470,20 @@ class NoteViewSet(viewsets.ModelViewSet):
         if not _peut_saisir_classe(request.user, programme.classe):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Seul le titulaire ou l\'administratif peut saisir.')
+
+        # Une seule période autorisée par lot ; refus si verrouillée
+        periode_ids = {item['periode'] for item in ser.validated_data['notes']}
+        if len(periode_ids) != 1:
+            return Response(
+                {'detail': 'La saisie ne peut concerner qu\'une seule période à la fois.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        periode_id = next(iter(periode_ids))
+        if periode_est_verrouillee(programme.annee_id, programme.classe_id, periode_id):
+            return Response(
+                {'detail': 'Cette période est verrouillée. Impossible de modifier les notes.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         saved = 0
         errors = []
@@ -317,46 +517,49 @@ class NoteViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='grille')
     def grille(self, request):
-        """Grille de saisie : élèves × périodes pour un programme."""
+        """Grille de saisie : élèves × une période pour un programme."""
         programme_id = request.query_params.get('programme')
+        periode_id = request.query_params.get('periode')
         if not programme_id:
             return Response({'detail': 'programme requis.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not periode_id:
+            return Response({'detail': 'periode requise.'}, status=status.HTTP_400_BAD_REQUEST)
         programme = get_object_or_404(
             ProgrammeClasse.objects.select_related('matiere', 'classe', 'annee'),
             pk=programme_id,
+        )
+        periode = get_object_or_404(
+            PeriodeEvaluation.objects.filter(annee_id=programme.annee_id),
+            pk=periode_id,
         )
         user = request.user
         if getattr(user, 'est_enseignant', False) and user.classe_id != programme.classe_id:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Classe non autorisée.')
-        periodes = list(programme.annee.periodes.all().order_by('ordre'))
+        verrouillee = periode_est_verrouillee(
+            programme.annee_id, programme.classe_id, periode.id,
+        )
         eleves = list(
             Eleve.objects.filter(classe_id=programme.classe_id, actif=True)
             .order_by('nom', 'postnom', 'prenom')
         )
-        notes = Note.objects.filter(programme=programme)
-        note_map = {(n.eleve_id, n.periode_id): n.valeur for n in notes}
+        notes = Note.objects.filter(programme=programme, periode=periode)
+        note_map = {n.eleve_id: n.valeur for n in notes}
+        maxi = maximum_periode(programme, periode)
         rows = []
         for el in eleves:
-            cells = {}
-            for p in periodes:
-                cells[str(p.id)] = (
-                    str(note_map[(el.id, p.id)])
-                    if (el.id, p.id) in note_map and note_map[(el.id, p.id)] is not None
-                    else ''
-                )
+            val = note_map.get(el.id)
             rows.append({
                 'eleve_id': el.id,
                 'eleve_nom': el.nom_complet,
                 'matricule': el.matricule,
-                'notes': cells,
+                'note': str(val) if val is not None else '',
             })
         return Response({
             'programme': ProgrammeClasseSerializer(programme).data,
-            'periodes': PeriodeEvaluationSerializer(periodes, many=True).data,
-            'maxima': {
-                str(p.id): str(maximum_periode(programme, p)) for p in periodes
-            },
+            'periode': PeriodeEvaluationSerializer(periode).data,
+            'verrouillee': verrouillee,
+            'maximum': str(maxi),
             'eleves': rows,
         })
 
