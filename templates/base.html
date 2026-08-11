@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260811n">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -54,6 +54,12 @@
                     Évaluation
                 </a>
                 {% endif %}
+                {% if request.user.est_national or request.user.est_admin %}
+                <a href="{% url 'parametres_gestion_documentaire' %}" class="nav-link {% if page == 'parametres_gestion_documentaire' or page == 'parametres_arretes' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h3M8 17h5"/></svg>
+                    Gestion documentaire
+                </a>
+                {% endif %}
 
                 <div class="nav-section">Analyse</div>
                 <a href="{% url 'rapports' %}" class="nav-link {% if page == 'rapports' %}active{% endif %}">
@@ -68,9 +74,13 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19c.8-3.2 3.2-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2c2.2.3 3.9 1.6 4.5 3.8"/></svg>
                     Gestion Utilisateurs
                 </a>
+                <a href="{% url 'monitoring_utilisateurs' %}" class="nav-link {% if page == 'monitoring_utilisateurs' %}active{% endif %}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2-7 4 14 2-7h6"/><circle cx="19" cy="5" r="2"/></svg>
+                    Utilisateurs connectés
+                </a>
                 {% endif %}
-                <div class="nav-group {% if page == 'parametres' or page == 'parametres_scolaire' %}open{% endif %}" data-nav-group="parametres">
-                    <button type="button" class="nav-group-toggle {% if page == 'parametres' or page == 'parametres_scolaire' %}active{% endif %}" aria-expanded="{% if page == 'parametres' or page == 'parametres_scolaire' %}true{% else %}false{% endif %}">
+                <div class="nav-group {% if page == 'parametres' or page == 'parametres_scolaire' or page == 'parametres_annees' %}open{% endif %}" data-nav-group="parametres">
+                    <button type="button" class="nav-group-toggle {% if page == 'parametres' or page == 'parametres_scolaire' or page == 'parametres_annees' %}active{% endif %}" aria-expanded="{% if page == 'parametres' or page == 'parametres_scolaire' or page == 'parametres_annees' %}true{% else %}false{% endif %}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9c.3.6.9 1.1 1.5 1.1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
                         <span>Paramètres</span>
                         <svg class="nav-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
@@ -81,7 +91,11 @@
                         <a href="{% url 'parametres' %}" class="nav-link nav-sublink {% if page == 'parametres' %}active{% endif %}">Organisation territoriale</a>
                         {% endif %}
                         <div class="nav-subheading">École</div>
-                        <a href="{% url 'parametres_scolaire' %}" class="nav-link nav-sublink {% if page == 'parametres_scolaire' %}active{% endif %}">Affectation</a>
+                        <a href="{% url 'parametres_scolaire' %}?onglet=affectation" class="nav-link nav-sublink {% if page == 'parametres_scolaire' %}active{% endif %}">Structure scolaire</a>
+                        {% if request.user.est_national or request.user.est_admin %}
+                        <div class="nav-subheading">Référentiel national</div>
+                        <a href="{% url 'parametres_annees' %}" class="nav-link nav-sublink {% if page == 'parametres_annees' %}active{% endif %}">Années scolaires</a>
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}
@@ -160,7 +174,7 @@
 
     <div id="toast-container" class="toast-container"></div>
     <form id="csrfForm" class="csrf-form" aria-hidden="true">{% csrf_token %}</form>
-    <script src="{% static 'js/app.js' %}"></script>
+    <script src="{% static 'js/app.js' %}?v=20260812d"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

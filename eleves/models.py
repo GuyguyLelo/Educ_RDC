@@ -46,6 +46,13 @@ class Eleve(models.Model):
         unique=True,
         verbose_name='Numéro Permanent',
     )
+    numero_impot = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        unique=True,
+        verbose_name='Numéro Impôt',
+    )
     nom = models.CharField(max_length=100, verbose_name='Nom')
     postnom = models.CharField(max_length=100, blank=True, verbose_name='Postnom')
     prenom = models.CharField(max_length=100, verbose_name='Prénom')
@@ -140,12 +147,39 @@ class Eleve(models.Model):
         return f'{self.nom} {self.postnom} {self.prenom} ({self.matricule})'
 
     def save(self, *args, **kwargs):
-        if self.numero_identification is not None:
-            self.numero_identification = self.numero_identification.strip() or None
+        from .services import composer_numero_identification, generer_prochain_matricule
+
+        if not (self.matricule or '').strip():
+            self.matricule = generer_prochain_matricule()
+        else:
+            self.matricule = self.matricule.strip()
+
         if self.numero_permanent is not None:
             self.numero_permanent = self.numero_permanent.strip() or None
+        if self.numero_impot is not None:
+            self.numero_impot = self.numero_impot.strip() or None
         if not self.code_unique:
             self.code_unique = f'ELV-{uuid.uuid4().hex[:16].upper()}'
+
+        # N° Identification = code école + n° d'ordre du matricule
+        code_ecole = None
+        if self.ecole_id:
+            ecole = getattr(self, 'ecole', None)
+            if ecole is not None and getattr(ecole, 'pk', None) == self.ecole_id:
+                code_ecole = ecole.code
+            else:
+                from ecoles.models import Ecole
+                code_ecole = (
+                    Ecole.objects.filter(pk=self.ecole_id)
+                    .values_list('code', flat=True)
+                    .first()
+                )
+        compose = composer_numero_identification(code_ecole, self.matricule)
+        if compose:
+            self.numero_identification = compose
+        elif self.numero_identification is not None:
+            self.numero_identification = self.numero_identification.strip() or None
+
         super().save(*args, **kwargs)
 
     @staticmethod

@@ -7,7 +7,9 @@
 {% block page_subtitle %}Identité, parents, photo et dossiers associés{% endblock %}
 
 {% block content %}
-<div class="detail-shell" id="eleveDetail" data-eleve-id="{{ eleve_id }}">
+<div class="detail-shell" id="eleveDetail" data-eleve-id="{{ eleve_id }}"
+     data-ecole-figee="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}1{% else %}0{% endif %}"
+     data-ecole-id="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}{{ request.user.ecole_id }}{% endif %}">
     <section class="detail-hero">
         <div class="detail-photo-wrap">
             <img id="detailPhoto" class="detail-photo" alt="Photo de l'élève" hidden>
@@ -29,6 +31,7 @@
                     <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">{% ico 'photo' %}Changer photo</label>
                     <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
                     {% if not request.user.est_enseignant %}
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEleve">{% ico 'edit' %}Modifier</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierParents">{% ico 'edit' %}Parents</button>
                     <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEleve">{% ico 'trash' %}Supprimer</button>
                     {% endif %}
@@ -113,6 +116,101 @@
 </div>
 
 {% if not request.user.est_enseignant %}
+<div class="modal" id="modalEditEleve" hidden>
+    <div class="modal-dialog modal-lg">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Modifier l’élève</h3>
+                <p>Identité, scolarité et statut</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formEditEleve" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identité</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Matricule</label>
+                            <input name="matricule" readonly>
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Identification</label>
+                            <input name="numero_identification" readonly
+                                   title="Recalculé automatiquement selon l’école et le matricule">
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Permanent</label>
+                            <input name="numero_permanent" placeholder="Ex: NP-2026-0001">
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Impôt</label>
+                            <input name="numero_impot" placeholder="Ex: NIF-…">
+                        </div>
+                        <div class="form-group">
+                            <label>Sexe <span class="req">*</span></label>
+                            <select name="sexe" required>
+                                <option value="M">Masculin</option>
+                                <option value="F">Féminin</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Postnom</label>
+                            <input name="postnom">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom <span class="req">*</span></label>
+                            <input name="prenom" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Date de naissance <span class="req">*</span></label>
+                            <input type="date" name="date_naissance" required>
+                        </div>
+                        <div class="form-group full">
+                            <label>Lieu de naissance</label>
+                            <input name="lieu_naissance">
+                        </div>
+                    </div>
+                </section>
+                <section class="form-section">
+                    <h4 class="form-section-title">Scolarité</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>École <span class="req">*</span></label>
+                            <select name="ecole" id="selectEcoleEditEleve" required></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Classe <span class="req">*</span></label>
+                            <select name="classe" id="selectClasseEditEleve" required>
+                                <option value="">— Sélectionner une classe —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Statut</label>
+                            <select name="actif">
+                                <option value="true">Actif</option>
+                                <option value="false">Inactif</option>
+                            </select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Adresse de résidence</label>
+                            <input name="adresse" placeholder="Avenue, commune, ville">
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="modal" id="modalParentsEleve" hidden>
     <div class="modal-dialog modal-lg">
         <div class="modal-header">

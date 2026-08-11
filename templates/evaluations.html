@@ -53,7 +53,7 @@
 
         <div class="eval-filters">
             <div class="eval-filter">
-                <label for="selectAnneeEval">Année scolaire</label>
+                <label for="selectAnneeEval">Année scolaire (nationale)</label>
                 <select id="selectAnneeEval"></select>
             </div>
             <div class="eval-filter">
@@ -70,7 +70,6 @@
             </div>
             {% if peut_configurer %}
             <div class="eval-filter-actions">
-                <button type="button" class="btn btn-secondary btn-sm" id="btnNouvelleAnnee">{% ico 'plus' %}Année</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="btnCatalogueMatieres">{% ico 'download' %}Catalogue</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="btnAppliquerProgramme">{% ico 'save' %}Programme</button>
                 <button type="button" class="btn btn-ghost btn-sm" id="btnDeverrouillerPeriode" hidden>{% ico 'reset' %}Déverrouiller</button>
@@ -204,51 +203,6 @@
         </div>
     </section>
     {% endif %}
-</div>
-
-<div class="modal" id="modalAnneeEval" hidden>
-    <div class="modal-dialog">
-        <div class="modal-header">
-            <div class="modal-header-text">
-                <h3>Nouvelle année scolaire</h3>
-                <p>Les périodes RDC (4 P + 2 examens ou 3 trimestres) seront créées automatiquement</p>
-            </div>
-            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
-        </div>
-        <form id="formAnneeEval" novalidate>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label>Libellé <span class="req">*</span></label>
-                    <input name="libelle" required placeholder="2025-2026">
-                </div>
-                <div class="form-group">
-                    <label>Régime</label>
-                    <select name="regime">
-                        <option value="secondaire">Secondaire (4 périodes + 2 examens)</option>
-                        <option value="primaire">Primaire (3 trimestres)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Début <span class="req">*</span></label>
-                    <input type="date" name="date_debut" required>
-                </div>
-                <div class="form-group">
-                    <label>Fin <span class="req">*</span></label>
-                    <input type="date" name="date_fin" required>
-                </div>
-                <div class="form-group full">
-                    <label class="checkbox-inline">
-                        <input type="checkbox" name="active" checked>
-                        <span>Définir comme année active</span>
-                    </label>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
-                <button type="submit" class="btn btn-primary">{% ico 'save' %}Créer</button>
-            </div>
-        </form>
-    </div>
 </div>
 
 <div class="modal" id="modalMatiereEval" hidden>

@@ -12,7 +12,12 @@ from django.db import models
 
 
 class AnneeScolaire(models.Model):
-    """Année scolaire (ex. 2025-2026)."""
+    """
+    Référentiel national d'année scolaire (ex. 2025-2026).
+
+    Une seule année peut être active pour toute la plateforme :
+    notes, bulletins, programmes et périodes s'y rattachent.
+    """
 
     class Regime(models.TextChoices):
         SECONDAIRE = 'secondaire', 'Secondaire (4 périodes + 2 examens)'
@@ -27,7 +32,11 @@ class AnneeScolaire(models.Model):
         default=Regime.SECONDAIRE,
         verbose_name='Régime d\'évaluation',
     )
-    active = models.BooleanField(default=False, verbose_name='Année active')
+    active = models.BooleanField(
+        default=False,
+        verbose_name='Année active (nationale)',
+        help_text='Une seule année active pour toute la plateforme.',
+    )
     date_creation = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -37,6 +46,11 @@ class AnneeScolaire(models.Model):
 
     def __str__(self):
         return self.libelle
+
+    @classmethod
+    def get_active(cls):
+        """Retourne l'année scolaire nationale active, ou None."""
+        return cls.objects.filter(active=True).order_by('-date_debut').first()
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)

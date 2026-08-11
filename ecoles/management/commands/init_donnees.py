@@ -2,6 +2,8 @@
 Commande : python manage.py init_donnees
 Initialise la hiérarchie référentielle et les données démo.
 """
+from datetime import date
+
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
 
@@ -13,6 +15,9 @@ from ecoles.models import (
     Classe,
 )
 from eleves.models import Eleve
+from evaluations.defaults import creer_periodes_pour_annee
+from evaluations.models import AnneeScolaire
+from django.core.management import call_command
 
 
 class Command(BaseCommand):
@@ -146,5 +151,32 @@ class Command(BaseCommand):
                 province_administrative=kin,
                 province_educationnelle=pe_kin,
             )
+
+        # Année scolaire courante (active) + périodes RDC
+        annee, annee_created = AnneeScolaire.objects.get_or_create(
+            libelle='2025-2026',
+            defaults={
+                'date_debut': date(2025, 9, 1),
+                'date_fin': date(2026, 7, 31),
+                'regime': AnneeScolaire.Regime.SECONDAIRE,
+                'active': True,
+            },
+        )
+        annee.date_debut = date(2025, 9, 1)
+        annee.date_fin = date(2026, 7, 31)
+        annee.regime = AnneeScolaire.Regime.SECONDAIRE
+        annee.active = True
+        annee.save()
+        n_periodes = creer_periodes_pour_annee(annee)
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Année scolaire 2025-2026 active"
+                f" ({'créée' if annee_created else 'mise à jour'}, "
+                f"{annee.periodes.count()} périodes, +{n_periodes} nouvelles)."
+            )
+        )
+
+        # Référentiel documentaire (arrêtés / manuel MINEDU-NC)
+        call_command('seed_documents_rdc', stdout=self.stdout)
 
         self.stdout.write(self.style.SUCCESS('Données de démonstration initialisées.'))

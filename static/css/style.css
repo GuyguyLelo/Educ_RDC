@@ -316,6 +316,78 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     .structure-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* ---- Panneau repliable (fiche école) ---- */
+.detail-card-collapse {
+    padding: 0;
+    overflow: hidden;
+}
+
+.detail-collapse {
+    border: none;
+}
+
+.detail-collapse-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+    padding: 1rem 1.15rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+.detail-collapse-summary::-webkit-details-marker { display: none; }
+
+.detail-collapse-summary::before {
+    content: '';
+    width: 0.45rem;
+    height: 0.45rem;
+    border-right: 2px solid var(--bleu-profond);
+    border-bottom: 2px solid var(--bleu-profond);
+    transform: rotate(-45deg);
+    transition: transform 0.2s var(--ease);
+    flex-shrink: 0;
+    order: -1;
+}
+
+.detail-collapse[open] > .detail-collapse-summary::before {
+    transform: rotate(45deg);
+    margin-top: -0.15rem;
+}
+
+.detail-collapse-title {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.detail-collapse-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    cursor: default;
+}
+
+.detail-collapse-body {
+    padding: 0 1.15rem 1.1rem;
+    border-top: 1px solid var(--line);
+}
+
+.class-hierarchy-toolbar {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    padding: 0.65rem 0 0.35rem;
+}
+
+.class-hierarchy-scroll {
+    max-height: min(420px, 55vh);
+    overflow: auto;
+    padding-right: 0.25rem;
+}
+
 /* ---- Hiérarchie classes (Section → Option → Classe) ---- */
 .class-hierarchy {
     display: flex;
@@ -324,7 +396,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     padding: 0.85rem 1.15rem 1.15rem;
 }
 
-.detail-card > .class-hierarchy {
+.detail-card > .class-hierarchy,
+.detail-collapse-body > .class-hierarchy {
     padding: 0.15rem 0 0;
 }
 
@@ -1053,10 +1126,10 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     width: 1.05em;
     height: 1.05em;
     flex-shrink: 0;
-    display: inline-block;
-    vertical-align: -0.15em;
+    display: block;
     stroke: currentColor;
     fill: none;
+    overflow: visible;
 }
 
 .btn-sm .btn-ico {
@@ -1064,8 +1137,13 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     height: 0.95em;
 }
 
-.btn .btn-ico {
-    display: block;
+.actions-inline .btn {
+    gap: 0.35rem;
+}
+
+.actions-inline .btn .btn-ico {
+    width: 1em;
+    height: 1em;
 }
 
 .btn-danger:hover {
@@ -1641,6 +1719,78 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     margin-top: 0.85rem;
 }
 
+.docs-creation-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.doc-creation-row {
+    position: relative;
+    padding: 0.85rem 0.85rem 0.65rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface-2, #f7f9fc);
+}
+
+.doc-creation-row .doc-row-remove {
+    margin-top: 0.35rem;
+}
+
+.ecole-docs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    margin-top: 0.85rem;
+}
+
+.ecole-doc-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.ecole-doc-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.ecole-doc-meta strong {
+    font-size: 0.9rem;
+}
+
+.ecole-doc-meta span {
+    font-size: 0.82rem;
+    color: var(--muted, #5b6b7c);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ecole-doc-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+    .ecole-doc-card {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .ecole-doc-actions {
+        justify-content: flex-start;
+    }
+}
+
 .ecole-photo-card {
     margin: 0;
     position: relative;
@@ -1954,6 +2104,129 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     color: var(--ink);
     font-weight: 500;
     word-break: break-word;
+}
+
+/* ——— Détail documentaire (modal) ——— */
+.doc-detail-body {
+    padding: 1rem 1.25rem 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+    max-height: min(70vh, 640px);
+    overflow: auto;
+}
+
+.doc-detail-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    background:
+        linear-gradient(135deg, rgba(18, 138, 76, 0.08), transparent 55%),
+        var(--surface-2, #f7f9fc);
+}
+
+.doc-detail-kicker {
+    margin: 0 0 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.doc-detail-hero-main h4 {
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.3;
+    color: var(--ink);
+}
+
+.doc-detail-sub {
+    margin: 0.35rem 0 0;
+    font-size: 0.86rem;
+    color: var(--muted);
+}
+
+.doc-detail-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    max-width: 42%;
+}
+
+.doc-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.85rem;
+}
+
+.doc-detail-panel {
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+
+.doc-detail-panel-full {
+    grid-column: 1 / -1;
+}
+
+.doc-detail-panel-title {
+    margin: 0 0 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.doc-detail-description {
+    margin: 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: var(--ink);
+    white-space: pre-wrap;
+}
+
+.doc-detail-pdf {
+    border-style: dashed;
+    border-color: rgba(18, 138, 76, 0.35);
+    background: rgba(18, 138, 76, 0.04);
+}
+
+.doc-detail-pdf.has-file {
+    border-style: solid;
+    background: var(--surface);
+}
+
+.doc-detail-pdf-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.doc-detail-pdf .file-drop {
+    margin: 0;
+}
+
+@media (max-width: 720px) {
+    .doc-detail-hero {
+        flex-direction: column;
+    }
+    .doc-detail-chips {
+        max-width: none;
+        justify-content: flex-start;
+    }
+    .doc-detail-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .data-table.compact th,
@@ -3082,6 +3355,16 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 .toast.success { background: #0f7a45; }
 .toast.error { background: var(--rouge); }
 .toast.warning { background: #9a7b00; }
+
+.form-error {
+    margin: 0 1.35rem 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: #fdecec;
+    border: 1px solid #f5c2c2;
+    color: #9b1c1c;
+    font-size: 0.88rem;
+}
 
 /* ---------- Overlay menu (mobile / tablette) ---------- */
 .sidebar-overlay {

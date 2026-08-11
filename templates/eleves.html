@@ -6,7 +6,10 @@
 {% block page_subtitle %}{% if request.user.est_enseignant %}Classe {{ request.user.classe_nom|default:"—" }} — consultation{% else %}Enregistrement et recherche des élèves{% endif %}{% endblock %}
 
 {% block content %}
-<div class="list-shell">
+<div class="list-shell" id="elevesApp"
+     data-ecole-id="{% if request.user.ecole_id %}{{ request.user.ecole_id }}{% endif %}"
+     data-ecole-figee="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}1{% else %}0{% endif %}"
+     data-ecole-nom="{% if request.user.ecole %}{{ request.user.ecole.nom }}{% endif %}">
     <section class="toolbar">
         <div class="search-box">
             <div class="search-field">
@@ -14,6 +17,10 @@
                 <input type="search" id="searchEleves" placeholder="Matricule, N° identification, N° permanent, nom…">
             </div>
             <button class="btn btn-ghost" id="btnSearchEleves" type="button">{% ico 'search' %}Rechercher</button>
+            <span class="badge badge-info" id="badgeEcoleEleves"{% if not request.user.est_utilisateur_ecole or not request.user.ecole %} hidden{% endif %}>{% if request.user.ecole %}{{ request.user.ecole.nom }}{% endif %}</span>
+            <select id="filtreEcoleEleves" aria-label="Filtrer par école" {% if request.user.est_utilisateur_ecole and request.user.ecole_id or request.user.est_enseignant %}hidden{% endif %}>
+                <option value="">Toutes les écoles</option>
+            </select>
         </div>
         {% if not request.user.est_enseignant %}
         <div class="toolbar-actions">
@@ -26,8 +33,8 @@
     <section class="list-panel">
         <div class="list-panel-header">
             <div>
-                <h2>{% if request.user.est_enseignant %}Élèves — {{ request.user.classe_nom|default:"ma classe" }}{% else %}Liste des élèves{% endif %}</h2>
-                <p>{% if request.user.est_enseignant %}Uniquement les élèves de votre classe titulaire{% else %}Dossiers scolaires enregistrés — import Excel / CSV disponible{% endif %}</p>
+                <h2 id="titreListeEleves">{% if request.user.est_enseignant %}Élèves — {{ request.user.classe_nom|default:"ma classe" }}{% elif request.user.est_utilisateur_ecole and request.user.ecole %}Élèves — {{ request.user.ecole.nom }}{% else %}Liste des élèves{% endif %}</h2>
+                <p id="sousTitreListeEleves">{% if request.user.est_enseignant %}Uniquement les élèves de votre classe titulaire{% elif request.user.est_utilisateur_ecole and request.user.ecole %}Élèves de votre établissement uniquement{% else %}Filtrez par école pour alléger l’affichage — import Excel / CSV disponible{% endif %}</p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEleves">— résultats</span>
@@ -44,6 +51,7 @@
                         <th>Matricule</th>
                         <th>N° Identification</th>
                         <th>N° Permanent</th>
+                        <th>N° Impôt</th>
                         <th>Sexe</th>
                         <th>Naissance</th>
                         <th>École / Classe</th>
@@ -76,16 +84,24 @@
                     <h4 class="form-section-title">Identité</h4>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>Matricule <span class="req">*</span></label>
-                            <input name="matricule" required placeholder="ELV-2026-000">
+                            <label>Matricule</label>
+                            <input name="matricule" readonly
+                                   placeholder="AAAA-0001 (auto)"
+                                   title="Généré automatiquement : année + numéro d'ordre (ex. 2026-0001)">
                         </div>
                         <div class="form-group">
                             <label>Numéro Identification</label>
-                            <input name="numero_identification" placeholder="Ex: ID-KIN-001">
+                            <input name="numero_identification" readonly
+                                   placeholder="Code école + n° d'ordre du matricule"
+                                   title="Généré automatiquement : code école + numéro d'ordre du matricule">
                         </div>
                         <div class="form-group">
                             <label>Numéro Permanent</label>
                             <input name="numero_permanent" placeholder="Ex: NP-2026-0001">
+                        </div>
+                        <div class="form-group">
+                            <label>Numéro Impôt</label>
+                            <input name="numero_impot" placeholder="Ex: NIF-…">
                         </div>
                         <div class="form-group">
                             <label>Sexe <span class="req">*</span></label>
@@ -323,7 +339,7 @@
                         <code>date_naissance</code>, <code>sexe</code> (M/F),
                         <code>classe</code> (nom exact d'une classe déjà créée).
                         Optionnelles : <code>numero_identification</code>,
-                        <code>numero_permanent</code>, <code>postnom</code>,
+                        <code>numero_permanent</code>, <code>numero_impot</code>, <code>postnom</code>,
                         <code>ecole_code</code>, <code>lieu_naissance</code>,
                         <code>adresse</code>, identité/contacts père &amp; mère
                         (<code>nom_pere</code>, <code>telephone_pere</code>…),

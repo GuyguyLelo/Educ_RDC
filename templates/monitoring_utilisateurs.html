@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% load ui_icons %}
+
+{% block title %}Utilisateurs connectés{% endblock %}
+{% block page_title %}Monitoring — utilisateurs connectés{% endblock %}
+{% block page_subtitle %}Sessions actives sur la plateforme — accès administrateur uniquement{% endblock %}
+
+{% block content %}
+<div class="list-shell" id="monitoringApp">
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="search" id="searchMonitoring" placeholder="Nom, identifiant, IP, rôle…">
+            </div>
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                <select id="filtreStatutMonitoring">
+                    <option value="">Tous les statuts</option>
+                    <option value="en_ligne" selected>En ligne</option>
+                    <option value="session">Session active</option>
+                </select>
+            </div>
+            <button class="btn btn-ghost" id="btnRefreshMonitoring" type="button">{% ico 'search' %}Actualiser</button>
+            <a class="btn btn-primary" href="{% url 'monitoring_utilisateurs_carte' %}">{% ico 'eye' %}Voir sur la carte</a>
+        </div>
+        <div class="toolbar-actions">
+            <label class="btn btn-secondary btn-sm" style="gap:0.4rem;cursor:pointer">
+                <input type="checkbox" id="autoRefreshMonitoring" checked style="margin:0">
+                Auto (30 s)
+            </label>
+        </div>
+    </section>
+
+    <section class="detail-card" style="margin-bottom:1rem">
+        <div class="detail-card-grid" id="monitoringResume" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem">
+            <div>
+                <h3 class="detail-card-title" style="font-size:0.85rem;margin:0 0 0.25rem">Sessions</h3>
+                <p class="detail-kicker" id="monSessions" style="font-size:1.4rem;font-weight:700;margin:0">—</p>
+            </div>
+            <div>
+                <h3 class="detail-card-title" style="font-size:0.85rem;margin:0 0 0.25rem">Utilisateurs uniques</h3>
+                <p class="detail-kicker" id="monUniques" style="font-size:1.4rem;font-weight:700;margin:0">—</p>
+            </div>
+            <div>
+                <h3 class="detail-card-title" style="font-size:0.85rem;margin:0 0 0.25rem">En ligne (15 min)</h3>
+                <p class="detail-kicker" id="monEnLigne" style="font-size:1.4rem;font-weight:700;margin:0">—</p>
+            </div>
+            <div>
+                <h3 class="detail-card-title" style="font-size:0.85rem;margin:0 0 0.25rem">Dernière actualisation</h3>
+                <p class="detail-kicker" id="monMaj" style="font-size:0.95rem;margin:0">—</p>
+            </div>
+        </div>
+        <p id="monParRole" class="detail-sub" style="margin:0.75rem 0 0"></p>
+    </section>
+
+    <section class="list-panel" style="margin-bottom:1rem">
+        <div class="list-panel-header">
+            <div>
+                <h2>Sessions actives</h2>
+                <p>Connexions web (cookie de session) — possibilité de forcer une déconnexion</p>
+            </div>
+            <span class="list-count" id="countMonitoring">— sessions</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableMonitoring">
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>Rôle</th>
+                        <th>Rattachement</th>
+                        <th>IP</th>
+                        <th>Géolocalisation</th>
+                        <th>Dernière activité</th>
+                        <th>Expiration</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Accès hors RDC</h2>
+                <p>Les connexions depuis l’extérieur du pays nécessitent votre autorisation</p>
+            </div>
+            <span class="list-count" id="countAccesExterieur">— demandes</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableAccesExterieur">
+                <thead>
+                    <tr>
+                        <th>Utilisateur</th>
+                        <th>IP / Localisation</th>
+                        <th>Demande</th>
+                        <th>Statut</th>
+                        <th>Expiration</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initMonitoringUtilisateurs());
+</script>
+{% endblock %}

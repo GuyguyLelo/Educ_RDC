@@ -10,11 +10,13 @@ from .models import (
     ProvinceAdministrative,
     ProvinceEducationnelle,
     Antenne,
+    Arrete,
     Ecole,
     SectionScolaire,
     OptionScolaire,
     Classe,
     PhotoEcole,
+    DocumentEcole,
     PersonnelEcole,
 )
 from .import_personnel import importer_personnel, reponse_modele_xlsx
@@ -30,14 +32,52 @@ from .serializers import (
     ProvinceAdministrativeSerializer,
     ProvinceEducationnelleSerializer,
     AntenneSerializer,
+    ArreteSerializer,
     EcoleSerializer,
     EcoleOptionSerializer,
     SectionScolaireSerializer,
     OptionScolaireSerializer,
     ClasseSerializer,
     PhotoEcoleSerializer,
+    DocumentEcoleSerializer,
     PersonnelEcoleSerializer,
 )
+
+
+class PermissionReferentielNational(IsAuthenticated):
+    """Écriture réservée à l'admin / agent national pour les référentiels."""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return True
+        user = request.user
+        return bool(getattr(user, 'est_admin', False) or getattr(user, 'est_national', False))
+
+
+class ArreteViewSet(viewsets.ModelViewSet):
+    """Référentiel national — gestion documentaire (arrêté, agrément…)."""
+
+    serializer_class = ArreteSerializer
+    permission_classes = [PermissionReferentielNational]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    search_fields = ['numero', 'objet', 'autorite', 'signataire', 'description']
+    ordering_fields = ['date_arrete', 'numero', 'date_creation']
+    ordering = ['-date_arrete', 'numero']
+
+    def get_queryset(self):
+        from django.db.models import Count
+        qs = Arrete.objects.annotate(nombre_ecoles=Count('ecoles')).all()
+        actif = self.request.query_params.get('actif') or self.request.query_params.get('active')
+        if actif in ('1', 'true', 'True'):
+            qs = qs.filter(actif=True)
+        elif actif in ('0', 'false', 'False'):
+            qs = qs.filter(actif=False)
+        type_arrete = self.request.query_params.get('type_arrete') or self.request.query_params.get('type')
+        if type_arrete:
+            qs = qs.filter(type_arrete=type_arrete)
+        return qs
 
 
 class ProvinceAdministrativeViewSet(viewsets.ModelViewSet):
@@ -93,7 +133,8 @@ class EcoleViewSet(viewsets.ModelViewSet):
         'province_educationnelle',
         'province_educationnelle__province_administrative',
         'antenne',
-    ).prefetch_related('photos').all()
+        'arrete',
+    ).prefetch_related('photos', 'documents').all()
     serializer_class = EcoleSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -378,6 +419,63 @@ class EcoleViewSet(viewsets.ModelViewSet):
             if next_photo:
                 next_photo.est_principale = True
                 next_photo.save(update_fields=['est_principale'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['get', 'post'], parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def documents(self, request, pk=None):
+        """Liste ou ajout de documents de création / agrément."""
+        ecole = self.get_object()
+        if request.method == 'GET':
+            ser = DocumentEcoleSerializer(
+                ecole.documents.all(), many=True, context={'request': request},
+            )
+            return Response(ser.data)
+
+        fichier = request.FILES.get('fichier') or request.FILES.get('file') or request.FILES.get('document')
+        if not fichier:
+            return Response(
+                {'detail': 'Fichier requis (champ « fichier »).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        type_document = (request.data.get('type_document') or DocumentEcole.TypeDocument.AGREMENT).strip()
+        types_ok = {c[0] for c in DocumentEcole.TypeDocument.choices}
+        if type_document not in types_ok:
+            return Response(
+                {'detail': f'Type de document invalide. Choix : {", ".join(sorted(types_ok))}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        titre = (request.data.get('titre') or '').strip()
+        date_raw = request.data.get('date_document') or None
+        if date_raw == '':
+            date_raw = None
+
+        ser_in = DocumentEcoleSerializer(data={
+            'ecole': ecole.pk,
+            'type_document': type_document,
+            'titre': titre,
+            'fichier': fichier,
+            'date_document': date_raw,
+        }, context={'request': request})
+        ser_in.is_valid(raise_exception=True)
+        doc = ser_in.save(ecole=ecole)
+        out = DocumentEcoleSerializer(doc, context={'request': request})
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=True,
+        methods=['delete'],
+        url_path=r'documents/(?P<document_id>[^/.]+)',
+    )
+    def supprimer_document(self, request, pk=None, document_id=None):
+        """Supprime un document d'école."""
+        ecole = self.get_object()
+        doc = ecole.documents.filter(pk=document_id).first()
+        if not doc:
+            return Response({'detail': 'Document introuvable.'}, status=status.HTTP_404_NOT_FOUND)
+        doc.fichier.delete(save=False)
+        doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=['get'], url_path='modele-import')

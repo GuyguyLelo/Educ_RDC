@@ -75,24 +75,33 @@
         <div class="ecole-photo-grid" id="grillePhotosEcole"></div>
     </section>
 
-    {% if request.user.est_admin or request.user.role == 'admin_ecole' %}
-    <section class="detail-card" id="sectionClassesEcole">
+    <section class="detail-card" id="sectionDocumentsEcole">
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
-                <h3 class="detail-card-title" style="margin:0">Classes de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Chaque classe est rattachée à une section et une option (ex. Technique · Coupe et Couture)</p>
+                <h3 class="detail-card-title" style="margin:0">Documents de création</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Agrément, autorisation, statuts et pièces administratives</p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
-                <span class="list-count" id="countEcoleClasses">—</span>
-                <button type="button" class="btn btn-ghost btn-sm" id="btnProgrammeRdc" title="Affecter sections / options / classes à l'école">
-                    {% ico 'plus' %}Affecter structure
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnImporterClasses">{% ico 'import' %}Importer Excel</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btnNouvelleClasse">{% ico 'plus' %}Nouvelle classe</button>
+                <span class="list-count" id="countEcoleDocuments">—</span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnAjouterDocumentEcole">{% ico 'plus' %}Ajouter un document</button>
             </div>
         </div>
-        <div id="ecoleClassesHierarchy" class="class-hierarchy" aria-live="polite">
-            <p class="empty-state">Chargement des classes…</p>
+        <div class="ecole-docs-list" id="listeDocumentsEcole"></div>
+    </section>
+
+    {% if request.user.est_admin or request.user.role == 'admin_ecole' or request.user.est_national %}
+    <section class="detail-card" id="sectionClassesEcoleLien">
+        <div class="list-panel-header" style="padding:0; border:none; align-items:center">
+            <div>
+                <h3 class="detail-card-title" style="margin:0">Classes de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">
+                    Gestion dans
+                    <strong>Paramètres → Structure scolaire</strong>
+                </p>
+            </div>
+            <a class="btn btn-primary btn-sm" href="{% url 'parametres_scolaire' %}?onglet=affectation{% if ecole_id %}&amp;ecole={{ ecole_id }}{% endif %}">
+                {% ico 'class' %}Structure scolaire
+            </a>
         </div>
     </section>
     {% endif %}
@@ -157,27 +166,20 @@
         </div>
     </section>
 
-    <section class="detail-card">
-        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
+    <section class="detail-card" id="sectionElevesEcoleLien">
+        <div class="list-panel-header" style="padding:0; border:none; align-items:center">
             <div>
                 <h3 class="detail-card-title" style="margin:0">Élèves de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Inscrits rattachés à cet établissement</p>
+                <p class="form-hint" style="margin:0.25rem 0 0">
+                    Consultez et gérez les élèves dans
+                    <strong>Élèves</strong>
+                    — filtre automatique sur cet établissement.
+                </p>
             </div>
-            <span class="list-count" id="countEcoleEleves">—</span>
-        </div>
-        <div class="table-responsive">
-            <table class="data-table compact" id="tableEcoleEleves">
-                <thead>
-                    <tr>
-                        <th>Élève</th>
-                        <th>Matricule</th>
-                        <th>Sexe</th>
-                        <th>Classe</th>
-                        <th>Statut</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+            <a class="btn btn-primary btn-sm" id="btnListeElevesEcole"
+               href="{% url 'eleves' %}?ecole={{ ecole_id }}&amp;fige=1">
+                {% ico 'users' %}Liste des élèves
+            </a>
         </div>
     </section>
 </div>
@@ -341,8 +343,14 @@
                             <input name="code" required placeholder="Ex: ECO-KIN-001">
                         </div>
                         <div class="form-group">
+                            <label>Document (référentiel)</label>
+                            <select name="arrete" id="selectArreteEditEcole">
+                                <option value="">— Aucun / saisie libre —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>N° d'agrément</label>
-                            <input name="numero_agrement" placeholder="Ex: AGR/EPSP/2024/001">
+                            <input name="numero_agrement" id="inputNumeroAgrementEditEcole" placeholder="Ex: AGR/EPSP/2024/001">
                         </div>
                         <div class="form-group">
                             <label>Directeur</label>
@@ -467,6 +475,57 @@
                             <label class="checkbox-inline" for="ecolePhotoPrincipale">
                                 <input type="checkbox" name="est_principale" id="ecolePhotoPrincipale" value="1">
                                 <span>Première image = photo principale</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'plus' %}Ajouter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal" id="modalDocumentEcole" hidden>
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Ajouter un document</h3>
+                <p>Pièce de création ou d'agrément de l'école</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formDocumentEcole" method="post" enctype="multipart/form-data" action="#" novalidate>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Document</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Type <span class="req">*</span></label>
+                            <select name="type_document" required>
+                                <option value="agrement">Arrêté / décision d'agrément</option>
+                                <option value="autorisation">Autorisation d'ouverture</option>
+                                <option value="statuts">Statuts de l'établissement</option>
+                                <option value="plan">Plan de localisation</option>
+                                <option value="attestation_epsp">Attestation EPSP</option>
+                                <option value="autre">Autre document</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Date du document</label>
+                            <input type="date" name="date_document">
+                        </div>
+                        <div class="form-group full">
+                            <label>Titre / référence</label>
+                            <input name="titre" placeholder="Ex: AGR/EPSP/2024/001">
+                        </div>
+                        <div class="form-group full">
+                            <label class="file-drop">
+                                <input type="file" name="fichier" id="ecoleDocumentFile" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required>
+                                <span class="file-drop-title">Déposer le fichier ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">PDF, Word ou image</span>
                             </label>
                         </div>
                     </div>

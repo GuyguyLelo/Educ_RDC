@@ -2,8 +2,8 @@
 
 {% load ui_icons %}
 {% block title %}Structure scolaire{% endblock %}
-{% block page_title %}Structure scolaire{% endblock %}
-{% block page_subtitle %}1. Choisir l’école · 2. Affecter sections, options et classes{% endblock %}
+{% block page_title %}{% if request.GET.onglet == 'classes' %}Classes{% else %}Structure scolaire{% endif %}{% endblock %}
+{% block page_subtitle %}{% if request.GET.onglet == 'classes' %}Référentiel national — classes par école (section → option → classe){% else %}1. Choisir l’école · 2. Affecter sections, options et classes{% endif %}{% endblock %}
 
 {% block content %}
 <div class="list-shell" id="paramScolaireApp"

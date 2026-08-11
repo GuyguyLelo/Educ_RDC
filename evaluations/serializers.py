@@ -13,13 +13,45 @@ from .models import (
 
 class AnneeScolaireSerializer(serializers.ModelSerializer):
     regime_display = serializers.CharField(source='get_regime_display', read_only=True)
+    nb_periodes = serializers.SerializerMethodField()
 
     class Meta:
         model = AnneeScolaire
         fields = [
             'id', 'libelle', 'date_debut', 'date_fin', 'regime', 'regime_display',
-            'active', 'date_creation',
+            'active', 'nb_periodes', 'date_creation',
         ]
+        read_only_fields = ['nb_periodes', 'regime_display', 'date_creation']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from rest_framework.validators import UniqueValidator
+        field = self.fields['libelle']
+        field.validators = [
+            v for v in field.validators
+            if not isinstance(v, UniqueValidator)
+        ]
+        field.validators.append(
+            UniqueValidator(
+                queryset=AnneeScolaire.objects.all(),
+                message="Ce libellé d'année existe déjà. Choisissez un autre (ex. 2026-2027).",
+            )
+        )
+
+    def get_nb_periodes(self, obj):
+        annotated = getattr(obj, 'nb_periodes', None)
+        if isinstance(annotated, int):
+            return annotated
+        return obj.periodes.count()
+
+    def validate(self, attrs):
+        debut = attrs.get('date_debut', getattr(self.instance, 'date_debut', None))
+        fin = attrs.get('date_fin', getattr(self.instance, 'date_fin', None))
+        if debut and fin and fin < debut:
+            raise serializers.ValidationError({
+                'date_fin': 'La date de fin doit être postérieure ou égale au début.',
+            })
+        return attrs
 
 
 class PeriodeEvaluationSerializer(serializers.ModelSerializer):

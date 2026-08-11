@@ -9,5 +9,6 @@ register = template.Library()
 def ico(name, css_class='btn-ico'):
     """Rend une icône du sprite : {% ico 'plus' %}"""
     return mark_safe(
-        f'<svg class="{css_class}" aria-hidden="true"><use href="#i-{name}"></use></svg>'
+        f'<svg class="{css_class}" aria-hidden="true" focusable="false">'
+        f'<use href="#i-{name}" xlink:href="#i-{name}"></use></svg>'
     )

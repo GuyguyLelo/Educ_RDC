@@ -97,6 +97,65 @@ class Antenne(StructureOrganisationnelle):
         return self.province_educationnelle.province_administrative
 
 
+class Arrete(models.Model):
+    """Document du référentiel national (arrêté, agrément, autorisation…)."""
+
+    class TypeDocument(models.TextChoices):
+        ARRETE = 'arrete', 'Arrêté'
+        AGREMENT = 'agrement', "Décision d'agrément"
+        AUTORISATION = 'autorisation', "Autorisation d'ouverture"
+        MODIFICATION = 'modification', 'Modification de statut'
+        CONVENTION = 'convention', 'Convention'
+        AUTRE = 'autre', 'Autre'
+
+    # Alias de compatibilité
+    TypeArrete = TypeDocument
+
+    numero = models.CharField(
+        max_length=80,
+        unique=True,
+        verbose_name='N° référence',
+        help_text='Référence unique (ex. AGR/EPSP/2024/001)',
+    )
+    objet = models.CharField(max_length=255, verbose_name='Objet')
+    type_arrete = models.CharField(
+        max_length=30,
+        choices=TypeDocument.choices,
+        default=TypeDocument.ARRETE,
+        verbose_name='Type de document',
+    )
+    date_arrete = models.DateField(verbose_name='Date du document')
+    signataire = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name='Nom du signataire',
+    )
+    autorite = models.CharField(
+        max_length=150,
+        blank=True,
+        default='EPSP',
+        verbose_name='Autorité émettrice',
+    )
+    description = models.TextField(blank=True, verbose_name='Description / observations')
+    fichier = models.FileField(
+        upload_to='referentiel/arretes/',
+        blank=True,
+        null=True,
+        verbose_name='Fichier (PDF)',
+    )
+    actif = models.BooleanField(default=True, verbose_name='Actif')
+    date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
+    date_modification = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Document référentiel'
+        verbose_name_plural = 'Documents référentiels'
+        ordering = ['-date_arrete', 'numero']
+
+    def __str__(self):
+        return f'{self.numero} — {self.objet}'
+
+
 class Ecole(models.Model):
     """Établissement scolaire identifié."""
 
@@ -114,9 +173,17 @@ class Ecole(models.Model):
     nom = models.CharField(max_length=200, verbose_name="Nom de l'école")
     code = models.CharField(max_length=30, unique=True, verbose_name='Code école')
     numero_agrement = models.CharField(
-        max_length=50,
+        max_length=80,
         blank=True,
         verbose_name="N° d'agrément",
+    )
+    arrete = models.ForeignKey(
+        Arrete,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ecoles',
+        verbose_name="Arrêté d'agrément",
     )
     type_ecole = models.CharField(
         max_length=20,
@@ -337,6 +404,61 @@ class PhotoEcole(models.Model):
         super().save(*args, **kwargs)
         if self.est_principale:
             PhotoEcole.objects.filter(ecole=self.ecole).exclude(pk=self.pk).update(est_principale=False)
+
+
+class DocumentEcole(models.Model):
+    """Document administratif de création / agrément d'une école."""
+
+    class TypeDocument(models.TextChoices):
+        AGREMENT = 'agrement', "Arrêté / décision d'agrément"
+        AUTORISATION = 'autorisation', "Autorisation d'ouverture"
+        STATUTS = 'statuts', "Statuts de l'établissement"
+        PLAN = 'plan', 'Plan de localisation'
+        ATTESTATION_EPSP = 'attestation_epsp', 'Attestation EPSP'
+        AUTRE = 'autre', 'Autre document'
+
+    ecole = models.ForeignKey(
+        Ecole,
+        on_delete=models.CASCADE,
+        related_name='documents',
+        verbose_name='École',
+    )
+    type_document = models.CharField(
+        max_length=30,
+        choices=TypeDocument.choices,
+        default=TypeDocument.AGREMENT,
+        verbose_name='Type de document',
+    )
+    titre = models.CharField(max_length=200, blank=True, verbose_name='Titre / référence')
+    fichier = models.FileField(upload_to='ecoles/documents/', verbose_name='Fichier')
+    arrete = models.ForeignKey(
+        Arrete,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='documents_ecoles',
+        verbose_name='Arrêté (référentiel)',
+    )
+    date_document = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name='Date du document',
+    )
+    date_ajout = models.DateTimeField(auto_now_add=True, verbose_name="Date d'ajout")
+
+    class Meta:
+        verbose_name = "Document d'école"
+        verbose_name_plural = "Documents d'écoles"
+        ordering = ['type_document', '-date_ajout']
+
+    def __str__(self):
+        return f'{self.get_type_document_display()} — {self.ecole.nom}'
+
+    @property
+    def nom_fichier(self):
+        if not self.fichier:
+            return ''
+        return self.fichier.name.rsplit('/', 1)[-1]
 
 
 class PersonnelEcole(models.Model):

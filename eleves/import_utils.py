@@ -2,7 +2,7 @@
 Import d'élèves depuis Excel (.xlsx) ou CSV / TSV.
 
 Colonnes attendues :
-  matricule;numero_identification;numero_permanent;nom;postnom;prenom;
+  matricule;numero_identification;numero_permanent;numero_impot;nom;postnom;prenom;
   date_naissance;sexe;classe;ecole_code;lieu_naissance;adresse;
   nom_pere;postnom_pere;prenom_pere;telephone_pere;email_pere;profession_pere;
   nom_mere;postnom_mere;prenom_mere;telephone_mere;email_mere;profession_mere;
@@ -57,6 +57,12 @@ HEADER_ALIASES = {
     'no_permanent': 'numero_permanent',
     'num_permanent': 'numero_permanent',
     'npp': 'numero_permanent',
+    'numero_impot': 'numero_impot',
+    'numero impot': 'numero_impot',
+    'n° impot': 'numero_impot',
+    'n° impôt': 'numero_impot',
+    'numero_impôt': 'numero_impot',
+    'nif': 'numero_impot',
     'nom': 'nom',
     'postnom': 'postnom',
     'post-nom': 'postnom',
@@ -106,7 +112,7 @@ HEADER_ALIASES = {
 }
 
 MODELE_HEADERS = [
-    'matricule', 'numero_identification', 'numero_permanent',
+    'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
     'nom', 'postnom', 'prenom', 'date_naissance', 'sexe', 'classe',
     'ecole_code', 'lieu_naissance', 'adresse',
     'nom_pere', 'postnom_pere', 'prenom_pere', 'telephone_pere', 'email_pere', 'profession_pere',
@@ -349,6 +355,7 @@ def importer_eleves(
                 defaults = {
                     'numero_identification': (row.get('numero_identification') or '').strip() or None,
                     'numero_permanent': (row.get('numero_permanent') or '').strip() or None,
+                    'numero_impot': (row.get('numero_impot') or '').strip() or None,
                     'nom': row['nom'].strip(),
                     'postnom': row.get('postnom', '').strip(),
                     'prenom': row['prenom'].strip(),
@@ -396,9 +403,10 @@ def generer_modele_xlsx() -> bytes:
     info = wb.active
     info.title = 'Instructions'
     info.append(['Champ', 'Description'])
-    info.append(['matricule', 'Obligatoire — unique'])
-    info.append(['numero_identification', 'Optionnel — unique si renseigné'])
+    info.append(['matricule', 'Optionnel à la création UI — format AAAA-0001 ; obligatoire à l’import'])
+    info.append(['numero_identification', 'Auto — code école + n° d’ordre du matricule'])
     info.append(['numero_permanent', 'Optionnel — unique si renseigné'])
+    info.append(['numero_impot', 'Optionnel — unique si renseigné'])
     info.append(['nom / prenom', 'Obligatoires'])
     info.append(['postnom', 'Optionnel'])
     info.append(['date_naissance', 'Obligatoire — AAAA-MM-JJ'])

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import math
 from datetime import datetime
 
 from django.utils import timezone
@@ -36,8 +37,8 @@ def _dessiner_en_tete(c, largeur, hauteur):
     c.setFillColorRGB(1, 1, 1)
     c.setFont('Helvetica-Bold', 13)
     c.drawCentredString(largeur / 2, hauteur - 14 * mm, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
-    c.setFont('Helvetica', 10)
-    c.drawCentredString(largeur / 2, hauteur - 21 * mm, 'Ministère de l’Éducation nationale')
+    c.setFont('Helvetica-Bold', 14)
+    c.drawCentredString(largeur / 2, hauteur - 21 * mm, 'Ministère de l’Éducation Nationale')
     c.setFont('Helvetica-Bold', 12)
     c.drawCentredString(largeur / 2, hauteur - 28 * mm, 'Fiche élève — Educ_RDC')
 
@@ -90,12 +91,95 @@ def _photo(c, eleve, x, y, w=32 * mm, h=40 * mm):
         c.drawCentredString(x + w / 2, y - h / 2, 'Photo indisponible')
 
 
+def _etoile(c, cx, cy, r):
+    """Étoile à 5 branches (motif RDC)."""
+    pts = []
+    for i in range(10):
+        ang = math.pi / 2 + i * math.pi / 5
+        rad = r if i % 2 == 0 else r * 0.4
+        pts.append((cx + rad * math.cos(ang), cy + rad * math.sin(ang)))
+    path = c.beginPath()
+    path.moveTo(pts[0][0], pts[0][1])
+    for px, py in pts[1:]:
+        path.lineTo(px, py)
+    path.close()
+    c.drawPath(path, fill=1, stroke=0)
+
+
+def _sceau(c, cx, cy, taille):
+    """Sceau circulaire (double cercle + étoile)."""
+    c.setLineWidth(1.1)
+    c.circle(cx, cy, taille / 2, stroke=1, fill=0)
+    c.setLineWidth(0.6)
+    c.circle(cx, cy, taille / 2 - 3.5 * mm, stroke=1, fill=0)
+    _etoile(c, cx, cy + 1.5 * mm, taille * 0.16)
+    c.setFont('Helvetica-Bold', max(6, int(taille / mm * 0.22)))
+    c.drawCentredString(cx, cy - taille * 0.22, 'R.D. CONGO')
+
+
+def _dessiner_filigrane(c, largeur, hauteur):
+    """Filigrane : motif de sceaux + texte « EDUCATION NATIONALE RDC »."""
+    c.saveState()
+    gris = (0.78, 0.82, 0.86)
+    c.setStrokeColorRGB(*gris)
+    c.setFillColorRGB(*gris)
+    try:
+        c.setFillAlpha(0.14)
+        c.setStrokeAlpha(0.14)
+    except Exception:
+        pass
+
+    # Motif de fond : grille de petits sceaux
+    pas_x, pas_y = 48 * mm, 42 * mm
+    petit = 18 * mm
+    y0 = 28 * mm
+    row = 0
+    y = y0
+    while y < hauteur - 40 * mm:
+        x = 12 * mm + (pas_x / 2 if row % 2 else 0)
+        while x < largeur - 10 * mm:
+            c.setLineWidth(0.5)
+            c.circle(x, y, petit / 2, stroke=1, fill=0)
+            c.circle(x, y, petit / 2 - 1.8 * mm, stroke=1, fill=0)
+            _etoile(c, x, y + 0.6 * mm, petit * 0.14)
+            x += pas_x
+        y += pas_y
+        row += 1
+
+    # Sceau central plus marqué
+    try:
+        c.setFillAlpha(0.16)
+        c.setStrokeAlpha(0.22)
+    except Exception:
+        pass
+    cx, cy = largeur / 2, hauteur / 2 - 5 * mm
+    _sceau(c, cx, cy, 78 * mm)
+
+    # Texte diagonal
+    try:
+        c.setFillAlpha(0.22)
+    except Exception:
+        pass
+    c.setFillColorRGB(0.72, 0.76, 0.80)
+    c.setFont('Helvetica-Bold', 34)
+    c.saveState()
+    c.translate(largeur / 2, hauteur / 2)
+    c.rotate(35)
+    c.drawCentredString(0, 10, 'EDUCATION NATIONALE RDC')
+    c.setFont('Helvetica', 12)
+    c.drawCentredString(0, -12, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
+    c.restoreState()
+
+    c.restoreState()
+
+
 def generer_pdf_fiche_eleve(eleve) -> bytes:
     """Produit un PDF A4 de la fiche d'identité scolaire de l'élève."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     largeur, hauteur = A4
 
+    _dessiner_filigrane(c, largeur, hauteur)
     _dessiner_en_tete(c, largeur, hauteur)
 
     y = hauteur - 48 * mm
@@ -103,20 +187,24 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
     c.setFont('Helvetica-Bold', 14)
     c.drawString(18 * mm, y, eleve.nom_complet)
     y -= 6 * mm
-    c.setFont('Helvetica', 9)
     c.setFillColorRGB(0.3, 0.35, 0.4)
-    c.drawString(18 * mm, y, f'Matricule : {_texte(eleve.matricule)}')
-    y -= 5 * mm
-    c.drawString(
-        18 * mm,
-        y,
-        f'Statut : {"Actif" if eleve.actif else "Inactif"}'
-        f'  ·  Imprimé le {_date_fr(timezone.localdate())}'
-        f' à {datetime.now().strftime("%H:%M")}',
-    )
+    c.setFont('Helvetica', 11)
+    label_id = 'Numéro Identification : '
+    c.drawString(18 * mm, y, label_id)
+    c.setFont('Helvetica-Bold', 11)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawString(18 * mm + c.stringWidth(label_id, 'Helvetica', 11), y, _texte(eleve.numero_identification))
+    y -= 6 * mm
+    c.setFont('Helvetica', 11)
+    c.setFillColorRGB(0.3, 0.35, 0.4)
+    c.drawString(18 * mm, y, f'Numéro Permanent : {_texte(eleve.numero_permanent)}')
+    y -= 6 * mm
+    c.setFont('Helvetica', 11)
+    c.setFillColorRGB(0.3, 0.35, 0.4)
+    c.drawString(18 * mm, y, f'Numéro Impôt : {_texte(eleve.numero_impot)}')
 
     photo_x = largeur - 52 * mm
-    photo_top = hauteur - 40 * mm  # juste sous le bandeau
+    photo_top = hauteur - 38 * mm  # juste sous le bandeau
     _photo(c, eleve, photo_x, photo_top)
 
     # QR unique sous la photo
@@ -147,8 +235,6 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
     y = _ligne(c, 'Sexe', eleve.get_sexe_display(), y)
     y = _ligne(c, 'Né(e) le', _date_fr(eleve.date_naissance), y)
     y = _ligne(c, 'Lieu de naissance', eleve.lieu_naissance, y)
-    y = _ligne(c, 'N° identification', eleve.numero_identification, y)
-    y = _ligne(c, 'N° permanent', eleve.numero_permanent, y)
     y = _ligne(c, 'Code QR', eleve.code_unique, y)
 
     y -= 3 * mm
@@ -199,6 +285,15 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
                 y,
                 x_val=70 * mm,
             )
+
+    # Date d'impression — bas droit
+    c.setFillColorRGB(0.35, 0.4, 0.45)
+    c.setFont('Helvetica', 8)
+    c.drawRightString(
+        largeur - 14 * mm,
+        22 * mm,
+        f'Imprimé le {_date_fr(timezone.localdate())} à {datetime.now().strftime("%H:%M")}',
+    )
 
     c.setFillColorRGB(0.81, 0.07, 0.15)
     c.rect(0, 12 * mm, largeur, 8 * mm, fill=1, stroke=0)

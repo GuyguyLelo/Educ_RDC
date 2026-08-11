@@ -5,11 +5,13 @@ from .models import (
     ProvinceAdministrative,
     ProvinceEducationnelle,
     Antenne,
+    Arrete,
     Ecole,
     SectionScolaire,
     OptionScolaire,
     Classe,
     PhotoEcole,
+    DocumentEcole,
     PersonnelEcole,
 )
 
@@ -114,6 +116,76 @@ class PhotoEcoleSerializer(serializers.ModelSerializer):
         return url
 
 
+class DocumentEcoleSerializer(serializers.ModelSerializer):
+    type_display = serializers.CharField(source='get_type_document_display', read_only=True)
+    fichier_url = serializers.SerializerMethodField()
+    nom_fichier = serializers.CharField(read_only=True)
+    arrete_numero = serializers.CharField(source='arrete.numero', read_only=True, default=None)
+
+    class Meta:
+        model = DocumentEcole
+        fields = [
+            'id', 'ecole', 'type_document', 'type_display', 'titre',
+            'fichier', 'fichier_url', 'nom_fichier', 'arrete', 'arrete_numero',
+            'date_document', 'date_ajout',
+        ]
+        read_only_fields = ['date_ajout', 'nom_fichier']
+
+    def get_fichier_url(self, obj):
+        request = self.context.get('request')
+        if not obj.fichier:
+            return None
+        url = obj.fichier.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+
+class ArreteSerializer(serializers.ModelSerializer):
+    type_display = serializers.CharField(source='get_type_arrete_display', read_only=True)
+    fichier_url = serializers.SerializerMethodField()
+    nom_fichier = serializers.SerializerMethodField()
+    nombre_ecoles = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Arrete
+        fields = [
+            'id', 'numero', 'objet', 'type_arrete', 'type_display',
+            'date_arrete', 'signataire', 'autorite', 'description',
+            'fichier', 'fichier_url', 'nom_fichier',
+            'actif', 'nombre_ecoles', 'date_creation', 'date_modification',
+        ]
+        read_only_fields = ['date_creation', 'date_modification', 'nombre_ecoles']
+        extra_kwargs = {
+            'fichier': {'required': False, 'allow_null': True},
+        }
+
+    def get_fichier_url(self, obj):
+        request = self.context.get('request')
+        if not obj.fichier:
+            return None
+        url = obj.fichier.url
+        if request:
+            return request.build_absolute_uri(url)
+        return url
+
+    def get_nom_fichier(self, obj):
+        if not obj.fichier:
+            return ''
+        return obj.fichier.name.rsplit('/', 1)[-1]
+
+    def validate_numero(self, value):
+        value = (value or '').strip()
+        if not value:
+            raise serializers.ValidationError('Le N° référence est obligatoire.')
+        qs = Arrete.objects.filter(numero__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('Un document avec ce N° référence existe déjà.')
+        return value
+
+
 class EcoleOptionSerializer(serializers.ModelSerializer):
     """Liste légère pour sélecteurs (sans photos ni agrégats)."""
 
@@ -141,13 +213,17 @@ class EcoleSerializer(serializers.ModelSerializer):
     province_nom = serializers.CharField(source='province_educationnelle.nom', read_only=True)
     province = serializers.IntegerField(source='province_educationnelle_id', read_only=True)
     photos = PhotoEcoleSerializer(many=True, read_only=True)
+    documents = DocumentEcoleSerializer(many=True, read_only=True)
     photo_principale_url = serializers.SerializerMethodField()
     maps_url = serializers.SerializerMethodField()
+    arrete_numero = serializers.CharField(source='arrete.numero', read_only=True, default=None)
+    arrete_objet = serializers.CharField(source='arrete.objet', read_only=True, default=None)
 
     class Meta:
         model = Ecole
         fields = [
-            'id', 'nom', 'code', 'numero_agrement', 'type_ecole', 'type_display', 'niveau',
+            'id', 'nom', 'code', 'numero_agrement', 'arrete', 'arrete_numero', 'arrete_objet',
+            'type_ecole', 'type_display', 'niveau',
             'niveau_display', 'adresse', 'telephone', 'email',
             'latitude', 'longitude', 'maps_url',
             'directeur',
@@ -156,9 +232,25 @@ class EcoleSerializer(serializers.ModelSerializer):
             'province_administrative_id', 'province_administrative_nom',
             'province', 'province_nom',
             'antenne', 'antenne_nom',
-            'photos', 'photo_principale_url',
+            'photos', 'documents', 'photo_principale_url',
             'active', 'nombre_eleves', 'nombre_personnels', 'date_creation',
         ]
+        extra_kwargs = {
+            'arrete': {'required': False, 'allow_null': True},
+        }
+
+    def create(self, validated_data):
+        arrete = validated_data.get('arrete')
+        if arrete and not validated_data.get('numero_agrement'):
+            validated_data['numero_agrement'] = arrete.numero
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        arrete = validated_data.get('arrete', serializers.empty)
+        if arrete is not serializers.empty and arrete and not validated_data.get('numero_agrement'):
+            if not instance.numero_agrement or instance.numero_agrement == getattr(instance.arrete, 'numero', None):
+                validated_data['numero_agrement'] = arrete.numero
+        return super().update(instance, validated_data)
 
     def get_photo_principale_url(self, obj):
         photo = obj.photo_principale

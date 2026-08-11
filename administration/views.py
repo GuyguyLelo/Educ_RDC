@@ -34,8 +34,38 @@ def vue_login(request):
         password = request.POST.get('password', '')
         user = authenticate(request, username=username, password=password)
         if user is not None:
+            from .acces_exterieur import (
+                a_autorisation_valide,
+                analyser_localisation_requete,
+                creer_ou_rafraichir_demande,
+            )
+            ip, geo, hors = analyser_localisation_requete(request)
+            if hors and not a_autorisation_valide(user, ip):
+                demande = creer_ou_rafraichir_demande(user, ip, geo)
+                journaliser(
+                    user,
+                    'Connexion hors RDC refusée',
+                    f'IP {ip} — {geo.get("label") or "?"} — demande #{demande.pk}',
+                    request=request,
+                )
+                messages.error(
+                    request,
+                    'Votre connexion provient de l’extérieur de la RDC. '
+                    'L’accès doit être autorisé par un administrateur. '
+                    'Votre demande a été enregistrée.',
+                )
+                return render(request, 'login.html')
+
             login(request, user)
-            journaliser(user, 'Connexion', request=request)
+            request.session['_presence_ip'] = ip
+            request.session['_presence_geo'] = geo
+            request.session.modified = True
+            journaliser(
+                user,
+                'Connexion',
+                f'IP {ip}' + (f' — hors RDC autorisé ({geo.get("label")})' if hors else ''),
+                request=request,
+            )
             messages.success(request, f'Bienvenue, {user.get_full_name() or user.username} !')
             return redirect('dashboard')
         messages.error(request, 'Identifiants incorrects.')
@@ -192,12 +222,64 @@ def vue_parametres_scolaire(request):
 
 @login_required
 @ensure_csrf_cookie
+def vue_parametres_annees(request):
+    """Référentiel national des années scolaires (une seule année active)."""
+    user = request.user
+    peut = getattr(user, 'est_admin', False) or getattr(user, 'est_national', False)
+    if not peut:
+        messages.warning(request, 'Accès réservé à l\'administration nationale.')
+        return redirect('dashboard')
+    return render(request, 'parametres_annees.html', {'page': 'parametres_annees'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_parametres_gestion_documentaire(request):
+    """Gestion documentaire — référentiel national (arrêtés, agréments…)."""
+    user = request.user
+    peut = getattr(user, 'est_admin', False) or getattr(user, 'est_national', False)
+    if not peut:
+        messages.warning(request, 'Accès réservé à l\'administration nationale.')
+        return redirect('dashboard')
+    return render(
+        request,
+        'parametres_arretes.html',
+        {'page': 'parametres_gestion_documentaire'},
+    )
+
+
+# Alias pour compatibilité
+vue_parametres_arretes = vue_parametres_gestion_documentaire
+
+
+@login_required
+@ensure_csrf_cookie
 def vue_utilisateurs(request):
     """Gestion des utilisateurs et des rôles."""
     if not getattr(request.user, 'est_admin', False):
         messages.warning(request, 'Accès réservé aux administrateurs.')
         return redirect('dashboard')
     return render(request, 'utilisateurs.html', {'page': 'utilisateurs'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_monitoring_utilisateurs(request):
+    """Monitoring des utilisateurs connectés — admin uniquement."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé aux administrateurs.')
+        return redirect('dashboard')
+    return render(request, 'monitoring_utilisateurs.html', {'page': 'monitoring_utilisateurs'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_monitoring_utilisateurs_carte(request):
+    """Carte interne des utilisateurs connectés — admin uniquement."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé aux administrateurs.')
+        return redirect('dashboard')
+    return render(request, 'monitoring_utilisateurs_carte.html', {'page': 'monitoring_utilisateurs'})
 
 
 @login_required

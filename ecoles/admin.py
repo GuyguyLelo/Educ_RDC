@@ -4,11 +4,13 @@ from .models import (
     ProvinceAdministrative,
     ProvinceEducationnelle,
     Antenne,
+    Arrete,
     Ecole,
     SectionScolaire,
     OptionScolaire,
     Classe,
     PhotoEcole,
+    DocumentEcole,
     PersonnelEcole,
 )
 from .forms import (
@@ -48,6 +50,14 @@ class AntenneAdmin(admin.ModelAdmin):
     search_fields = ('nom', 'code')
 
 
+@admin.register(Arrete)
+class ArreteAdmin(admin.ModelAdmin):
+    list_display = ('numero', 'objet', 'type_arrete', 'date_arrete', 'signataire', 'autorite', 'actif')
+    list_filter = ('type_arrete', 'actif')
+    search_fields = ('numero', 'objet', 'autorite', 'signataire')
+    date_hierarchy = 'date_arrete'
+
+
 @admin.register(Ecole)
 class EcoleAdmin(admin.ModelAdmin):
     list_display = (
@@ -58,6 +68,7 @@ class EcoleAdmin(admin.ModelAdmin):
     )
     list_filter = ('type_ecole', 'niveau', 'province_educationnelle', 'active')
     search_fields = ('nom', 'code', 'numero_agrement', 'directeur', 'email')
+    raw_id_fields = ('arrete',)
 
 
 @admin.register(SectionScolaire)
@@ -86,6 +97,13 @@ class PhotoEcoleAdmin(admin.ModelAdmin):
     list_display = ('ecole', 'legende', 'est_principale', 'date_ajout')
     list_filter = ('est_principale', 'ecole__antenne')
     search_fields = ('ecole__nom', 'legende')
+
+
+@admin.register(DocumentEcole)
+class DocumentEcoleAdmin(admin.ModelAdmin):
+    list_display = ('ecole', 'type_document', 'titre', 'date_document', 'date_ajout')
+    list_filter = ('type_document', 'ecole__antenne')
+    search_fields = ('ecole__nom', 'titre', 'fichier')
 
 
 @admin.register(PersonnelEcole)

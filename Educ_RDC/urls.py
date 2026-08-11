@@ -13,6 +13,7 @@ from ecoles.views import (
     ProvinceAdministrativeViewSet,
     ProvinceEducationnelleViewSet,
     AntenneViewSet,
+    ArreteViewSet,
     EcoleViewSet,
     SectionScolaireViewSet,
     OptionScolaireViewSet,
@@ -24,6 +25,13 @@ from biometrie.views import BiometrieViewSet
 from cartes.views import CarteViewSet
 from paiements.views import PaiementViewSet
 from rapports.views import statistiques_dashboard, export_rapport_pdf
+from administration.api_monitoring import (
+    MonitoringSessionsView,
+    MonitoringSessionDetailView,
+    PresenceGeoView,
+    AccesExterieurListView,
+    AccesExterieurDecisionView,
+)
 from evaluations.views import (
     AnneeScolaireViewSet,
     BulletinViewSet,
@@ -42,6 +50,7 @@ router.register(r'provinces-administratives', ProvinceAdministrativeViewSet, bas
 router.register(r'provinces-educationnelles', ProvinceEducationnelleViewSet, basename='province-educationnelle')
 router.register(r'provinces', ProvinceAdministrativeViewSet, basename='province')  # alias
 router.register(r'antennes', AntenneViewSet, basename='antenne')
+router.register(r'arretes', ArreteViewSet, basename='arrete')
 router.register(r'ecoles', EcoleViewSet, basename='ecole')
 router.register(r'sections-scolaires', SectionScolaireViewSet, basename='section-scolaire')
 router.register(r'options-scolaires', OptionScolaireViewSet, basename='option-scolaire')
@@ -79,11 +88,37 @@ urlpatterns = [
         name='parametres_scolaire',
     ),
     path(
+        'parametres/annees-scolaires/',
+        admin_views.vue_parametres_annees,
+        name='parametres_annees',
+    ),
+    path(
+        'parametres/gestion-documentaire/',
+        admin_views.vue_parametres_gestion_documentaire,
+        name='parametres_gestion_documentaire',
+    ),
+    # Alias historique
+    path(
+        'parametres/arretes/',
+        admin_views.vue_parametres_gestion_documentaire,
+        name='parametres_arretes',
+    ),
+    path(
         'parametres/structure/nouvelle/',
         admin_views.vue_structure_formulaire,
         name='structure_nouvelle',
     ),
     path('utilisateurs/', admin_views.vue_utilisateurs, name='utilisateurs'),
+    path(
+        'monitoring/utilisateurs-connectes/',
+        admin_views.vue_monitoring_utilisateurs,
+        name='monitoring_utilisateurs',
+    ),
+    path(
+        'monitoring/utilisateurs-connectes/carte/',
+        admin_views.vue_monitoring_utilisateurs_carte,
+        name='monitoring_utilisateurs_carte',
+    ),
 
     # API JWT
     path('api/auth/token/', CustomTokenObtainPairView.as_view(), name='token_obtain'),
@@ -93,6 +128,31 @@ urlpatterns = [
     path('api/', include(router.urls)),
     path('api/stats/', statistiques_dashboard, name='api_stats'),
     path('api/rapports/pdf/', export_rapport_pdf, name='api_rapport_pdf'),
+    path(
+        'api/monitoring/sessions/',
+        MonitoringSessionsView.as_view(),
+        name='api_monitoring_sessions',
+    ),
+    path(
+        'api/monitoring/sessions/<str:session_key>/',
+        MonitoringSessionDetailView.as_view(),
+        name='api_monitoring_session_detail',
+    ),
+    path(
+        'api/monitoring/presence-geo/',
+        PresenceGeoView.as_view(),
+        name='api_monitoring_presence_geo',
+    ),
+    path(
+        'api/monitoring/acces-exterieur/',
+        AccesExterieurListView.as_view(),
+        name='api_monitoring_acces_exterieur',
+    ),
+    path(
+        'api/monitoring/acces-exterieur/<int:pk>/',
+        AccesExterieurDecisionView.as_view(),
+        name='api_monitoring_acces_exterieur_decision',
+    ),
     path(
         'api/modeles-import/',
         admin_import_modeles.api_liste_modeles_import,

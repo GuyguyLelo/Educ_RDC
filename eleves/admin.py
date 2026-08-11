@@ -5,12 +5,12 @@ from .models import Eleve
 @admin.register(Eleve)
 class EleveAdmin(admin.ModelAdmin):
     list_display = (
-        'matricule', 'numero_identification', 'numero_permanent',
+        'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
         'nom', 'postnom', 'prenom', 'sexe', 'ecole', 'classe', 'actif', 'photo',
     )
     list_filter = ('sexe', 'actif', 'ecole__province_educationnelle', 'lien_tuteur')
     search_fields = (
-        'matricule', 'numero_identification', 'numero_permanent',
+        'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
         'nom', 'postnom', 'prenom',
         'nom_pere', 'nom_mere', 'nom_tuteur',
         'telephone_pere', 'telephone_mere', 'telephone_tuteur',
@@ -19,7 +19,7 @@ class EleveAdmin(admin.ModelAdmin):
     fieldsets = (
         ('Identité', {
             'fields': (
-                'matricule', 'numero_identification', 'numero_permanent',
+                'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
                 'nom', 'postnom', 'prenom', 'date_naissance', 'lieu_naissance',
                 'sexe', 'photo', 'actif',
             ),

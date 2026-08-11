@@ -26,13 +26,40 @@ const EducRDC = (() => {
         if (data.detail) return typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail);
         if (data.error) return data.error;
         if (typeof data === 'object') {
+            const labels = {
+                libelle: 'Libellé',
+                date_debut: 'Date de début',
+                date_fin: 'Date de fin',
+                regime: 'Régime',
+                non_field_errors: '',
+            };
             const parts = Object.entries(data).map(([field, msgs]) => {
                 const text = Array.isArray(msgs) ? msgs.join(' ') : String(msgs);
-                return field === 'non_field_errors' ? text : `${field} : ${text}`;
+                if (field === 'non_field_errors') return text;
+                // Message déjà autonome (ex. unicité) : pas de préfixe technique
+                if (/existe déjà|obligatoire|postérieure/i.test(text)) return text;
+                const label = labels[field] || field;
+                return label ? `${label} : ${text}` : text;
             });
             if (parts.length) return parts.join(' · ');
         }
         return 'Une erreur est survenue.';
+    }
+
+    /** Affiche une date ISO au format documentaire : JJ-MM-AAAA. */
+    function formatDateFr(value) {
+        if (value == null || value === '') return '';
+        const raw = String(value).trim();
+        const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        const d = new Date(raw);
+        if (!Number.isNaN(d.getTime())) {
+            const jj = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const aaaa = String(d.getFullYear());
+            return `${jj}-${mm}-${aaaa}`;
+        }
+        return raw;
     }
 
     function toast(message, type = 'info') {
@@ -83,20 +110,37 @@ const EducRDC = (() => {
         if (modal.parentElement !== document.body) {
             document.body.appendChild(modal);
         }
+        // Empêche le même clic (qui ouvre le modal) de le refermer via le backdrop
+        modal.dataset.justOpened = '1';
         modal.hidden = false;
+        // Pendant ce court délai, ignorer les clics backdrop
+        window.setTimeout(() => {
+            delete modal.dataset.justOpened;
+        }, 200);
     }
 
     function closeModal(id) {
         const modal = document.getElementById(id);
-        if (modal) modal.hidden = true;
+        if (modal) {
+            delete modal.dataset.justOpened;
+            modal.hidden = true;
+        }
     }
 
     function bindModalClosers() {
         document.querySelectorAll('.modal').forEach((modal) => {
+            if (modal.dataset.closeBound === '1') return;
+            modal.dataset.closeBound = '1';
             modal.querySelectorAll('[data-close]').forEach((btn) => {
-                btn.addEventListener('click', () => { modal.hidden = true; });
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    delete modal.dataset.justOpened;
+                    modal.hidden = true;
+                });
             });
             modal.addEventListener('click', (e) => {
+                if (modal.dataset.justOpened) return;
                 if (e.target === modal) modal.hidden = true;
             });
         });
@@ -111,7 +155,7 @@ const EducRDC = (() => {
     }
 
     function ico(name) {
-        return `<svg class="btn-ico" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+        return `<svg class="btn-ico" aria-hidden="true" focusable="false"><use href="#i-${name}" xlink:href="#i-${name}"></use></svg>`;
     }
 
     function btnLabel(iconName, text) {
@@ -597,7 +641,19 @@ const EducRDC = (() => {
             .then(() => chargerEcoles())
             .catch((e) => toast(e.message, 'error'));
 
-        document.getElementById('btnNouvelleEcole')?.addEventListener('click', () => openModal('modalEcole'));
+        document.getElementById('btnNouvelleEcole')?.addEventListener('click', async () => {
+            resetDocsCreationEcole();
+            await chargerSelectArretesEcole();
+            openModal('modalEcole');
+        });
+        document.getElementById('selectArreteEcole')?.addEventListener('change', () => {
+            const sel = document.getElementById('selectArreteEcole');
+            const input = document.getElementById('inputNumeroAgrementEcole');
+            if (!sel || !input) return;
+            const opt = sel.options[sel.selectedIndex];
+            const numero = opt?.dataset?.numero || '';
+            if (sel.value && numero) input.value = numero;
+        });
         document.getElementById('btnSearchEcoles')?.addEventListener('click', () => chargerEcoles(1));
         document.getElementById('searchEcoles')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') chargerEcoles(1);
@@ -628,6 +684,13 @@ const EducRDC = (() => {
             chargerEcoles(1).catch((e) => toast(e.message, 'error'));
         });
 
+        document.getElementById('btnAjouterLigneDocEcole')?.addEventListener('click', () => ajouterLigneDocCreation());
+        document.getElementById('listeDocsCreationEcole')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-doc-row-remove]');
+            if (!btn) return;
+            btn.closest('.doc-creation-row')?.remove();
+        });
+
         document.getElementById('formEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
@@ -636,25 +699,166 @@ const EducRDC = (() => {
                 form.reportValidity();
                 return;
             }
-            const payload = Object.fromEntries(new FormData(form).entries());
+            const fdForm = new FormData(form);
+            const payload = Object.fromEntries(fdForm.entries());
+            // Retirer champs documents (gérés à part)
+            delete payload.type_document;
+            delete payload.titre;
+            delete payload.date_document;
+            delete payload.fichier;
             payload.province_educationnelle = Number(payload.province_educationnelle);
             payload.antenne = Number(payload.antenne);
+            if (payload.arrete) payload.arrete = Number(payload.arrete);
+            else payload.arrete = null;
             if (!payload.email) payload.email = '';
             if (payload.latitude === '' || payload.latitude == null) payload.latitude = null;
             else payload.latitude = Number(payload.latitude);
             if (payload.longitude === '' || payload.longitude == null) payload.longitude = null;
             else payload.longitude = Number(payload.longitude);
+
+            const docs = collecterDocsCreationEcole();
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Enregistrement…';
+            }
             try {
-                await api(`${API}/ecoles/`, { method: 'POST', body: JSON.stringify(payload) });
-                toast('École créée avec succès.', 'success');
+                const created = await api(`${API}/ecoles/`, { method: 'POST', body: JSON.stringify(payload) });
+                let docsOk = 0;
+                let docsErr = 0;
+                if (created?.id && docs.length) {
+                    for (const doc of docs) {
+                        const fd = new FormData();
+                        fd.append('fichier', doc.fichier, doc.fichier.name);
+                        fd.append('type_document', doc.type_document);
+                        if (doc.titre) fd.append('titre', doc.titre);
+                        if (doc.date_document) fd.append('date_document', doc.date_document);
+                        try {
+                            await api(`${API}/ecoles/${created.id}/documents/`, {
+                                method: 'POST',
+                                body: fd,
+                                headers: {},
+                            });
+                            docsOk += 1;
+                        } catch (_) {
+                            docsErr += 1;
+                        }
+                    }
+                }
+                if (docs.length && docsErr) {
+                    toast(
+                        `École créée. ${docsOk} document(s) déposé(s), ${docsErr} échec(s).`,
+                        docsOk ? 'warning' : 'error',
+                    );
+                } else if (docsOk) {
+                    toast(`École créée avec ${docsOk} document(s).`, 'success');
+                } else {
+                    toast('École créée avec succès.', 'success');
+                }
                 form.reset();
+                resetDocsCreationEcole();
                 closeModal('modalEcole');
                 await chargerHierarchieEcole();
                 await chargerEcoles(1);
             } catch (err) {
                 toast(err.message, 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = `${ico('save')}Enregistrer l'école`;
+                }
             }
         });
+    }
+
+    const TYPES_DOC_ECOLE = [
+        { value: 'agrement', label: "Arrêté / décision d'agrément" },
+        { value: 'autorisation', label: "Autorisation d'ouverture" },
+        { value: 'statuts', label: "Statuts de l'établissement" },
+        { value: 'plan', label: 'Plan de localisation' },
+        { value: 'attestation_epsp', label: 'Attestation EPSP' },
+        { value: 'autre', label: 'Autre document' },
+    ];
+
+    function optionsTypeDocEcole(selected = 'agrement') {
+        return TYPES_DOC_ECOLE.map((t) =>
+            `<option value="${t.value}"${t.value === selected ? ' selected' : ''}>${escapeHtml(t.label)}</option>`
+        ).join('');
+    }
+
+    function ajouterLigneDocCreation(prefill = null) {
+        const list = document.getElementById('listeDocsCreationEcole');
+        if (!list) return;
+        const row = document.createElement('div');
+        row.className = 'doc-creation-row';
+        row.innerHTML = `
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Type</label>
+                    <select name="type_document">${optionsTypeDocEcole(prefill?.type_document || 'agrement')}</select>
+                </div>
+                <div class="form-group">
+                    <label>Date</label>
+                    <input type="date" name="date_document" value="${escapeHtml(prefill?.date_document || '')}">
+                </div>
+                <div class="form-group">
+                    <label>Titre / référence</label>
+                    <input name="titre" placeholder="Ex: AGR/EPSP/2024/001" value="${escapeHtml(prefill?.titre || '')}">
+                </div>
+                <div class="form-group">
+                    <label>Fichier <span class="req">*</span></label>
+                    <input type="file" name="fichier" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+                </div>
+            </div>
+            <button type="button" class="btn-link danger doc-row-remove" data-doc-row-remove title="Retirer">${ico('trash')}Retirer</button>
+        `;
+        list.appendChild(row);
+    }
+
+    function resetDocsCreationEcole() {
+        const list = document.getElementById('listeDocsCreationEcole');
+        if (!list) return;
+        list.innerHTML = '';
+        ajouterLigneDocCreation();
+    }
+
+    async function chargerSelectArretesEcole(selectedId = '', selectId = 'selectArreteEcole') {
+        const sel = document.getElementById(selectId);
+        if (!sel) return [];
+        try {
+            const data = await api(`${API}/arretes/?actif=1&page_size=200`);
+            const rows = Array.isArray(data) ? data : (data.results || []);
+            const cur = selectedId || sel.value || '';
+            sel.innerHTML = '<option value="">— Aucun / saisie libre —</option>' + rows.map((a) =>
+                `<option value="${a.id}" data-numero="${escapeHtml(a.numero || '')}">${escapeHtml(a.numero)} — ${escapeHtml(a.objet || '')}</option>`
+            ).join('');
+            // Inclure l'arrêté actuel même s'il est inactif
+            if (cur && ![...sel.options].some((o) => o.value === String(cur))) {
+                // laisser ; rechargé via option injectée par l'appelant si besoin
+            }
+            if (cur) sel.value = String(cur);
+            return rows;
+        } catch (err) {
+            console.warn('Arrêtés référentiel:', err.message);
+            return [];
+        }
+    }
+
+    function collecterDocsCreationEcole() {
+        const list = document.getElementById('listeDocsCreationEcole');
+        if (!list) return [];
+        const docs = [];
+        list.querySelectorAll('.doc-creation-row').forEach((row) => {
+            const fichier = row.querySelector('[name="fichier"]')?.files?.[0];
+            if (!fichier || !fichier.size) return;
+            docs.push({
+                type_document: row.querySelector('[name="type_document"]')?.value || 'agrement',
+                titre: (row.querySelector('[name="titre"]')?.value || '').trim(),
+                date_document: row.querySelector('[name="date_document"]')?.value || '',
+                fichier,
+            });
+        });
+        return docs;
     }
 
     /* ---------- Détail école ---------- */
@@ -720,7 +924,7 @@ const EducRDC = (() => {
         return (parts[0][0] + parts[1][0]).toUpperCase();
     }
 
-    function renderClassesHierarchy(container, rows, { onEdit } = {}) {
+    function renderClassesHierarchy(container, rows, { onEdit, expandSections = false } = {}) {
         if (!container) return;
         if (!rows.length) {
             container.innerHTML = `
@@ -731,6 +935,7 @@ const EducRDC = (() => {
             return;
         }
         const groups = grouperClassesParOption(rows);
+        const openAttr = expandSections ? ' open' : '';
         container.innerHTML = groups.map((sec) => {
             const nbOpt = sec.options.length;
             const nbCls = sec.options.reduce((n, o) => n + o.classes.length, 0);
@@ -759,7 +964,7 @@ const EducRDC = (() => {
                 </div>
             `).join('');
             return `
-                <details class="class-section" open>
+                <details class="class-section"${openAttr}>
                     <summary class="class-section-head">
                         <span class="class-section-mark">${escapeHtml(initialsShort(sec.nom))}</span>
                         <span class="class-section-title">${escapeHtml(sec.nom)}</span>
@@ -921,8 +1126,10 @@ const EducRDC = (() => {
             const data = await api(`${API}/classes/?ecole=${ecoleId}&page_size=300&ordering=nom`);
             const rows = data.results || data;
             setCount('countEcoleClasses', data.count ?? rows.length, 'classe');
+            // Sur la fiche école : sections repliées pour ne pas encombrer la page
             renderClassesHierarchy(container, rows, {
                 onEdit: (c) => ouvrirModalClasseEcole(c),
+                expandSections: false,
             });
         } catch (err) {
             container.innerHTML = `
@@ -1160,6 +1367,36 @@ const EducRDC = (() => {
         }).join('');
     }
 
+    function renderDocumentsEcole(ecole) {
+        const liste = document.getElementById('listeDocumentsEcole');
+        if (!liste) return;
+        const docs = ecole.documents || [];
+        setCount('countEcoleDocuments', docs.length, 'document');
+        if (!docs.length) {
+            liste.innerHTML = '<p class="empty-inline">Aucun document de création. Ajoutez l\'agrément ou l\'autorisation d\'ouverture.</p>';
+            return;
+        }
+        liste.innerHTML = docs.map((d) => {
+            const url = escapeHtml(d.fichier_url || d.fichier || '#');
+            const titre = escapeHtml(d.titre || d.nom_fichier || 'Document');
+            const type = escapeHtml(d.type_display || d.type_document || '');
+            const date = d.date_document ? escapeHtml(String(d.date_document).slice(0, 10)) : '—';
+            return `
+                <article class="ecole-doc-card">
+                    <div class="ecole-doc-meta">
+                        <strong>${type}</strong>
+                        <span>${titre}</span>
+                        <span class="form-hint">Date : ${date}</span>
+                    </div>
+                    <div class="ecole-doc-actions">
+                        <a class="btn btn-ghost btn-sm" href="${url}" target="_blank" rel="noopener">${ico('download')}Ouvrir</a>
+                        <button type="button" class="btn-link danger" data-document-delete="${d.id}" title="Supprimer">${ico('trash')}Supprimer</button>
+                    </div>
+                </article>
+            `;
+        }).join('');
+    }
+
     async function chargerEcoleDetail() {
         const root = document.getElementById('ecoleDetail');
         if (!root) return;
@@ -1184,6 +1421,9 @@ const EducRDC = (() => {
             ['Nom', ecole.nom],
             ['Code école', ecole.code],
             ["N° d'agrément", ecole.numero_agrement],
+            ['Document', ecole.arrete_numero
+                ? `${ecole.arrete_numero}${ecole.arrete_objet ? ` — ${ecole.arrete_objet}` : ''}`
+                : ''],
             ['Type', ecole.type_display || ecole.type_ecole],
             ['Niveau', ecole.niveau_display || ecole.niveau],
             ['Directeur', ecole.directeur],
@@ -1216,6 +1456,7 @@ const EducRDC = (() => {
         ]);
 
         renderPhotosEcole(ecole);
+        renderDocumentsEcole(ecole);
 
         fillDetailList('blocEcoleEffectifs', [
             ['MAT', String(ecole.effectif_mat ?? 0)],
@@ -1246,21 +1487,10 @@ const EducRDC = (() => {
         }
         await chargerEcolePersonnels(id);
 
-        const elevesData = await api(`${API}/eleves/?ecole=${id}&page_size=50`);
-        const eleves = elevesData.results || elevesData;
-        setCount('countEcoleEleves', elevesData.count ?? eleves.length);
-        const tbody = document.querySelector('#tableEcoleEleves tbody');
-        tbody.innerHTML = eleves.length ? eleves.map((el) => `
-            <tr>
-                <td data-label="Élève">
-                    <a class="entity-link" href="/eleves/${el.id}/">${escapeHtml(el.nom_complet || `${el.nom} ${el.postnom || ''} ${el.prenom || ''}`.trim())}</a>
-                </td>
-                <td data-label="Matricule"><span class="code-chip">${escapeHtml(el.matricule || '—')}</span></td>
-                <td data-label="Sexe">${escapeHtml(el.sexe_display || el.sexe || '—')}</td>
-                <td data-label="Classe">${escapeHtml([el.classe_nom, el.section_nom, el.option_nom].filter(Boolean).join(' · ') || '—')}</td>
-                <td data-label="Statut"><span class="badge ${el.actif ? 'badge-success' : 'badge-danger'}">${el.actif ? 'Actif' : 'Inactif'}</span></td>
-            </tr>
-        `).join('') : emptyRow(5, 'Aucun élève enregistré', 'Les élèves inscrits dans cette école apparaîtront ici.');
+        const btnEleves = document.getElementById('btnListeElevesEcole');
+        if (btnEleves && id) {
+            btnEleves.href = `/eleves/?ecole=${encodeURIComponent(id)}&fige=1`;
+        }
     }
 
     async function ensureCacheHierarchieEcole() {
@@ -1376,6 +1606,16 @@ const EducRDC = (() => {
         const active = document.getElementById('editEcoleActive');
         if (active) active.checked = ecole.active !== false;
 
+        await chargerSelectArretesEcole(ecole.arrete || '', 'selectArreteEditEcole');
+        const selArrete = document.getElementById('selectArreteEditEcole');
+        if (selArrete && ecole.arrete && String(selArrete.value) !== String(ecole.arrete)) {
+            selArrete.insertAdjacentHTML(
+                'beforeend',
+                `<option value="${ecole.arrete}" data-numero="${escapeHtml(ecole.arrete_numero || '')}">${escapeHtml(ecole.arrete_numero || String(ecole.arrete))} — ${escapeHtml(ecole.arrete_objet || '')}</option>`,
+            );
+            selArrete.value = String(ecole.arrete);
+        }
+
         openModal('modalEditEcole');
     }
 
@@ -1425,14 +1665,29 @@ const EducRDC = (() => {
             } catch (err) { toast(err.message, 'error'); }
         });
 
-        document.getElementById('btnNouvelleClasse')?.addEventListener('click', () => ouvrirModalClasseEcole());
+        document.getElementById('btnNouvelleClasse')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            ouvrirModalClasseEcole();
+        });
+        document.getElementById('btnExpandClassesEcole')?.addEventListener('click', () => {
+            setHierarchyExpanded(document.getElementById('ecoleClassesHierarchy'), true);
+        });
+        document.getElementById('btnCollapseClassesEcole')?.addEventListener('click', () => {
+            setHierarchyExpanded(document.getElementById('ecoleClassesHierarchy'), false);
+        });
+        // Empêcher les boutons du bandeau de basculer le panneau
+        document.querySelector('#sectionClassesEcole .detail-collapse-actions')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
 
-        document.getElementById('btnProgrammeRdc')?.addEventListener('click', () => {
+        document.getElementById('btnProgrammeRdc')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             ouvrirSelecteurProgrammeRdc(ecoleId, {
                 onDone: async () => { await chargerEcoleClasses(ecoleId); },
             });
         });
-
         document.getElementById('classeEcoleSection')?.addEventListener('change', async (e) => {
             await chargerOptionsEcole(ecoleId, e.target.value, document.getElementById('classeEcoleOption'));
         });
@@ -1469,7 +1724,9 @@ const EducRDC = (() => {
             } catch (err) { toast(err.message, 'error'); }
         });
 
-        document.getElementById('btnImporterClasses')?.addEventListener('click', () => {
+        document.getElementById('btnImporterClasses')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             const result = document.getElementById('importClassesResult');
             if (result) {
                 result.hidden = true;
@@ -1666,6 +1923,8 @@ const EducRDC = (() => {
             delete payload.active;
             payload.province_educationnelle = Number(pe);
             payload.antenne = Number(antenne);
+            if (payload.arrete) payload.arrete = Number(payload.arrete);
+            else payload.arrete = null;
             payload.effectif_mat = Number(payload.effectif_mat || 0);
             payload.effectif_prim = Number(payload.effectif_prim || 0);
             payload.effectif_sec = Number(payload.effectif_sec || 0);
@@ -1692,6 +1951,15 @@ const EducRDC = (() => {
             } finally {
                 if (submitBtn) submitBtn.disabled = false;
             }
+        });
+
+        document.getElementById('selectArreteEditEcole')?.addEventListener('change', () => {
+            const sel = document.getElementById('selectArreteEditEcole');
+            const input = document.getElementById('inputNumeroAgrementEditEcole');
+            if (!sel || !input) return;
+            const opt = sel.options[sel.selectedIndex];
+            const numero = opt?.dataset?.numero || '';
+            if (sel.value && numero) input.value = numero;
         });
 
         document.getElementById('btnAjouterPhotoEcole')?.addEventListener('click', () => {
@@ -1763,6 +2031,74 @@ const EducRDC = (() => {
             try {
                 await api(`${API}/ecoles/${ecoleId}/photos/${photoId}/`, { method: 'DELETE' });
                 toast('Photo supprimée.', 'success');
+                await chargerEcoleDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        bindFileDropPreview('ecoleDocumentFile');
+        document.getElementById('btnAjouterDocumentEcole')?.addEventListener('click', () => {
+            const form = document.getElementById('formDocumentEcole');
+            form?.reset();
+            const title = form?.querySelector('.file-drop-title');
+            if (title) title.textContent = 'Déposer le fichier ou cliquer pour parcourir';
+            form?.querySelector('.file-drop')?.classList.remove('has-file', 'is-dragover');
+            openModal('modalDocumentEcole');
+        });
+
+        document.getElementById('formDocumentEcole')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const fileInput = document.getElementById('ecoleDocumentFile');
+            const fichier = fileInput?.files?.[0];
+            if (!fichier || !fichier.size) {
+                toast('Choisissez un fichier.', 'warning');
+                return;
+            }
+            if (!ecoleId) {
+                toast('École introuvable.', 'error');
+                return;
+            }
+            const fd = new FormData(form);
+            if (!fd.get('fichier') && fichier) fd.set('fichier', fichier, fichier.name);
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Envoi…';
+            }
+            try {
+                await api(`${API}/ecoles/${ecoleId}/documents/`, {
+                    method: 'POST',
+                    body: fd,
+                    headers: {},
+                });
+                toast('Document ajouté.', 'success');
+                closeModal('modalDocumentEcole');
+                form.reset();
+                const title = form.querySelector('.file-drop-title');
+                if (title) title.textContent = 'Déposer le fichier ou cliquer pour parcourir';
+                form.querySelector('.file-drop')?.classList.remove('has-file', 'is-dragover');
+                await chargerEcoleDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = `${ico('plus')}Ajouter`;
+                }
+            }
+        });
+
+        document.getElementById('listeDocumentsEcole')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-document-delete]');
+            if (!btn) return;
+            const documentId = btn.getAttribute('data-document-delete');
+            if (!documentId || !ecoleId) return;
+            if (!window.confirm('Supprimer ce document ?')) return;
+            try {
+                await api(`${API}/ecoles/${ecoleId}/documents/${documentId}/`, { method: 'DELETE' });
+                toast('Document supprimé.', 'success');
                 await chargerEcoleDetail();
             } catch (err) {
                 toast(err.message, 'error');
@@ -1888,12 +2224,46 @@ const EducRDC = (() => {
     /* ---------- Élèves ---------- */
     let pageEleves = 1;
 
+    function ordreDepuisMatricule(matricule) {
+        const s = String(matricule || '').trim();
+        const std = s.match(/^(\d{4})-(\d+)$/);
+        if (std) return std[2];
+        const m = s.match(/(\d+)\s*$/);
+        return m ? m[1] : '';
+    }
+
+    function majNumeroIdentificationEleve() {
+        const form = document.getElementById('formEleve');
+        if (!form) return;
+        const input = form.numero_identification;
+        if (!input) return;
+        const mat = form.matricule?.value || '';
+        const sel = document.getElementById('selectEcoleEleve');
+        const code = sel?.selectedOptions?.[0]?.getAttribute('data-code') || '';
+        const ordre = ordreDepuisMatricule(mat);
+        input.value = (code && ordre) ? `${code}-${ordre}` : '';
+    }
+
+    async function majMatriculeEleve() {
+        const form = document.getElementById('formEleve');
+        if (!form?.matricule) return;
+        try {
+            const data = await api(`${API}/eleves/prochain-matricule/`);
+            form.matricule.value = data.matricule || '';
+        } catch (_) {
+            form.matricule.value = '';
+        }
+        majNumeroIdentificationEleve();
+    }
+
     async function chargerSelectEcoles(selectId, { placeholder = '' } = {}) {
-        const data = await api(`${API}/ecoles/?page_size=200`);
+        const data = await api(`${API}/ecoles/?leger=1&page_size=200`);
         const list = data.results || data;
         const sel = document.getElementById(selectId);
         if (!sel) return;
-        const opts = list.map((e) => `<option value="${e.id}">${escapeHtml(e.nom)} (${escapeHtml(e.code)})</option>`).join('');
+        const opts = list.map((e) =>
+            `<option value="${e.id}" data-code="${escapeHtml(e.code || '')}">${escapeHtml(e.nom)} (${escapeHtml(e.code)})</option>`
+        ).join('');
         sel.innerHTML = placeholder
             ? `<option value="">${escapeHtml(placeholder)}</option>${opts}`
             : opts;
@@ -1901,9 +2271,15 @@ const EducRDC = (() => {
 
     async function chargerEleves(page = 1) {
         pageEleves = page;
+        const app = document.getElementById('elevesApp');
         const q = document.getElementById('searchEleves')?.value || '';
+        const ecoleFigee = app?.dataset.ecoleFigee === '1';
+        const ecoleId = ecoleFigee
+            ? (app?.dataset.ecoleId || '')
+            : (document.getElementById('filtreEcoleEleves')?.value || app?.dataset.ecoleId || '');
         let url = `${API}/eleves/?page=${page}`;
         if (q) url += `&q=${encodeURIComponent(q)}`;
+        if (ecoleId) url += `&ecole=${encodeURIComponent(ecoleId)}`;
         const data = await api(url);
         const rows = data.results || data;
         const tbody = document.querySelector('#tableEleves tbody');
@@ -1927,6 +2303,7 @@ const EducRDC = (() => {
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(e.matricule)}</span></td>
                 <td data-label="N° Identification"><span class="code-chip">${escapeHtml(e.numero_identification || '—')}</span></td>
                 <td data-label="N° Permanent"><span class="code-chip">${escapeHtml(e.numero_permanent || '—')}</span></td>
+                <td data-label="N° Impôt"><span class="code-chip">${escapeHtml(e.numero_impot || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(e.sexe_display || e.sexe)}</td>
                 <td data-label="Naissance">${escapeHtml(e.date_naissance)}</td>
                 <td data-label="École / Classe">
@@ -1940,7 +2317,13 @@ const EducRDC = (() => {
                     <a class="btn btn-secondary btn-sm" href="/eleves/${e.id}/">${ico('eye')}Détail</a>
                 </td>
             </tr>`;
-        }).join('') : emptyRow(9, 'Aucun élève trouvé', 'Ajoutez un élève ou affinez votre recherche.');
+        }).join('') : emptyRow(
+            10,
+            'Aucun élève trouvé',
+            ecoleId
+                ? 'Aucun élève pour cette école — affinez la recherche ou ajoutez un élève.'
+                : 'Sélectionnez une école ou affinez votre recherche.',
+        );
 
         const totalPages = data.count ? Math.ceil(data.count / 20) : 1;
         renderPagination('paginationEleves', pageEleves, totalPages, chargerEleves);
@@ -1953,11 +2336,91 @@ const EducRDC = (() => {
         bindFileDropPreview('elevePhotoMere');
         bindFileDropPreview('elevePhotoTuteur');
         bindFileDropPreview('importElevesFile');
-        chargerSelectEcoles('selectEcoleEleve').catch((e) => toast(e.message, 'error'));
-        chargerSelectEcoles('selectEcoleImportEleves', {
-            placeholder: '— Utiliser le code école du fichier —',
-        }).catch((e) => toast(e.message, 'error'));
-        chargerEleves().catch((e) => toast(e.message, 'error'));
+
+        const app = document.getElementById('elevesApp');
+        const paramsUrl = new URLSearchParams(window.location.search);
+        const ecoleUrl = (paramsUrl.get('ecole') || '').trim();
+        const figeUrl = paramsUrl.get('fige') === '1' || paramsUrl.get('fige') === 'true';
+        // Verrouillage : compte école OU arrivée depuis la fiche école (?ecole=&fige=1)
+        let ecoleFigee = app?.dataset.ecoleFigee === '1' || (Boolean(ecoleUrl) && figeUrl);
+        let ecoleFigeeId = ecoleFigee
+            ? (app?.dataset.ecoleId || ecoleUrl)
+            : (app?.dataset.ecoleId || '');
+        if (ecoleUrl && figeUrl) {
+            ecoleFigee = true;
+            ecoleFigeeId = ecoleUrl;
+            if (app) {
+                app.dataset.ecoleFigee = '1';
+                app.dataset.ecoleId = ecoleUrl;
+            }
+        }
+
+        const boot = async () => {
+            await chargerSelectEcoles('selectEcoleEleve');
+            await chargerSelectEcoles('selectEcoleImportEleves', {
+                placeholder: '— Utiliser le code école du fichier —',
+            });
+            const filtreEcole = document.getElementById('filtreEcoleEleves');
+            const badgeEcole = document.getElementById('badgeEcoleEleves');
+
+            if (ecoleFigee && ecoleFigeeId) {
+                if (filtreEcole) filtreEcole.hidden = true;
+                let nomEcole = app?.dataset.ecoleNom || '';
+                if (!nomEcole) {
+                    try {
+                        const eco = await api(`${API}/ecoles/${ecoleFigeeId}/?leger=1`);
+                        nomEcole = eco.nom || `École #${ecoleFigeeId}`;
+                        if (app) app.dataset.ecoleNom = nomEcole;
+                    } catch (_) {
+                        nomEcole = `École #${ecoleFigeeId}`;
+                    }
+                }
+                if (badgeEcole) {
+                    badgeEcole.hidden = false;
+                    badgeEcole.textContent = nomEcole;
+                }
+                const titre = document.getElementById('titreListeEleves');
+                const sous = document.getElementById('sousTitreListeEleves');
+                if (titre) titre.textContent = `Élèves — ${nomEcole}`;
+                if (sous) sous.textContent = 'Élèves de cet établissement uniquement (filtre verrouillé).';
+            } else if (filtreEcole) {
+                filtreEcole.hidden = false;
+                await chargerSelectEcoles('filtreEcoleEleves', {
+                    placeholder: 'Toutes les écoles',
+                });
+                if (ecoleUrl) filtreEcole.value = String(ecoleUrl);
+                if (badgeEcole) badgeEcole.hidden = true;
+            }
+
+            if (ecoleFigee && ecoleFigeeId) {
+                const selCreate = document.getElementById('selectEcoleEleve');
+                const selImport = document.getElementById('selectEcoleImportEleves');
+                if (selCreate) {
+                    // S'assurer que l'option existe
+                    if (![...selCreate.options].some((o) => o.value === String(ecoleFigeeId))) {
+                        selCreate.insertAdjacentHTML(
+                            'beforeend',
+                            `<option value="${ecoleFigeeId}">${escapeHtml(app?.dataset.ecoleNom || `École #${ecoleFigeeId}`)}</option>`,
+                        );
+                    }
+                    selCreate.value = String(ecoleFigeeId);
+                    selCreate.disabled = true;
+                }
+                if (selImport) {
+                    if (![...selImport.options].some((o) => o.value === String(ecoleFigeeId))) {
+                        selImport.insertAdjacentHTML(
+                            'beforeend',
+                            `<option value="${ecoleFigeeId}">${escapeHtml(app?.dataset.ecoleNom || `École #${ecoleFigeeId}`)}</option>`,
+                        );
+                    }
+                    selImport.value = String(ecoleFigeeId);
+                    selImport.disabled = true;
+                }
+                await remplirSelectClasses(ecoleFigeeId, 'selectClasseEleve');
+            }
+            await chargerEleves(1);
+        };
+        boot().catch((e) => toast(e.message, 'error'));
 
         const openImportEleves = () => {
             const result = document.getElementById('importElevesResult');
@@ -1969,14 +2432,31 @@ const EducRDC = (() => {
         };
         document.getElementById('selectEcoleEleve')?.addEventListener('change', (e) => {
             remplirSelectClasses(e.target.value, 'selectClasseEleve');
+            majNumeroIdentificationEleve();
+        });
+        document.getElementById('formEleve')?.querySelector('[name="matricule"]')
+            ?.addEventListener('input', majNumeroIdentificationEleve);
+        document.getElementById('filtreEcoleEleves')?.addEventListener('change', () => {
+            chargerEleves(1).catch((err) => toast(err.message, 'error'));
         });
         document.getElementById('btnNouvelEleve')?.addEventListener('click', () => {
-            const ecoleId = document.getElementById('selectEcoleEleve')?.value;
+            const ecoleId = ecoleFigee
+                ? ecoleFigeeId
+                : document.getElementById('selectEcoleEleve')?.value;
+            if (ecoleFigee && ecoleFigeeId) {
+                const sel = document.getElementById('selectEcoleEleve');
+                if (sel) {
+                    sel.value = String(ecoleFigeeId);
+                    sel.disabled = true;
+                }
+            }
             if (ecoleId) remplirSelectClasses(ecoleId, 'selectClasseEleve');
             else {
                 const sel = document.getElementById('selectClasseEleve');
                 if (sel) sel.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
             }
+            majNumeroIdentificationEleve();
+            majMatriculeEleve().catch(() => {});
             openModal('modalEleve');
         });
         document.getElementById('btnImporterEleves')?.addEventListener('click', openImportEleves);
@@ -1995,6 +2475,9 @@ const EducRDC = (() => {
                 return;
             }
             const fd = new FormData(form);
+            if (ecoleFigee && ecoleFigeeId) {
+                fd.set('ecole', ecoleFigeeId);
+            }
             // Retirer photos vides pour éviter erreur API
             ['photo', 'photo_pere', 'photo_mere', 'photo_tuteur'].forEach((key) => {
                 const file = fd.get(key);
@@ -2028,7 +2511,9 @@ const EducRDC = (() => {
             }
             const fd = new FormData();
             fd.append('fichier', fichier);
-            const ecole = form.ecole?.value;
+            const ecole = (ecoleFigee && ecoleFigeeId)
+                ? ecoleFigeeId
+                : form.ecole?.value;
             if (ecole) fd.append('ecole', ecole);
             fd.append(
                 'update_existing',
@@ -2212,6 +2697,53 @@ const EducRDC = (() => {
         });
     }
 
+    function remplirFormEditEleve(eleve) {
+        const form = document.getElementById('formEditEleve');
+        if (!form || !eleve) return;
+        form.matricule.value = eleve.matricule || '';
+        form.numero_identification.value = eleve.numero_identification || '';
+        form.numero_permanent.value = eleve.numero_permanent || '';
+        form.numero_impot.value = eleve.numero_impot || '';
+        form.sexe.value = eleve.sexe || 'M';
+        form.nom.value = eleve.nom || '';
+        form.postnom.value = eleve.postnom || '';
+        form.prenom.value = eleve.prenom || '';
+        form.date_naissance.value = (eleve.date_naissance || '').slice(0, 10);
+        form.lieu_naissance.value = eleve.lieu_naissance || '';
+        form.adresse.value = eleve.adresse || '';
+        form.actif.value = eleve.actif ? 'true' : 'false';
+    }
+
+    function majNumeroIdentificationEditEleve() {
+        const form = document.getElementById('formEditEleve');
+        if (!form) return;
+        const mat = form.matricule?.value || '';
+        const sel = document.getElementById('selectEcoleEditEleve');
+        const code = sel?.selectedOptions?.[0]?.getAttribute('data-code') || '';
+        const ordre = ordreDepuisMatricule(mat);
+        if (form.numero_identification) {
+            form.numero_identification.value = (code && ordre) ? `${code}-${ordre}` : (form.numero_identification.value || '');
+        }
+    }
+
+    async function ouvrirModalEditEleve() {
+        const eleve = cacheEleveDetail;
+        if (!eleve) return;
+        const root = document.getElementById('eleveDetail');
+        remplirFormEditEleve(eleve);
+        await chargerSelectEcoles('selectEcoleEditEleve');
+        const selEcole = document.getElementById('selectEcoleEditEleve');
+        if (selEcole) {
+            const ecoleFigee = root?.dataset.ecoleFigee === '1';
+            const ecoleUser = root?.dataset.ecoleId || '';
+            selEcole.value = String(ecoleFigee && ecoleUser ? ecoleUser : (eleve.ecole || ''));
+            selEcole.disabled = ecoleFigee;
+        }
+        await remplirSelectClasses(selEcole?.value || eleve.ecole, 'selectClasseEditEleve', eleve.classe || '');
+        majNumeroIdentificationEditEleve();
+        openModal('modalEditEleve');
+    }
+
     function remplirFormParents(eleve) {
         const form = document.getElementById('formParentsEleve');
         if (!form || !eleve) return;
@@ -2253,6 +2785,7 @@ const EducRDC = (() => {
             ['Matricule', eleve.matricule],
             ['Numéro Identification', eleve.numero_identification],
             ['Numéro Permanent', eleve.numero_permanent],
+            ['Numéro Impôt', eleve.numero_impot],
             ['Nom', eleve.nom],
             ['Postnom', eleve.postnom],
             ['Prénom', eleve.prenom],
@@ -2351,6 +2884,54 @@ const EducRDC = (() => {
                 toast('Élève supprimé.', 'success');
                 window.location.href = '/eleves/';
             } catch (err) { toast(err.message, 'error'); }
+        });
+
+        document.getElementById('btnModifierEleve')?.addEventListener('click', () => {
+            ouvrirModalEditEleve().catch((err) => toast(err.message, 'error'));
+        });
+
+        document.getElementById('selectEcoleEditEleve')?.addEventListener('change', (e) => {
+            remplirSelectClasses(e.target.value, 'selectClasseEditEleve');
+            majNumeroIdentificationEditEleve();
+        });
+
+        document.getElementById('formEditEleve')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+            if (!id) return;
+            const selEcole = document.getElementById('selectEcoleEditEleve');
+            const payload = {
+                numero_permanent: (form.numero_permanent.value || '').trim() || null,
+                numero_impot: (form.numero_impot.value || '').trim() || null,
+                sexe: form.sexe.value,
+                nom: form.nom.value.trim(),
+                postnom: (form.postnom.value || '').trim(),
+                prenom: form.prenom.value.trim(),
+                date_naissance: form.date_naissance.value,
+                lieu_naissance: (form.lieu_naissance.value || '').trim(),
+                adresse: (form.adresse.value || '').trim(),
+                ecole: Number(selEcole?.value || form.ecole?.value),
+                classe: Number(form.classe.value),
+                actif: form.actif.value === 'true',
+            };
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                await api(`${API}/eleves/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                toast('Élève mis à jour.', 'success');
+                closeModal('modalEditEleve');
+                await chargerEleveDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
         });
 
         document.getElementById('btnModifierParents')?.addEventListener('click', () => {
@@ -3297,6 +3878,440 @@ const EducRDC = (() => {
         openModal('modalUtilisateur');
     }
 
+    /* ---------- Monitoring utilisateurs connectés (admin) ---------- */
+    let cacheMonitoringSessions = [];
+    let monitoringTimer = null;
+
+    function formatDateTimeFr(value) {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return formatDateFr(value) || '—';
+        const jj = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const aaaa = d.getFullYear();
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mi = String(d.getMinutes()).padStart(2, '0');
+        return `${jj}-${mm}-${aaaa} ${hh}:${mi}`;
+    }
+
+    function filtrerMonitoringSessions(rows) {
+        const q = (document.getElementById('searchMonitoring')?.value || '').trim().toLowerCase();
+        const statut = document.getElementById('filtreStatutMonitoring')?.value || '';
+        return rows.filter((s) => {
+            if (statut === 'en_ligne' && !s.en_ligne) return false;
+            if (statut === 'session' && s.en_ligne) return false;
+            if (!q) return true;
+            const blob = [
+                s.nom_complet, s.username, s.role_display, s.rattachement, s.ip,
+                s.geo_label, s.email,
+            ].join(' ').toLowerCase();
+            return blob.includes(q);
+        });
+    }
+
+    function celluleGeoMonitoring(s) {
+        const label = s.geo_label || s.geo?.label || '—';
+        const lat = s.geo_lat ?? s.geo?.lat;
+        const lon = s.geo_lon ?? s.geo?.lon;
+        const source = s.geo_source || s.geo?.source || '';
+        const badge = source === 'browser'
+            ? '<span class="badge badge-info">GPS</span>'
+            : (source === 'ip'
+                ? '<span class="badge badge-neutral">IP</span>'
+                : (source === 'local' ? '<span class="badge badge-warning">Local</span>' : ''));
+        let maps = '';
+        if (lat != null && lon != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lon))) {
+            maps = ` <a class="btn btn-ghost btn-sm" href="/monitoring/utilisateurs-connectes/carte/" title="Voir sur la carte interne">Carte</a>`;
+        }
+        return `<div class="entity-meta">
+            <strong title="${escapeHtml(label)}">${escapeHtml(label)}</strong>
+            <span>${badge}${maps}</span>
+        </div>`;
+    }
+
+    function renderMonitoringSessions() {
+        const rows = filtrerMonitoringSessions(cacheMonitoringSessions);
+        const tbody = document.querySelector('#tableMonitoring tbody');
+        if (!tbody) return;
+        setCount('countMonitoring', rows.length);
+        tbody.innerHTML = rows.length ? rows.map((s) => {
+            const statut = s.en_ligne
+                ? '<span class="badge badge-success">En ligne</span>'
+                : '<span class="badge badge-neutral">Session active</span>';
+            const moi = s.est_session_courante
+                ? ' <span class="badge badge-info">Vous</span>'
+                : '';
+            const actions = s.est_session_courante
+                ? '<span class="muted">—</span>'
+                : `<button type="button" class="btn btn-danger btn-sm" data-kick-session="${escapeHtml(s.session_key)}">${ico('trash')}Déconnecter</button>`;
+            return `
+            <tr>
+                <td data-label="Utilisateur">
+                    <div class="entity-meta">
+                        <strong>${escapeHtml(s.nom_complet)}${moi}</strong>
+                        <span>${escapeHtml(s.username)}</span>
+                    </div>
+                </td>
+                <td data-label="Rôle"><span class="code-chip">${escapeHtml(s.role_display || s.role)}</span></td>
+                <td data-label="Rattachement">${escapeHtml(s.rattachement || '—')}</td>
+                <td data-label="IP"><span class="code-chip">${escapeHtml(s.ip || '—')}</span></td>
+                <td data-label="Géolocalisation">${celluleGeoMonitoring(s)}</td>
+                <td data-label="Activité">${escapeHtml(formatDateTimeFr(s.presence_at || s.last_login))}</td>
+                <td data-label="Expiration">${escapeHtml(formatDateTimeFr(s.expire_date))}</td>
+                <td data-label="Statut">${statut}</td>
+                <td data-label="Actions"><div class="actions-inline">${actions}</div></td>
+            </tr>`;
+        }).join('') : emptyRow(
+            9,
+            'Aucune session active',
+            'Aucun utilisateur connecté pour le moment (ou filtre trop strict).',
+        );
+    }
+
+    async function chargerMonitoringSessions() {
+        const data = await api(`${API}/monitoring/sessions/`);
+        cacheMonitoringSessions = data.results || [];
+        const resume = data.resume || {};
+        const elS = document.getElementById('monSessions');
+        const elU = document.getElementById('monUniques');
+        const elL = document.getElementById('monEnLigne');
+        const elM = document.getElementById('monMaj');
+        const elR = document.getElementById('monParRole');
+        if (elS) elS.textContent = String(resume.sessions ?? cacheMonitoringSessions.length);
+        if (elU) elU.textContent = String(resume.utilisateurs_uniques ?? '—');
+        if (elL) elL.textContent = String(resume.en_ligne ?? '—');
+        if (elM) elM.textContent = formatDateTimeFr(new Date().toISOString());
+        if (elR) {
+            const parts = Object.entries(resume.par_role || {}).map(([k, v]) => `${k} : ${v}`);
+            elR.textContent = parts.length ? `Répartition : ${parts.join(' · ')}` : '';
+        }
+        renderMonitoringSessions();
+        await chargerAccesExterieur().catch(() => {});
+    }
+
+    async function chargerAccesExterieur() {
+        const tbody = document.querySelector('#tableAccesExterieur tbody');
+        if (!tbody) return;
+        const data = await api(`${API}/monitoring/acces-exterieur/`);
+        const rows = data.results || [];
+        setCount('countAccesExterieur', data.en_attente ?? rows.filter((r) => r.statut === 'en_attente').length);
+        tbody.innerHTML = rows.length ? rows.map((r) => {
+            const ipLabel = r.toutes_ip ? 'Toutes IP' : (r.adresse_ip || '—');
+            const badge = r.statut === 'en_attente'
+                ? '<span class="badge badge-warning">En attente</span>'
+                : (r.statut === 'autorise'
+                    ? '<span class="badge badge-success">Autorisé</span>'
+                    : `<span class="badge badge-danger">${escapeHtml(r.statut_display || r.statut)}</span>`);
+            let actions = '—';
+            if (r.statut === 'en_attente') {
+                actions = `
+                    <button type="button" class="btn btn-primary btn-sm" data-acces-action="autoriser" data-acces-id="${r.id}">Autoriser 7j</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-acces-action="autoriser-toutes" data-acces-id="${r.id}">Autoriser (toutes IP)</button>
+                    <button type="button" class="btn btn-danger btn-sm" data-acces-action="refuser" data-acces-id="${r.id}">Refuser</button>`;
+            } else if (r.statut === 'autorise' && r.est_valide) {
+                actions = `<button type="button" class="btn btn-danger btn-sm" data-acces-action="revoquer" data-acces-id="${r.id}">Révoquer</button>`;
+            }
+            return `<tr>
+                <td data-label="Utilisateur">
+                    <div class="entity-meta">
+                        <strong>${escapeHtml(r.nom_complet)}</strong>
+                        <span>${escapeHtml(r.username)} · ${escapeHtml(r.role_display || '')}</span>
+                    </div>
+                </td>
+                <td data-label="IP">
+                    <div class="entity-meta">
+                        <strong>${escapeHtml(ipLabel)}</strong>
+                        <span>${escapeHtml(r.geo_label || '—')}${r.country_code ? ` (${escapeHtml(r.country_code)})` : ''}</span>
+                    </div>
+                </td>
+                <td data-label="Demande">${escapeHtml(formatDateTimeFr(r.date_demande))}</td>
+                <td data-label="Statut">${badge}</td>
+                <td data-label="Expiration">${escapeHtml(formatDateTimeFr(r.date_expiration))}</td>
+                <td data-label="Actions"><div class="actions-inline">${actions}</div></td>
+            </tr>`;
+        }).join('') : emptyRow(
+            6,
+            'Aucune demande hors RDC',
+            'Les tentatives de connexion depuis l’étranger apparaîtront ici.',
+        );
+    }
+
+    async function decideAccesExterieur(id, action) {
+        const payload = { action };
+        if (action === 'autoriser') {
+            payload.jours = 7;
+            payload.toutes_ip = false;
+        } else if (action === 'autoriser-toutes') {
+            payload.action = 'autoriser';
+            payload.jours = 7;
+            payload.toutes_ip = true;
+        }
+        await api(`${API}/monitoring/acces-exterieur/${id}/`, {
+            method: 'POST',
+            body: JSON.stringify(payload),
+        });
+    }
+
+    function planifierAutoRefreshMonitoring() {
+        if (monitoringTimer) {
+            clearInterval(monitoringTimer);
+            monitoringTimer = null;
+        }
+        const auto = document.getElementById('autoRefreshMonitoring')?.checked;
+        if (!auto) return;
+        monitoringTimer = setInterval(() => {
+            chargerMonitoringSessions().catch(() => {});
+        }, 30000);
+    }
+
+    function initMonitoringUtilisateurs() {
+        chargerMonitoringSessions().catch((e) => toast(e.message, 'error'));
+        planifierAutoRefreshMonitoring();
+
+        document.getElementById('btnRefreshMonitoring')?.addEventListener('click', () => {
+            chargerMonitoringSessions().catch((e) => toast(e.message, 'error'));
+        });
+        document.getElementById('searchMonitoring')?.addEventListener('input', () => renderMonitoringSessions());
+        document.getElementById('filtreStatutMonitoring')?.addEventListener('change', () => renderMonitoringSessions());
+        document.getElementById('autoRefreshMonitoring')?.addEventListener('change', planifierAutoRefreshMonitoring);
+
+        document.getElementById('tableMonitoring')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-kick-session]');
+            if (!btn) return;
+            const key = btn.getAttribute('data-kick-session');
+            if (!key || !confirm('Forcer la déconnexion de cette session ?')) return;
+            try {
+                await api(`${API}/monitoring/sessions/${encodeURIComponent(key)}/`, { method: 'DELETE' });
+                toast('Session déconnectée.', 'success');
+                await chargerMonitoringSessions();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        document.getElementById('tableAccesExterieur')?.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-acces-action]');
+            if (!btn) return;
+            const id = btn.getAttribute('data-acces-id');
+            const action = btn.getAttribute('data-acces-action');
+            if (!id || !action) return;
+            const labels = {
+                autoriser: 'Autoriser cet accès hors RDC pour 7 jours ?',
+                'autoriser-toutes': 'Autoriser cet utilisateur hors RDC (toutes IP) pour 7 jours ?',
+                refuser: 'Refuser cette demande ?',
+                revoquer: 'Révoquer cette autorisation ?',
+            };
+            if (!confirm(labels[action] || 'Confirmer ?')) return;
+            try {
+                await decideAccesExterieur(id, action);
+                toast('Décision enregistrée.', 'success');
+                await chargerAccesExterieur();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+    }
+
+    /* ---------- Carte monitoring (Leaflet, page interne) ---------- */
+    let monitoringCarteMap = null;
+    let monitoringCarteLayer = null;
+    let monitoringCarteTimer = null;
+    let cacheMonitoringCarte = [];
+
+    // Emprise RDC (sud-ouest → nord-est)
+    const RDC_BOUNDS = [
+        [-13.46, 12.20],
+        [5.39, 31.31],
+    ];
+
+    // Contour simplifié de la RDC [lat, lon] — pour masquer le reste du monde
+    const RDC_CONTOUR = [
+        [-4.40, 12.45], [-5.90, 12.35], [-8.00, 13.05], [-10.90, 13.40],
+        [-13.00, 16.70], [-13.45, 22.80], [-12.20, 25.10], [-11.70, 28.40],
+        [-10.30, 28.90], [-8.20, 30.60], [-5.90, 29.50], [-3.40, 29.20],
+        [-1.20, 30.20], [0.90, 30.00], [2.20, 31.20], [4.30, 30.00],
+        [5.30, 27.40], [4.60, 24.90], [5.00, 19.80], [3.60, 18.60],
+        [3.40, 16.20], [1.70, 15.90], [-0.20, 17.60], [-1.70, 17.30],
+        [-2.90, 16.20], [-3.40, 13.10], [-4.40, 12.45],
+    ];
+
+    function centrerCarteRDC(map, { animate = false } = {}) {
+        if (!map) return;
+        map.fitBounds(RDC_BOUNDS, { padding: [18, 18], maxZoom: 6, animate });
+    }
+
+    function restreindreVueRDC(map) {
+        if (!map) return;
+        const bounds = L.latLngBounds(RDC_BOUNDS).pad(0.04);
+        map.setMaxBounds(bounds);
+        map.options.maxBoundsViscosity = 1.0;
+        // Empêche le dézoom mondial : zoom min = niveau « toute la RDC »
+        const z = map.getBoundsZoom(bounds, false);
+        map.setMinZoom(Math.max(5, Math.floor(z)));
+    }
+
+    function masquerHorsRDC(map) {
+        // Anneau monde + trou RDC → seul le territoire RDC reste lisible
+        const monde = [
+            [-85, -180], [-85, 180], [85, 180], [85, -180],
+        ];
+        L.polygon([monde, RDC_CONTOUR], {
+            stroke: false,
+            fillColor: '#061a2e',
+            fillOpacity: 0.78,
+            interactive: false,
+        }).addTo(map);
+        L.polyline(RDC_CONTOUR, {
+            color: '#f0c400',
+            weight: 2,
+            opacity: 0.95,
+            interactive: false,
+        }).addTo(map);
+    }
+
+    function sessionsAvecCoords(rows) {
+        return (rows || []).filter((s) => {
+            const lat = Number(s.geo_lat ?? s.geo?.lat);
+            const lon = Number(s.geo_lon ?? s.geo?.lon);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+            // Uniquement les points situés en RDC (emprise)
+            return lat >= -13.5 && lat <= 5.5 && lon >= 12.1 && lon <= 31.4;
+        });
+    }
+
+    function popupHtmlMonitoring(s) {
+        const statut = s.en_ligne ? 'En ligne' : 'Session active';
+        return `<strong>${escapeHtml(s.nom_complet || s.username)}</strong><br>`
+            + `${escapeHtml(s.role_display || s.role || '')}<br>`
+            + `${escapeHtml(s.geo_label || '—')}<br>`
+            + `IP ${escapeHtml(s.ip || '—')} · ${escapeHtml(statut)}`;
+    }
+
+    function renderMonitoringCarte() {
+        const mapEl = document.getElementById('monitoringMap');
+        const legend = document.getElementById('monitoringMapLegend');
+        const hint = document.getElementById('monitoringMapHint');
+        if (!mapEl || typeof L === 'undefined') return;
+
+        if (!monitoringCarteMap) {
+            monitoringCarteMap = L.map(mapEl, {
+                scrollWheelZoom: true,
+                worldCopyJump: false,
+                maxBoundsViscosity: 1.0,
+                zoomControl: true,
+            });
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 16,
+                attribution: '&copy; OpenStreetMap — vue RDC',
+            }).addTo(monitoringCarteMap);
+            masquerHorsRDC(monitoringCarteMap);
+            monitoringCarteLayer = L.layerGroup().addTo(monitoringCarteMap);
+            centrerCarteRDC(monitoringCarteMap);
+            restreindreVueRDC(monitoringCarteMap);
+        }
+
+        const localises = sessionsAvecCoords(cacheMonitoringCarte);
+        const horsRdc = (cacheMonitoringCarte || []).filter((s) => {
+            const lat = Number(s.geo_lat ?? s.geo?.lat);
+            const lon = Number(s.geo_lon ?? s.geo?.lon);
+            return Number.isFinite(lat) && Number.isFinite(lon)
+                && !(lat >= -13.5 && lat <= 5.5 && lon >= 12.1 && lon <= 31.4);
+        }).length;
+        const sansCoords = cacheMonitoringCarte.length - localises.length - horsRdc;
+        setCount('countMonitoringCarte', localises.length);
+        if (hint) {
+            let txt = localises.length
+                ? `${localises.length} position(s) en RDC`
+                : 'Aucune position en RDC — carte limitée au territoire national.';
+            if (sansCoords) txt += ` · ${sansCoords} sans coordonnées`;
+            if (horsRdc) txt += ` · ${horsRdc} hors RDC (masquée)`;
+            hint.textContent = txt;
+        }
+
+        monitoringCarteLayer.clearLayers();
+        const bounds = [];
+        if (legend) legend.innerHTML = '';
+
+        localises.forEach((s) => {
+            const lat = Number(s.geo_lat ?? s.geo?.lat);
+            const lon = Number(s.geo_lon ?? s.geo?.lon);
+            const marker = L.circleMarker([lat, lon], {
+                radius: 8,
+                color: s.en_ligne ? '#0a7a32' : '#007fff',
+                fillColor: s.en_ligne ? '#1fbf57' : '#4da3ff',
+                fillOpacity: 0.9,
+                weight: 2,
+            }).bindPopup(popupHtmlMonitoring(s));
+            marker.addTo(monitoringCarteLayer);
+            bounds.push([lat, lon]);
+
+            if (legend) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'monitoring-map-item';
+                btn.innerHTML = `<strong>${escapeHtml(s.nom_complet || s.username)}</strong>`
+                    + `<span>${escapeHtml(s.role_display || '')} · ${escapeHtml(s.geo_label || '')}</span>`
+                    + `<span>${s.en_ligne ? 'En ligne' : 'Session active'} · ${escapeHtml(s.ip || '—')}</span>`;
+                btn.addEventListener('click', () => {
+                    legend.querySelectorAll('.monitoring-map-item').forEach((el) => el.classList.remove('active'));
+                    btn.classList.add('active');
+                    monitoringCarteMap.setView([lat, lon], Math.max(monitoringCarteMap.getZoom(), 10));
+                    marker.openPopup();
+                });
+                legend.appendChild(btn);
+            }
+        });
+
+        if (bounds.length === 1) {
+            monitoringCarteMap.setView(bounds[0], 10);
+        } else if (bounds.length > 1) {
+            monitoringCarteMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
+        } else {
+            centrerCarteRDC(monitoringCarteMap);
+        }
+        setTimeout(() => {
+            monitoringCarteMap.invalidateSize();
+            restreindreVueRDC(monitoringCarteMap);
+        }, 80);
+    }
+
+    async function chargerMonitoringCarte() {
+        const data = await api(`${API}/monitoring/sessions/`);
+        cacheMonitoringCarte = data.results || [];
+        renderMonitoringCarte();
+    }
+
+    function planifierAutoRefreshMonitoringCarte() {
+        if (monitoringCarteTimer) {
+            clearInterval(monitoringCarteTimer);
+            monitoringCarteTimer = null;
+        }
+        const auto = document.getElementById('autoRefreshMonitoringCarte')?.checked;
+        if (!auto) return;
+        monitoringCarteTimer = setInterval(() => {
+            chargerMonitoringCarte().catch(() => {});
+        }, 30000);
+    }
+
+    function initMonitoringCarte() {
+        if (typeof L === 'undefined') {
+            toast('Impossible de charger la carte.', 'error');
+            return;
+        }
+        chargerMonitoringCarte().catch((e) => toast(e.message, 'error'));
+        planifierAutoRefreshMonitoringCarte();
+        document.getElementById('btnRefreshMonitoringCarte')?.addEventListener('click', () => {
+            chargerMonitoringCarte().catch((e) => toast(e.message, 'error'));
+        });
+        document.getElementById('btnCentrerRDC')?.addEventListener('click', () => {
+            centrerCarteRDC(monitoringCarteMap, { animate: true });
+        });
+        document.getElementById('autoRefreshMonitoringCarte')?.addEventListener('change', planifierAutoRefreshMonitoringCarte);
+        window.addEventListener('resize', () => {
+            if (monitoringCarteMap) monitoringCarteMap.invalidateSize();
+        });
+    }
+
     function initUtilisateurs() {
         bindModalClosers();
         chargerOptionsUtilisateur().catch((e) => toast(e.message, 'error'));
@@ -3494,9 +4509,16 @@ const EducRDC = (() => {
             const data = await api(`${API}/annees-scolaires/?page_size=50`);
             const rows = data.results || data;
             const sel = document.getElementById('selectAnneeEval');
+            const activeId = rows.find((a) => a.active)?.id;
             sel.innerHTML = rows.length
-                ? rows.map((a) => `<option value="${a.id}" ${a.active ? 'selected' : ''}>${escapeHtml(a.libelle)}${a.active ? ' (active)' : ''}</option>`).join('')
-                : '<option value="">— Aucune année —</option>';
+                ? rows.map((a) => {
+                    const selected = activeId
+                        ? String(a.id) === String(activeId)
+                        : !!a.active;
+                    return `<option value="${a.id}" ${selected ? 'selected' : ''}>${escapeHtml(a.libelle)}${a.active ? ' (nationale)' : ''}</option>`;
+                }).join('')
+                : '<option value="">— Aucune année nationale —</option>';
+            if (activeId) sel.value = String(activeId);
             majResumeSession();
         }
 
@@ -3897,33 +4919,6 @@ const EducRDC = (() => {
             }
         });
 
-        document.getElementById('btnNouvelleAnnee')?.addEventListener('click', () => openModal('modalAnneeEval'));
-        document.getElementById('formAnneeEval')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const form = e.target;
-            if (!form.checkValidity()) {
-                form.reportValidity();
-                return;
-            }
-            const payload = {
-                libelle: form.libelle.value.trim(),
-                regime: form.regime.value,
-                date_debut: form.date_debut.value,
-                date_fin: form.date_fin.value,
-                active: form.active.checked,
-            };
-            try {
-                await api(`${API}/annees-scolaires/`, { method: 'POST', body: JSON.stringify(payload) });
-                toast('Année scolaire créée avec ses périodes.', 'success');
-                closeModal('modalAnneeEval');
-                form.reset();
-                await chargerAnnees();
-                await chargerProgrammes();
-            } catch (err) {
-                toast(err.message, 'error');
-            }
-        });
-
         async function onCatalogueClick() {
             try {
                 const data = await chargerCataloguePourClasse();
@@ -4031,6 +5026,624 @@ const EducRDC = (() => {
                 toast(err.message, 'error');
             }
         })();
+    }
+
+    /* ---------- Paramètres — Années scolaires (CRUD national) ---------- */
+    function initParametresAnnees() {
+        const app = document.getElementById('anneesApp')
+            || document.getElementById('paramAnneesApp');
+        if (!app) {
+            console.warn('[EducRDC] #anneesApp introuvable');
+            return;
+        }
+        if (app.dataset.bound === '1') return;
+        app.dataset.bound = '1';
+        bindModalClosers();
+
+        const table = document.getElementById('tableAnnees')
+            || document.getElementById('tableAnneesParam');
+        const countId = document.getElementById('countAnnees')
+            ? 'countAnnees'
+            : 'countAnneesParam';
+        const btnNew = document.getElementById('btnNouvelleAnnee')
+            || document.getElementById('btnNouvelleAnneeParam');
+        const btnSearch = document.getElementById('btnSearchAnnees')
+            || document.getElementById('btnSearchAnneesParam');
+        const searchInput = document.getElementById('searchAnnees')
+            || document.getElementById('searchAnneesParam');
+        const form = document.getElementById('formAnnee')
+            || document.getElementById('formAnneeParam');
+        const modalId = document.getElementById('modalAnnee')
+            ? 'modalAnnee'
+            : 'modalAnneeParam';
+
+        let cache = [];
+
+        function el(id) {
+            return document.getElementById(id);
+        }
+
+        function setError(msg) {
+            const box = el('anneeError') || el('anneeParamError');
+            if (!box) return;
+            box.hidden = !msg;
+            box.textContent = msg || '';
+        }
+
+        function field(name, fallbackId) {
+            return (form && form.querySelector(`[name="${name}"]`))
+                || (fallbackId ? el(fallbackId) : null);
+        }
+
+        function suggestNext() {
+            const y = new Date().getFullYear();
+            let start = 0;
+            cache.forEach((a) => {
+                const m = String(a.libelle || '').match(/^(\d{4})/);
+                const n = m ? Number(m[1]) : 0;
+                if (n >= y - 5 && n <= y + 2) start = Math.max(start, n);
+            });
+            if (!start) {
+                start = y;
+                if (new Date().getMonth() < 8) start -= 1;
+            }
+            const d = start + 1;
+            return { libelle: `${d}-${d + 1}`, debut: `${d}-09-01`, fin: `${d + 1}-07-31` };
+        }
+
+        function openForm(row) {
+            if (!form) {
+                toast('Formulaire année introuvable. Rechargez la page (Ctrl+F5).', 'error');
+                return;
+            }
+            form.reset();
+            setError('');
+            const idEl = el('anneeId') || el('anneeParamId');
+            const titre = el('titreModalAnnee') || el('titreModalAnneeParam');
+            const btnDel = el('btnSupprimerAnnee') || el('btnSupprimerAnneeParam');
+            const btnSave = el('btnSaveAnnee') || el('btnSubmitAnneeParam');
+            const libelleEl = field('libelle', 'anneeLibelle');
+            const regimeEl = field('regime', 'anneeRegime');
+            const debutEl = field('date_debut', 'anneeDebut');
+            const finEl = field('date_fin', 'anneeFin');
+            const activeEl = field('active', 'anneeActive') || el('anneeParamActive');
+
+            if (idEl) idEl.value = row?.id || '';
+            if (titre) {
+                titre.textContent = row
+                    ? 'Modifier l\'année scolaire'
+                    : 'Nouvelle année scolaire';
+            }
+            if (btnDel) btnDel.hidden = !row?.id;
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = `${ico('save')}${row ? 'Enregistrer' : 'Créer'}`;
+            }
+            if (row) {
+                if (libelleEl) libelleEl.value = row.libelle || '';
+                if (regimeEl) regimeEl.value = row.regime || 'secondaire';
+                if (debutEl) debutEl.value = (row.date_debut || '').slice(0, 10);
+                if (finEl) finEl.value = (row.date_fin || '').slice(0, 10);
+                if (activeEl) activeEl.checked = !!row.active;
+            } else {
+                const s = suggestNext();
+                if (libelleEl) libelleEl.value = s.libelle;
+                if (debutEl) debutEl.value = s.debut;
+                if (finEl) finEl.value = s.fin;
+                if (activeEl) activeEl.checked = true;
+            }
+            openModal(modalId);
+        }
+
+        async function loadList() {
+            const tbody = table?.querySelector('tbody');
+            if (!tbody) {
+                toast('Tableau des années introuvable. Rechargez (Ctrl+F5).', 'error');
+                return;
+            }
+            tbody.innerHTML = emptyRow(7, 'Chargement…', 'Récupération du référentiel national.');
+            try {
+                const data = await api(`${API}/annees-scolaires/?page_size=100`);
+                let rows = Array.isArray(data) ? data : (data.results || []);
+                cache = rows;
+                const q = (searchInput?.value || '').trim().toLowerCase();
+                if (q) {
+                    rows = rows.filter((a) => (a.libelle || '').toLowerCase().includes(q));
+                }
+                setCount(countId, rows.length, 'année');
+                if (!rows.length) {
+                    tbody.innerHTML = emptyRow(
+                        7,
+                        'Aucune année scolaire',
+                        'Créez l\'année nationale (ex. 2025-2026).',
+                    );
+                    return;
+                }
+                tbody.innerHTML = rows.map((a) => `
+                    <tr>
+                        <td data-label="Libellé"><strong>${escapeHtml(a.libelle)}</strong></td>
+                        <td data-label="Début">${escapeHtml(a.date_debut || '—')}</td>
+                        <td data-label="Fin">${escapeHtml(a.date_fin || '—')}</td>
+                        <td data-label="Régime"><span class="badge badge-neutral">${escapeHtml(a.regime_display || a.regime || '—')}</span></td>
+                        <td data-label="Périodes">${a.nb_periodes ?? '—'}</td>
+                        <td data-label="Statut">
+                            <span class="badge ${a.active ? 'badge-success' : 'badge-neutral'}">${a.active ? 'Active (nationale)' : 'Inactive'}</span>
+                        </td>
+                        <td data-label="Actions"><div class="actions-inline">
+                            <button type="button" class="btn btn-ghost btn-sm" data-edit="${a.id}" title="Modifier" aria-label="Modifier">${ico('edit')}<span>Modifier</span></button>
+                            ${a.active ? '' : `<button type="button" class="btn btn-secondary btn-sm" data-activate="${a.id}" title="Activer" aria-label="Activer">${ico('check')}<span>Activer</span></button>`}
+                            <button type="button" class="btn btn-danger btn-sm" data-del="${a.id}" title="Supprimer" aria-label="Supprimer">${ico('trash')}<span>Supprimer</span></button>
+                        </div></td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                tbody.innerHTML = emptyRow(7, 'Erreur de chargement', err.message || 'Impossible de charger.');
+                setCount(countId, 0, 'année');
+                toast(err.message || 'Impossible de charger les années.', 'error');
+            }
+        }
+
+        btnNew?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openForm(null);
+        });
+        btnSearch?.addEventListener('click', () => loadList());
+        searchInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadList();
+            }
+        });
+
+        table?.querySelector('tbody')?.addEventListener('click', async (e) => {
+            const edit = e.target.closest('[data-edit]');
+            const activate = e.target.closest('[data-activate]');
+            const del = e.target.closest('[data-del]');
+            if (edit) {
+                const row = cache.find((x) => String(x.id) === String(edit.dataset.edit));
+                openForm(row || null);
+                return;
+            }
+            if (activate) {
+                try {
+                    await api(`${API}/annees-scolaires/${activate.dataset.activate}/`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({ active: true }),
+                    });
+                    toast('Année nationale activée.', 'success');
+                    await loadList();
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+                return;
+            }
+            if (del) {
+                if (!confirm('Supprimer cette année scolaire et ses périodes ?')) return;
+                try {
+                    await api(`${API}/annees-scolaires/${del.dataset.del}/`, { method: 'DELETE' });
+                    toast('Année supprimée.', 'success');
+                    await loadList();
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            }
+        });
+
+        (el('btnSupprimerAnnee') || el('btnSupprimerAnneeParam'))?.addEventListener('click', async () => {
+            const id = (el('anneeId') || el('anneeParamId'))?.value;
+            if (!id || !confirm('Supprimer cette année scolaire et ses périodes ?')) return;
+            try {
+                await api(`${API}/annees-scolaires/${id}/`, { method: 'DELETE' });
+                toast('Année supprimée.', 'success');
+                closeModal(modalId);
+                await loadList();
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        form?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = ((el('anneeId') || el('anneeParamId'))?.value || '').trim();
+            const libelle = (field('libelle', 'anneeLibelle')?.value || '').trim();
+            const regime = field('regime', 'anneeRegime')?.value || 'secondaire';
+            const dateDebut = field('date_debut', 'anneeDebut')?.value || '';
+            const dateFin = field('date_fin', 'anneeFin')?.value || '';
+            const activeEl = field('active', 'anneeActive') || el('anneeParamActive');
+            const active = !!activeEl?.checked;
+            setError('');
+
+            if (!libelle || !dateDebut || !dateFin) {
+                const msg = 'Libellé, début et fin sont obligatoires.';
+                setError(msg);
+                toast(msg, 'warning');
+                return;
+            }
+            if (dateFin < dateDebut) {
+                const msg = 'La date de fin doit être postérieure au début.';
+                setError(msg);
+                toast(msg, 'warning');
+                return;
+            }
+
+            const payload = {
+                libelle,
+                regime,
+                date_debut: dateDebut,
+                date_fin: dateFin,
+                active,
+            };
+            const submitBtn = el('btnSaveAnnee') || el('btnSubmitAnneeParam')
+                || form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                if (id) {
+                    await api(`${API}/annees-scolaires/${id}/`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(payload),
+                    });
+                    toast('Année mise à jour.', 'success');
+                } else {
+                    const created = await api(`${API}/annees-scolaires/`, {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                    const n = created?.nb_periodes ?? 0;
+                    toast(n ? `Année créée avec ${n} période(s).` : 'Année créée.', 'success');
+                }
+                closeModal(modalId);
+                form.reset();
+                await loadList();
+            } catch (err) {
+                const msg = err.message || 'Échec de l\'enregistrement.';
+                setError(msg);
+                toast(msg, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        loadList().catch((err) => toast(err.message, 'error'));
+    }
+
+    /* ---------- Paramètres — Gestion documentaire (référentiel) ---------- */
+    function initParametresArretes() {
+        const app = document.getElementById('arretesApp');
+        if (!app) return;
+        if (app.dataset.bound === '1') return;
+        app.dataset.bound = '1';
+        bindModalClosers();
+        bindFileDropPreview('arreteFichier');
+        bindFileDropPreview('detailArreteFichier');
+
+        const table = document.getElementById('tableArretes');
+        const form = document.getElementById('formArrete');
+        const searchInput = document.getElementById('searchArretes');
+        let cache = [];
+        let pageArretes = 1;
+        let detailRow = null;
+        const PAGE_SIZE = 20;
+
+        function setError(msg) {
+            const box = document.getElementById('arreteError');
+            if (!box) return;
+            box.hidden = !msg;
+            box.textContent = msg || '';
+        }
+
+        function refreshDetailFileUi(row) {
+            const lien = document.getElementById('lienPdfDetailArrete');
+            const hint = document.getElementById('detailArreteFichierHint');
+            const fileInput = document.getElementById('detailArreteFichier');
+            const fileTitle = document.getElementById('detailArreteFichierTitle');
+            const drop = fileInput?.closest('.file-drop');
+            const pdfPanel = document.querySelector('.doc-detail-pdf');
+            if (fileInput) fileInput.value = '';
+            drop?.classList.remove('has-file', 'is-dragover');
+            if (fileTitle) fileTitle.textContent = 'Déposer un PDF ou cliquer pour parcourir';
+            if (lien) {
+                if (row?.fichier_url) {
+                    lien.hidden = false;
+                    lien.href = row.fichier_url;
+                } else {
+                    lien.hidden = true;
+                    lien.removeAttribute('href');
+                }
+            }
+            if (hint) {
+                hint.textContent = row?.fichier_url
+                    ? `Fichier actuel : ${row.nom_fichier || 'PDF joint'}`
+                    : 'Aucun fichier joint pour le moment.';
+            }
+            pdfPanel?.classList.toggle('has-file', !!row?.fichier_url);
+        }
+
+        function openDetail(row) {
+            if (!row) return;
+            detailRow = row;
+            const idEl = document.getElementById('detailArreteId');
+            if (idEl) idEl.value = row.id || '';
+
+            const numeroEl = document.getElementById('titreDetailArrete');
+            const objetEl = document.getElementById('detailArreteObjet');
+            const sous = document.getElementById('sousTitreDetailArrete');
+            const chips = document.getElementById('detailArreteChips');
+            const descEl = document.getElementById('detailArreteDescription');
+            const descSection = document.getElementById('sectionDetailArreteDescription');
+
+            if (numeroEl) numeroEl.textContent = row.numero || '—';
+            if (objetEl) objetEl.textContent = row.objet || 'Sans objet';
+            if (sous) {
+                sous.textContent = [
+                    row.autorite || '',
+                    formatDateFr(row.date_arrete),
+                ].filter(Boolean).join(' · ') || 'Référentiel documentaire';
+            }
+            if (chips) {
+                const type = escapeHtml(row.type_display || row.type_arrete || 'Document');
+                const statut = row.actif !== false
+                    ? '<span class="badge badge-success">Actif</span>'
+                    : '<span class="badge badge-neutral">Inactif</span>';
+                const ecoles = Number(row.nombre_ecoles || 0);
+                chips.innerHTML = `
+                    <span class="badge badge-info">${type}</span>
+                    ${statut}
+                    <span class="badge badge-neutral">${ecoles} école${ecoles > 1 ? 's' : ''}</span>
+                `;
+            }
+
+            fillDetailList('blocDetailArreteIdentite', [
+                ['N° référence', row.numero],
+                ['Objet', row.objet],
+                ['Type', row.type_display || row.type_arrete],
+            ]);
+            fillDetailList('blocDetailArreteEmission', [
+                ['Date', formatDateFr(row.date_arrete)],
+                ['Signataire', row.signataire],
+                ['Autorité', row.autorite],
+            ]);
+
+            const desc = (row.description || '').trim();
+            if (descEl) descEl.textContent = desc || 'Aucune description.';
+            if (descSection) descSection.hidden = !desc;
+
+            refreshDetailFileUi(row);
+            openModal('modalDetailArrete');
+        }
+
+        function openForm(row) {
+            if (!form) return;
+            form.reset();
+            setError('');
+            const idEl = document.getElementById('arreteId');
+            const titre = document.getElementById('titreModalArrete');
+            const btnDel = document.getElementById('btnSupprimerArrete');
+            const btnSave = document.getElementById('btnSaveArrete');
+            const fileTitle = document.getElementById('arreteFichierTitle');
+            const fileActuel = document.getElementById('arreteFichierActuel');
+            form.querySelector('.file-drop')?.classList.remove('has-file', 'is-dragover');
+            if (fileTitle) fileTitle.textContent = 'Déposer le fichier PDF ou cliquer';
+
+            if (idEl) idEl.value = row?.id || '';
+            if (titre) titre.textContent = row ? 'Modifier le document' : 'Nouveau document';
+            if (btnDel) btnDel.hidden = !row?.id;
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.innerHTML = `${ico('save')}${row ? 'Enregistrer' : 'Créer'}`;
+            }
+            if (row) {
+                form.numero.value = row.numero || '';
+                form.objet.value = row.objet || '';
+                form.type_arrete.value = row.type_arrete || 'arrete';
+                form.date_arrete.value = (row.date_arrete || '').slice(0, 10);
+                form.signataire.value = row.signataire || '';
+                form.autorite.value = row.autorite || 'EPSP';
+                form.description.value = row.description || '';
+                form.actif.checked = row.actif !== false;
+                if (fileActuel) {
+                    if (row.fichier_url) {
+                        fileActuel.hidden = false;
+                        fileActuel.innerHTML = `Fichier actuel : <a href="${escapeHtml(row.fichier_url)}" target="_blank" rel="noopener">${escapeHtml(row.nom_fichier || 'Ouvrir')}</a>`;
+                    } else {
+                        fileActuel.hidden = true;
+                        fileActuel.innerHTML = '';
+                    }
+                }
+            } else {
+                form.autorite.value = 'EPSP';
+                form.actif.checked = true;
+                form.date_arrete.value = new Date().toISOString().slice(0, 10);
+                if (fileActuel) {
+                    fileActuel.hidden = true;
+                    fileActuel.innerHTML = '';
+                }
+            }
+            openModal('modalArrete');
+        }
+
+        async function loadList(page = pageArretes) {
+            const tbody = table?.querySelector('tbody');
+            if (!tbody) return;
+            pageArretes = page;
+            tbody.innerHTML = emptyRow(7, 'Chargement…', 'Récupération du référentiel.');
+            try {
+                const params = new URLSearchParams({
+                    page: String(pageArretes),
+                    page_size: String(PAGE_SIZE),
+                });
+                const type = document.getElementById('filtreTypeArrete')?.value || '';
+                const q = (searchInput?.value || '').trim();
+                if (type) params.set('type_arrete', type);
+                if (q) params.set('search', q);
+                const data = await api(`${API}/arretes/?${params}`);
+                const rows = Array.isArray(data) ? data : (data.results || []);
+                const total = Array.isArray(data) ? rows.length : (data.count ?? rows.length);
+                cache = rows;
+                setCount('countArretes', total, 'document');
+                const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+                renderPagination('paginationArretes', pageArretes, totalPages, loadList);
+                if (!rows.length) {
+                    tbody.innerHTML = emptyRow(
+                        7,
+                        'Aucun document',
+                        'Ajoutez le premier document au référentiel national.',
+                    );
+                    return;
+                }
+                tbody.innerHTML = rows.map((a) => {
+                    const afficher = a.fichier_url
+                        ? `<a class="btn btn-ghost btn-sm" href="${escapeHtml(a.fichier_url)}" target="_blank" rel="noopener" title="Afficher le PDF">${ico('pdf')}<span>Afficher</span></a>`
+                        : '';
+                    return `
+                    <tr>
+                        <td data-label="N°"><strong>${escapeHtml(a.numero)}</strong></td>
+                        <td data-label="Objet">${escapeHtml(a.objet || '—')}</td>
+                        <td data-label="Type"><span class="badge badge-neutral">${escapeHtml(a.type_display || a.type_arrete)}</span></td>
+                        <td data-label="Date">${escapeHtml(formatDateFr(a.date_arrete) || '—')}</td>
+                        <td data-label="Signataire">${escapeHtml(a.signataire || '—')}</td>
+                        <td data-label="Autorité">${escapeHtml(a.autorite || '—')}</td>
+                        <td data-label="Actions"><div class="actions-inline">
+                            <button type="button" class="btn btn-ghost btn-sm" data-detail="${a.id}" title="Détail">${ico('eye')}<span>Détail</span></button>
+                            ${afficher}
+                        </div></td>
+                    </tr>`;
+                }).join('');
+            } catch (err) {
+                tbody.innerHTML = emptyRow(7, 'Erreur de chargement', err.message || 'Impossible de charger.');
+                setCount('countArretes', 0, 'document');
+                renderPagination('paginationArretes', 1, 1, loadList);
+                toast(err.message || 'Impossible de charger la gestion documentaire.', 'error');
+            }
+        }
+
+        document.getElementById('btnNouvelArrete')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openForm(null);
+        });
+        document.getElementById('btnSearchArretes')?.addEventListener('click', () => loadList(1));
+        searchInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loadList(1);
+            }
+        });
+        document.getElementById('filtreTypeArrete')?.addEventListener('change', () => loadList(1));
+
+        table?.querySelector('tbody')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-detail]');
+            if (!btn) return;
+            const row = cache.find((x) => String(x.id) === String(btn.dataset.detail));
+            openDetail(row || null);
+        });
+
+        document.getElementById('btnJoindrePdfDetailArrete')?.addEventListener('click', async () => {
+            const id = (document.getElementById('detailArreteId')?.value || '').trim()
+                || String(detailRow?.id || '');
+            const fileInput = document.getElementById('detailArreteFichier');
+            const fichier = fileInput?.files?.[0];
+            if (!id) {
+                toast('Document introuvable.', 'error');
+                return;
+            }
+            if (!fichier || !fichier.size) {
+                toast('Choisissez un fichier PDF à joindre.', 'warning');
+                return;
+            }
+            const name = (fichier.name || '').toLowerCase();
+            const isPdf = fichier.type === 'application/pdf' || name.endsWith('.pdf');
+            if (!isPdf) {
+                toast('Seuls les fichiers PDF sont acceptés.', 'warning');
+                return;
+            }
+            const btn = document.getElementById('btnJoindrePdfDetailArrete');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Envoi…';
+            }
+            try {
+                const fd = new FormData();
+                fd.append('fichier', fichier, fichier.name);
+                const updated = await api(`${API}/arretes/${id}/`, {
+                    method: 'PATCH',
+                    body: fd,
+                    headers: {},
+                });
+                toast('PDF joint au document.', 'success');
+                detailRow = updated || detailRow;
+                if (updated) {
+                    const idx = cache.findIndex((x) => String(x.id) === String(updated.id));
+                    if (idx >= 0) cache[idx] = updated;
+                    openDetail(updated);
+                }
+                await loadList(pageArretes);
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = `${ico('upload')}Joindre le PDF`;
+                }
+            }
+        });
+
+        document.getElementById('btnSupprimerArrete')?.addEventListener('click', async () => {
+            const id = document.getElementById('arreteId')?.value;
+            if (!id || !confirm('Supprimer ce document du référentiel ?')) return;
+            try {
+                await api(`${API}/arretes/${id}/`, { method: 'DELETE' });
+                toast('Document supprimé.', 'success');
+                closeModal('modalArrete');
+                await loadList(pageArretes);
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
+        form?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            setError('');
+            const id = (document.getElementById('arreteId')?.value || '').trim();
+            const fd = new FormData(form);
+            fd.set('actif', form.actif.checked ? 'true' : 'false');
+            const fichier = document.getElementById('arreteFichier')?.files?.[0];
+            if (!fichier) fd.delete('fichier');
+
+            const submitBtn = document.getElementById('btnSaveArrete');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                if (id) {
+                    await api(`${API}/arretes/${id}/`, {
+                        method: 'PATCH',
+                        body: fd,
+                        headers: {},
+                    });
+                    toast('Document mis à jour.', 'success');
+                } else {
+                    await api(`${API}/arretes/`, {
+                        method: 'POST',
+                        body: fd,
+                        headers: {},
+                    });
+                    toast('Document créé.', 'success');
+                }
+                closeModal('modalArrete');
+                form.reset();
+                await loadList();
+            } catch (err) {
+                const msg = err.message || 'Échec de l\'enregistrement.';
+                setError(msg);
+                toast(msg, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        loadList().catch((err) => toast(err.message, 'error'));
     }
 
     /* ---------- Paramètres — Structure scolaire (CRUD) ---------- */
@@ -4396,6 +6009,7 @@ const EducRDC = (() => {
                 setCount('countClasses', data.count ?? rows.length, 'classe');
                 renderClassesHierarchy(container, rows, {
                     onEdit: (c) => ouvrirModalClasseParam(c),
+                    expandSections: true,
                 });
             } catch (err) {
                 container.innerHTML = `
@@ -4709,21 +6323,20 @@ const EducRDC = (() => {
             if (ecoleId) localStorage.setItem('educrdc_structure_ecole', ecoleId);
             else localStorage.removeItem('educrdc_structure_ecole');
             majEtatEcoleSelection();
+            try {
+                const url = new URL(window.location.href);
+                if (ecoleId) url.searchParams.set('ecole', ecoleId);
+                else url.searchParams.delete('ecole');
+                window.history.replaceState({}, '', url);
+            } catch (_) { /* ignore */ }
             if (!ecoleId) {
                 await actualiserResume();
                 return;
             }
-            // Après choix de l'école → ouvrir l'étape 2 sur Affectation
-            document.querySelectorAll('#paramScolaireApp .tab-btn').forEach((b) => {
-                const on = b.dataset.tab === 'affectation';
-                b.classList.toggle('active', on);
-                b.setAttribute('aria-selected', on ? 'true' : 'false');
-            });
-            document.querySelectorAll('#paramScolaireApp .tab-panel').forEach((panel) => {
-                const on = panel.id === 'tab-affectation';
-                panel.hidden = !on;
-                panel.classList.toggle('active', on);
-            });
+            // Conserver l'onglet courant (ex. Classes depuis le menu Référentiel)
+            const tabCourant = document.querySelector('#paramScolaireApp .tab-btn.active')?.dataset.tab
+                || 'affectation';
+            activerOngletStructure(tabCourant);
             await rechargerOngletCourant();
         });
 
@@ -5037,33 +6650,38 @@ const EducRDC = (() => {
             return tab;
         }
 
-        // Boot — étape 1 : école, puis onglet demandé par le sous-menu (?onglet=)
+        // Boot — école (?ecole=) puis onglet (?onglet=classes|affectation|…)
         (async () => {
+            const params = new URLSearchParams(window.location.search);
+            const ongletDemande = params.get('onglet') || params.get('tab') || 'affectation';
+            const ecoleUrl = params.get('ecole');
+
             majEtatEcoleSelection();
             if (ecoleFigee && app.dataset.ecoleId) {
                 ecoleId = String(app.dataset.ecoleId);
+            } else if (ecoleUrl) {
+                ecoleId = String(ecoleUrl);
             } else {
                 ecoleId = '';
             }
             await chargerSelectEcoles();
+            if (ecoleId && selEcole) selEcole.value = ecoleId;
             app.dataset.ecoleId = ecoleId || '';
             majEtatEcoleSelection();
 
-            const params = new URLSearchParams(window.location.search);
-            const onglet = activerOngletStructure(params.get('onglet') || 'affectation');
-            // Mettre à jour l’URL sans recharger si absente
-            if (!params.get('onglet')) {
-                const url = new URL(window.location.href);
-                url.searchParams.set('onglet', onglet);
-                window.history.replaceState({}, '', url);
-            }
+            const onglet = activerOngletStructure(ongletDemande);
+            const url = new URL(window.location.href);
+            url.searchParams.set('onglet', onglet);
+            if (ecoleId) url.searchParams.set('ecole', ecoleId);
+            else url.searchParams.delete('ecole');
+            window.history.replaceState({}, '', url);
 
             if (ecoleId) {
                 await rechargerOngletCourant();
             } else {
                 await actualiserResume();
                 if (onglet !== 'affectation') {
-                    toast('Sélectionnez d\'abord une école, puis l\'onglet demandé.', 'info');
+                    toast('Sélectionnez d\'abord une école pour voir ses classes.', 'info');
                 }
             }
         })().catch((err) => toast(err.message, 'error'));
@@ -5079,9 +6697,46 @@ const EducRDC = (() => {
         initRapports,
         initParametres,
         initParametresScolaire,
+        initParametresAnnees,
+        initParametresArretes,
         initUtilisateurs,
+        initMonitoringUtilisateurs,
+        initMonitoringCarte,
         initEvaluations,
+        openModal,
+        closeModal,
         toast,
         api,
     };
+})();
+
+window.EducRDC = EducRDC;
+
+/* Géolocalisation navigateur (optionnelle) pour le monitoring admin */
+(function initPresenceGeoClient() {
+    function envoyer(position) {
+        if (!window.EducRDC?.api) return;
+        const { latitude, longitude, accuracy } = position.coords || {};
+        if (latitude == null || longitude == null) return;
+        EducRDC.api('/api/monitoring/presence-geo/', {
+            method: 'POST',
+            body: JSON.stringify({ latitude, longitude, accuracy }),
+        }).catch(() => {});
+    }
+
+    function demarrer() {
+        if (!document.querySelector('.user-chip')) return;
+        if (!navigator.geolocation) return;
+        const opts = { enableHighAccuracy: false, maximumAge: 300000, timeout: 8000 };
+        navigator.geolocation.getCurrentPosition(envoyer, () => {}, opts);
+        setInterval(() => {
+            navigator.geolocation.getCurrentPosition(envoyer, () => {}, opts);
+        }, 10 * 60 * 1000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', demarrer);
+    } else {
+        demarrer();
+    }
 })();

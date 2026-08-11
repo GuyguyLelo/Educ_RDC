@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% load ui_icons %}
+
+{% block title %}Gestion documentaire{% endblock %}
+{% block page_title %}Gestion documentaire{% endblock %}
+{% block page_subtitle %}Référentiel national — documents administratifs des écoles{% endblock %}
+
+{% block content %}
+<div class="list-shell" id="arretesApp">
+    <div class="detail-card" style="margin-bottom:0.75rem">
+        <p class="form-hint" style="margin:0">
+            Module de <strong>gestion documentaire</strong> :
+            enregistrez les documents officiels (arrêté, agrément, autorisation…) qui servent de référentiel.
+            À la création d’une école, rattachez un document pour préremplir le N° d’agrément
+            et conserver le lien administratif.
+        </p>
+    </div>
+
+    <section class="toolbar">
+        <div class="search-box">
+            <div class="search-field">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+                <input type="search" id="searchArretes" placeholder="N°, objet, autorité…">
+            </div>
+            <button class="btn btn-ghost" id="btnSearchArretes" type="button">{% ico 'search' %}Rechercher</button>
+            <select id="filtreTypeArrete" aria-label="Type de document">
+                <option value="">Tous les types</option>
+                <option value="arrete">Arrêté</option>
+                <option value="agrement">Décision d'agrément</option>
+                <option value="autorisation">Autorisation d'ouverture</option>
+                <option value="modification">Modification de statut</option>
+                <option value="convention">Convention</option>
+                <option value="autre">Autre</option>
+            </select>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-primary" id="btnNouvelArrete" type="button">{% ico 'plus' %}Nouveau document</button>
+        </div>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Documents du référentiel</h2>
+                <p>Documents nationaux (dont les arrêtés) utilisés pour l’identification et l’agrément des établissements.</p>
+            </div>
+            <span class="list-count" id="countArretes">—</span>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table" id="tableArretes">
+                <thead>
+                    <tr>
+                        <th>N°</th>
+                        <th>Objet</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                        <th>Signataire</th>
+                        <th>Autorité</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="pagination" id="paginationArretes"></div>
+    </section>
+</div>
+
+<div class="modal" id="modalDetailArrete" hidden>
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Détail documentaire</h3>
+                <p>Fiche du document référentiel</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="doc-detail-body">
+            <input type="hidden" id="detailArreteId" value="">
+
+            <header class="doc-detail-hero">
+                <div class="doc-detail-hero-main">
+                    <p class="doc-detail-kicker" id="titreDetailArrete">—</p>
+                    <h4 id="detailArreteObjet">—</h4>
+                    <p class="doc-detail-sub" id="sousTitreDetailArrete">—</p>
+                </div>
+                <div class="doc-detail-chips" id="detailArreteChips"></div>
+            </header>
+
+            <div class="doc-detail-grid">
+                <section class="doc-detail-panel">
+                    <h5 class="doc-detail-panel-title">Identification</h5>
+                    <dl class="detail-list compact" id="blocDetailArreteIdentite"></dl>
+                </section>
+                <section class="doc-detail-panel">
+                    <h5 class="doc-detail-panel-title">Émission</h5>
+                    <dl class="detail-list compact" id="blocDetailArreteEmission"></dl>
+                </section>
+            </div>
+
+            <section class="doc-detail-panel doc-detail-panel-full" id="sectionDetailArreteDescription">
+                <h5 class="doc-detail-panel-title">Description</h5>
+                <p class="doc-detail-description" id="detailArreteDescription">—</p>
+            </section>
+
+            <section class="doc-detail-panel doc-detail-pdf">
+                <div class="doc-detail-pdf-head">
+                    <div>
+                        <h5 class="doc-detail-panel-title" style="margin:0">Pièce jointe PDF</h5>
+                        <p class="form-hint" id="detailArreteFichierHint" style="margin:0.2rem 0 0">Aucun fichier joint</p>
+                    </div>
+                    <a class="btn btn-secondary btn-sm" id="lienPdfDetailArrete" href="#" target="_blank" rel="noopener" hidden>{% ico 'pdf' %}Ouvrir</a>
+                </div>
+                <label class="file-drop">
+                    <input type="file" name="fichier" id="detailArreteFichier" accept=".pdf,application/pdf">
+                    <span class="file-drop-title" id="detailArreteFichierTitle">Déposer un PDF ou cliquer pour parcourir</span>
+                    <span class="file-drop-sub">PDF uniquement — remplace le fichier existant s’il y en a un</span>
+                </label>
+            </section>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Fermer</button>
+            <button type="button" class="btn btn-primary" id="btnJoindrePdfDetailArrete">{% ico 'upload' %}Joindre le PDF</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="modalArrete" hidden>
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalArrete">Nouveau document</h3>
+                <p>Document administratif national — le type peut être un arrêté, un agrément, etc.</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formArrete" novalidate enctype="multipart/form-data">
+            <input type="hidden" id="arreteId" value="">
+            <p class="form-error" id="arreteError" hidden></p>
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identification</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="arreteNumero">N° référence <span class="req">*</span></label>
+                            <input id="arreteNumero" name="numero" required placeholder="Ex: AGR/EPSP/2024/001" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="arreteType">Type <span class="req">*</span></label>
+                            <select id="arreteType" name="type_arrete" required>
+                                <option value="arrete" selected>Arrêté</option>
+                                <option value="agrement">Décision d'agrément</option>
+                                <option value="autorisation">Autorisation d'ouverture</option>
+                                <option value="modification">Modification de statut</option>
+                                <option value="convention">Convention</option>
+                                <option value="autre">Autre</option>
+                            </select>
+                        </div>
+                        <div class="form-group full">
+                            <label for="arreteObjet">Objet <span class="req">*</span></label>
+                            <input id="arreteObjet" name="objet" required placeholder="Ex: Agrément de l'EP Boyoma">
+                        </div>
+                        <div class="form-group">
+                            <label for="arreteDate">Date <span class="req">*</span></label>
+                            <input id="arreteDate" name="date_arrete" type="date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="arreteSignataire">Nom du signataire</label>
+                            <input id="arreteSignataire" name="signataire" placeholder="Ex: Ministre de l'EPSP">
+                        </div>
+                        <div class="form-group">
+                            <label for="arreteAutorite">Autorité</label>
+                            <input id="arreteAutorite" name="autorite" placeholder="EPSP" value="EPSP">
+                        </div>
+                        <div class="form-group full">
+                            <label for="arreteDescription">Description / observations</label>
+                            <textarea id="arreteDescription" name="description" rows="3" placeholder="Notes optionnelles…"></textarea>
+                        </div>
+                        <div class="form-group full">
+                            <label class="file-drop">
+                                <input type="file" name="fichier" id="arreteFichier" accept=".pdf,.doc,.docx,application/pdf,image/*">
+                                <span class="file-drop-title" id="arreteFichierTitle">Déposer le fichier PDF ou cliquer</span>
+                                <span class="file-drop-sub">PDF recommandé — optionnel</span>
+                            </label>
+                            <p class="form-hint" id="arreteFichierActuel" hidden></p>
+                        </div>
+                        <div class="form-group full">
+                            <label class="checkbox-inline" for="arreteActif">
+                                <input type="checkbox" name="actif" id="arreteActif" value="1" checked>
+                                <span>Document actif (proposé dans les sélecteurs)</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerArrete" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary" id="btnSaveArrete">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initParametresArretes());
+</script>
+{% endblock %}

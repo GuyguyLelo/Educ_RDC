@@ -160,13 +160,13 @@ MODELES: dict[str, dict] = {
         'cle': 'eleves',
         'titre': 'Élèves',
         'description': (
-            'Import massif des élèves (matricule, N° identification / permanent, '
+            'Import massif des élèves (matricule, N° identification / permanent / impôt, '
             'classe existante de l\'école…).'
         ),
         'fichier': 'modele_import_eleves.xlsx',
         'obligatoires': ['matricule', 'nom', 'prenom', 'date_naissance', 'sexe', 'classe'],
         'colonnes': [
-            'matricule', 'numero_identification', 'numero_permanent',
+            'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
             'nom', 'postnom', 'prenom', 'date_naissance', 'sexe', 'classe',
             'ecole_code', 'lieu_naissance', 'adresse',
             'nom_pere', 'telephone_pere', 'email_pere',

@@ -33,7 +33,7 @@ class EleveSerializer(serializers.ModelSerializer):
     class Meta:
         model = Eleve
         fields = [
-            'id', 'matricule', 'numero_identification', 'numero_permanent',
+            'id', 'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
             'code_unique', 'qr_code', 'qr_code_url',
             'nom', 'postnom', 'prenom', 'nom_complet',
             'date_naissance', 'lieu_naissance', 'sexe', 'sexe_display',
@@ -64,6 +64,8 @@ class EleveSerializer(serializers.ModelSerializer):
             'photo_tuteur': {'required': False, 'allow_null': True},
             'numero_identification': {'required': False, 'allow_blank': True, 'allow_null': True},
             'numero_permanent': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'numero_impot': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'matricule': {'required': False, 'allow_blank': True},
             'classe': {'required': True, 'allow_null': False},
         }
 
@@ -75,11 +77,19 @@ class EleveSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(file_field.url)
         return file_field.url
 
+    def validate_matricule(self, value):
+        value = (value or '').strip()
+        return value or None
+
     def validate_numero_identification(self, value):
         value = (value or '').strip()
         return value or None
 
     def validate_numero_permanent(self, value):
+        value = (value or '').strip()
+        return value or None
+
+    def validate_numero_impot(self, value):
         value = (value or '').strip()
         return value or None
 

@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% load ui_icons %}
+{% load static %}
+
+{% block title %}Carte — utilisateurs connectés{% endblock %}
+{% block page_title %}Carte des utilisateurs connectés{% endblock %}
+{% block page_subtitle %}Carte limitée au territoire de la République démocratique du Congo{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+    .monitoring-map-layout {
+        display: grid;
+        grid-template-columns: minmax(260px, 320px) 1fr;
+        gap: 1rem;
+        min-height: calc(100vh - 210px);
+    }
+    .monitoring-map-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-height: 420px;
+    }
+    #monitoringMap {
+        width: 100%;
+        min-height: 420px;
+        height: calc(100vh - 230px);
+        border-radius: 10px;
+        border: 1px solid rgba(0, 50, 100, 0.12);
+        z-index: 1;
+        background: #e8eef5;
+    }
+    .monitoring-map-side {
+        background: var(--surface, #fff);
+        border: 1px solid rgba(0, 50, 100, 0.1);
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        display: flex;
+        flex-direction: column;
+        max-height: calc(100vh - 230px);
+        overflow: hidden;
+    }
+    .monitoring-map-side h3 {
+        margin: 0 0 0.35rem;
+        font-size: 1rem;
+    }
+    .monitoring-map-side .muted {
+        color: #5a6a7a;
+        font-size: 0.85rem;
+        margin: 0 0 0.75rem;
+    }
+    #monitoringMapLegend {
+        overflow: auto;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+    }
+    .monitoring-map-item {
+        border: 1px solid rgba(0, 50, 100, 0.1);
+        border-radius: 8px;
+        padding: 0.55rem 0.65rem;
+        cursor: pointer;
+        background: #f7fafc;
+        text-align: left;
+        width: 100%;
+    }
+    .monitoring-map-item:hover,
+    .monitoring-map-item.active {
+        border-color: #007fff;
+        background: #eef6ff;
+    }
+    .monitoring-map-item strong {
+        display: block;
+        font-size: 0.9rem;
+    }
+    .monitoring-map-item span {
+        display: block;
+        font-size: 0.78rem;
+        color: #5a6a7a;
+    }
+    @media (max-width: 900px) {
+        .monitoring-map-layout {
+            grid-template-columns: 1fr;
+        }
+        #monitoringMap {
+            height: 50vh;
+            min-height: 320px;
+        }
+        .monitoring-map-side {
+            max-height: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="list-shell" id="monitoringCarteApp">
+    <section class="toolbar">
+        <div class="search-box">
+            <a class="btn btn-ghost" href="{% url 'monitoring_utilisateurs' %}">{% ico 'back' %}Liste</a>
+            <button class="btn btn-ghost" id="btnRefreshMonitoringCarte" type="button">{% ico 'search' %}Actualiser</button>
+            <button class="btn btn-secondary" id="btnCentrerRDC" type="button" title="Recadrer sur la République démocratique du Congo">RDC</button>
+        </div>
+        <div class="toolbar-actions">
+            <label class="btn btn-secondary btn-sm" style="gap:0.4rem;cursor:pointer">
+                <input type="checkbox" id="autoRefreshMonitoringCarte" checked style="margin:0">
+                Auto (30 s)
+            </label>
+            <span class="list-count" id="countMonitoringCarte">— sur la carte</span>
+        </div>
+    </section>
+
+    <div class="monitoring-map-layout">
+        <aside class="monitoring-map-side">
+            <h3>Utilisateurs localisés</h3>
+            <p class="muted" id="monitoringMapHint">Chargement…</p>
+            <div id="monitoringMapLegend"></div>
+        </aside>
+        <section class="monitoring-map-panel">
+            <div id="monitoringMap" role="region" aria-label="Carte des utilisateurs connectés"></div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initMonitoringCarte());
+</script>
+{% endblock %}

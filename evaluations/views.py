@@ -96,14 +96,68 @@ def _peut_saisir_classe(user, classe: Classe) -> bool:
     return False
 
 
+class PermissionAnneesScolaires(BasePermission):
+    """Référentiel national : écriture réservée à l'admin / agent national."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        return bool(user.est_admin or getattr(user, 'est_national', False))
+
+
 class AnneeScolaireViewSet(viewsets.ModelViewSet):
-    queryset = AnneeScolaire.objects.all()
+    """
+    Référentiel national des années scolaires.
+    Lecture : tous les authentifiés. Écriture : national / admin.
+    """
     serializer_class = AnneeScolaireSerializer
     permission_classes = [IsAuthenticated, GestionEvaluation]
+
+    def get_queryset(self):
+        from django.db.models import Count
+        qs = (
+            AnneeScolaire.objects
+            .annotate(nb_periodes=Count('periodes'))
+            .order_by('-date_debut', '-id')
+        )
+        active = self.request.query_params.get('active')
+        if active in ('1', 'true', 'True'):
+            qs = qs.filter(active=True)
+        return qs
+
+    def get_permissions(self):
+        if self.action in (
+            'create', 'update', 'partial_update', 'destroy',
+            'init_periodes',
+        ):
+            return [IsAuthenticated(), PermissionAnneesScolaires()]
+        return super().get_permissions()
 
     def perform_create(self, serializer):
         annee = serializer.save()
         creer_periodes_pour_annee(annee)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        annee = self.get_queryset().get(pk=serializer.instance.pk)
+        out = self.get_serializer(annee)
+        headers = self.get_success_headers(out.data)
+        return Response(out.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=False, methods=['get'], url_path='courante')
+    def courante(self, request):
+        """Année scolaire nationale active."""
+        annee = AnneeScolaire.get_active()
+        if not annee:
+            return Response(
+                {'detail': 'Aucune année scolaire active.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        annee = self.get_queryset().filter(pk=annee.pk).first() or annee
+        return Response(self.get_serializer(annee).data)
 
     @action(detail=True, methods=['post'], url_path='init-periodes')
     def init_periodes(self, request, pk=None):

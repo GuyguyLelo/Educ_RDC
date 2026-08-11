@@ -17,7 +17,7 @@ from .models import Eleve
 from .import_utils import importer_eleves, reponse_modele_xlsx
 from .pdf_fiche import generer_pdf_fiche_eleve
 from .serializers import EleveSerializer, EleveDetailSerializer
-from .services import assurer_qr_eleve, generer_qr_eleve
+from .services import assurer_qr_eleve, generer_prochain_matricule, generer_qr_eleve
 
 
 def synchroniser_biometrie_photo(eleve):
@@ -42,15 +42,12 @@ class EleveViewSet(viewsets.ModelViewSet):
         'classe',
         'classe__option',
         'classe__section',
-        'biometrie',
-    ).prefetch_related(
-        Prefetch('cartes', queryset=Carte.objects.order_by('-date_emission')),
     ).all()
     serializer_class = EleveSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     search_fields = [
-        'matricule', 'numero_identification', 'numero_permanent',
+        'matricule', 'numero_identification', 'numero_permanent', 'numero_impot',
         'nom', 'postnom', 'prenom', 'classe__nom',
         'nom_pere', 'nom_mere', 'nom_tuteur',
         'telephone_pere', 'telephone_mere', 'telephone_tuteur',
@@ -63,7 +60,21 @@ class EleveViewSet(viewsets.ModelViewSet):
         return EleveSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = Eleve.objects.select_related(
+            'ecole',
+            'ecole__province_educationnelle',
+            'ecole__province_educationnelle__province_administrative',
+            'ecole__antenne',
+            'classe',
+            'classe__option',
+            'classe__section',
+        )
+        # Détail : charger biométrie + cartes ; liste : allégé
+        if getattr(self, 'action', None) == 'retrieve':
+            qs = qs.select_related('biometrie').prefetch_related(
+                Prefetch('cartes', queryset=Carte.objects.order_by('-date_emission')),
+            )
+        qs = qs.all()
         user = self.request.user
         ecole = self.request.query_params.get('ecole')
         classe = self.request.query_params.get('classe')
@@ -83,9 +94,25 @@ class EleveViewSet(viewsets.ModelViewSet):
             qs = qs.filter(ecole__antenne_id=user.antenne_id)
         elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(ecole_id=user.ecole_id)
+        elif user.ecole_id and not (
+            getattr(user, 'est_admin', False) or getattr(user, 'est_national', False)
+        ):
+            # Sécurité : tout compte rattaché à une école reste borné
+            qs = qs.filter(ecole_id=user.ecole_id)
 
-        if ecole and not getattr(user, 'est_enseignant', False):
+        # Filtre école UI — un utilisateur école ne peut pas élargir hors de son établissement
+        ecole_figee = (
+            getattr(user, 'est_utilisateur_ecole', False)
+            or (
+                bool(user.ecole_id)
+                and not (getattr(user, 'est_admin', False) or getattr(user, 'est_national', False))
+            )
+        )
+        if ecole_figee and user.ecole_id:
+            qs = qs.filter(ecole_id=user.ecole_id)
+        elif ecole and not getattr(user, 'est_enseignant', False):
             qs = qs.filter(ecole_id=ecole)
+
         if classe and not getattr(user, 'est_enseignant', False):
             qs = qs.filter(classe_id=classe)
         if q:
@@ -94,6 +121,7 @@ class EleveViewSet(viewsets.ModelViewSet):
                 Q(matricule__icontains=q)
                 | Q(numero_identification__icontains=q)
                 | Q(numero_permanent__icontains=q)
+                | Q(numero_impot__icontains=q)
                 | Q(nom__icontains=q)
                 | Q(postnom__icontains=q)
                 | Q(prenom__icontains=q)
@@ -101,9 +129,24 @@ class EleveViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        eleve = serializer.save()
-        synchroniser_biometrie_photo(eleve)
-        assurer_qr_eleve(eleve)
+        from django.db import transaction
+        with transaction.atomic():
+            # Matricule toujours attribué côté serveur (AAAA-0001)
+            serializer.validated_data['matricule'] = generer_prochain_matricule()
+            eleve = serializer.save()
+            synchroniser_biometrie_photo(eleve)
+            assurer_qr_eleve(eleve)
+
+    @action(detail=False, methods=['get'], url_path='prochain-matricule')
+    def prochain_matricule(self, request):
+        """Retourne le prochain matricule (AAAA-0001)."""
+        from .services import annee_pour_matricule, ordre_depuis_matricule
+        matricule = generer_prochain_matricule()
+        return Response({
+            'matricule': matricule,
+            'annee': annee_pour_matricule(),
+            'ordre': ordre_depuis_matricule(matricule),
+        })
 
     def perform_update(self, serializer):
         eleve = serializer.save()
