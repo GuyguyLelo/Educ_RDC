@@ -24,13 +24,10 @@ class CarteViewSet(viewsets.ModelViewSet):
         if statut:
             qs = qs.filter(statut=statut)
         user = self.request.user
+        # Enseignant : pas d'accès aux cartes scolaires
         if getattr(user, 'est_enseignant', False):
-            if not user.classe_id:
-                return qs.none()
-            qs = qs.filter(eleve__classe_id=user.classe_id)
-            if user.ecole_id:
-                qs = qs.filter(eleve__ecole_id=user.ecole_id)
-        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+            return qs.none()
+        if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(eleve__ecole_id=user.ecole_id)
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(eleve__ecole__province_educationnelle_id=user.province_educationnelle_id)

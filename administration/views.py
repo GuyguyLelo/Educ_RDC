@@ -181,6 +181,9 @@ def vue_eleve_detail(request, eleve_id):
 
 @login_required
 def vue_cartes(request):
+    if getattr(request.user, 'est_enseignant', False):
+        messages.warning(request, "Accès aux cartes scolaires réservé aux administratifs.")
+        return redirect('eleves')
     return render(request, 'cartes.html', {'page': 'cartes'})
 
 
@@ -202,21 +205,15 @@ def vue_parametres(request):
 @login_required
 @ensure_csrf_cookie
 def vue_parametres_scolaire(request):
-    """CRUD sections, options, classes et matières (programme scolaire)."""
+    """CRUD sections, options, classes et matières — administration nationale uniquement."""
     user = request.user
-    peut = (
-        getattr(user, 'est_admin', False)
-        or getattr(user, 'est_national', False)
-        or user.role == 'admin_ecole'
-    )
-    if not peut:
-        messages.warning(request, 'Accès réservé à l\'administration.')
+    if not getattr(user, 'est_national', False):
+        messages.warning(request, 'Accès réservé à l\'administration nationale.')
         return redirect('dashboard')
-    ecole_id = user.ecole_id if user.role == 'admin_ecole' else None
     return render(request, 'parametres_scolaire.html', {
         'page': 'parametres_scolaire',
-        'ecole_id': ecole_id or '',
-        'ecole_figee': bool(ecole_id),
+        'ecole_id': '',
+        'ecole_figee': False,
     })
 
 

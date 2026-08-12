@@ -67,6 +67,7 @@
         </div>
     </section>
 
+    {% if not request.user.est_enseignant %}
     <section class="detail-card" id="sectionQrEleve">
         <div class="detail-card-head">
             <h3 class="detail-card-title" style="margin:0;border:0;padding:0">QR code unique</h3>
@@ -89,6 +90,7 @@
             </div>
         </div>
     </section>
+    {% endif %}
 
     <section class="detail-card">
         <div class="detail-card-head">
@@ -97,6 +99,7 @@
         <div class="parent-cards" id="blocParents"></div>
     </section>
 
+    {% if not request.user.est_enseignant %}
     <section class="detail-card">
         <h3 class="detail-card-title">Cartes scolaires</h3>
         <div class="table-responsive">
@@ -113,6 +116,7 @@
             </table>
         </div>
     </section>
+    {% endif %}
 </div>
 
 {% if not request.user.est_enseignant %}

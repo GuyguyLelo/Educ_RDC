@@ -2,8 +2,8 @@
 
 {% load ui_icons %}
 {% block title %}Élèves{% endblock %}
-{% block page_title %}{% if request.user.est_enseignant %}Élèves de ma classe{% else %}Gestion des élèves{% endif %}{% endblock %}
-{% block page_subtitle %}{% if request.user.est_enseignant %}Classe {{ request.user.classe_nom|default:"—" }} — consultation{% else %}Enregistrement et recherche des élèves{% endif %}{% endblock %}
+{% block page_title %}{% if request.user.est_enseignant %}<span class="eleves-page-title">Élèves de ma classe</span>{% else %}Gestion des élèves{% endif %}{% endblock %}
+{% block page_subtitle %}{% if request.user.est_enseignant %}<span class="eleves-page-subtitle"><span class="eleves-classe-chip">Classe {{ request.user.classe_nom|default:"—" }}</span><span class="eleves-page-sep" aria-hidden="true"></span><span class="eleves-page-mode">consultation</span></span>{% else %}Enregistrement et recherche des élèves{% endif %}{% endblock %}
 
 {% block content %}
 <div class="list-shell" id="elevesApp"
@@ -17,6 +17,9 @@
                 <input type="search" id="searchEleves" placeholder="Matricule, N° identification, N° permanent, nom…">
             </div>
             <button class="btn btn-ghost" id="btnSearchEleves" type="button">{% ico 'search' %}Rechercher</button>
+            {% if request.user.est_enseignant %}
+            <a class="btn btn-secondary" id="btnImprimerListeEleves" href="/api/eleves/liste-pdf/" target="_blank" rel="noopener">{% ico 'pdf' %}Imprimer la liste</a>
+            {% endif %}
             <span class="badge badge-info" id="badgeEcoleEleves"{% if not request.user.est_utilisateur_ecole or not request.user.ecole %} hidden{% endif %}>{% if request.user.ecole %}{{ request.user.ecole.nom }}{% endif %}</span>
             <select id="filtreEcoleEleves" aria-label="Filtrer par école" {% if request.user.est_utilisateur_ecole and request.user.ecole_id or request.user.est_enseignant %}hidden{% endif %}>
                 <option value="">Toutes les écoles</option>
@@ -33,8 +36,8 @@
     <section class="list-panel">
         <div class="list-panel-header">
             <div>
-                <h2 id="titreListeEleves">{% if request.user.est_enseignant %}Élèves — {{ request.user.classe_nom|default:"ma classe" }}{% elif request.user.est_utilisateur_ecole and request.user.ecole %}Élèves — {{ request.user.ecole.nom }}{% else %}Liste des élèves{% endif %}</h2>
-                <p id="sousTitreListeEleves">{% if request.user.est_enseignant %}Uniquement les élèves de votre classe titulaire{% elif request.user.est_utilisateur_ecole and request.user.ecole %}Élèves de votre établissement uniquement{% else %}Filtrez par école pour alléger l’affichage — import Excel / CSV disponible{% endif %}</p>
+                <h2 id="titreListeEleves">Liste des élèves</h2>
+                <p id="sousTitreListeEleves" hidden></p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEleves">— résultats</span>
@@ -48,12 +51,9 @@
                 <thead>
                     <tr>
                         <th>Élève</th>
-                        <th>Matricule</th>
                         <th>N° Identification</th>
                         <th>N° Permanent</th>
-                        <th>N° Impôt</th>
                         <th>Sexe</th>
-                        <th>Naissance</th>
                         <th>École / Classe</th>
                         <th>Statut</th>
                         <th>Actions</th>

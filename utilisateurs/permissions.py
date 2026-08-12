@@ -41,7 +41,7 @@ class LecturePourTousEcritureAdmin(BasePermission):
             return False
         if request.method in SAFE_METHODS:
             return True
-        # Enseignant : lecture seule (élèves / cartes de sa classe)
+        # Enseignant : lecture seule (élèves de sa classe ; pas de cartes)
         return request.user.est_national or request.user.role in (
             'agent_provincial',
             'agent_antenne',
@@ -50,8 +50,11 @@ class LecturePourTousEcritureAdmin(BasePermission):
         )
 
 
-class GestionClassesEcole(BasePermission):
-    """Lecture pour authentifiés ; écriture admin, national ou administratif école."""
+class EcriturePhotoEleve(BasePermission):
+    """
+    Autorise le changement de photo élève pour les rôles opérationnels
+    et l'enseignant (limité à sa classe via le queryset).
+    """
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
@@ -60,10 +63,26 @@ class GestionClassesEcole(BasePermission):
             return True
         user = request.user
         return bool(
-            user.est_admin
+            getattr(user, 'est_enseignant', False)
             or getattr(user, 'est_national', False)
-            or user.role == 'admin_ecole'
+            or user.role in (
+                'agent_provincial',
+                'agent_antenne',
+                'admin',
+                'admin_ecole',
+            )
         )
+
+
+class GestionClassesEcole(BasePermission):
+    """Lecture pour authentifiés ; écriture réservée à l'administration nationale."""
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return bool(getattr(request.user, 'est_national', False))
 
 
 class GestionUtilisateurs(BasePermission):

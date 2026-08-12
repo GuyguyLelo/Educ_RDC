@@ -173,7 +173,7 @@ def _dessiner_filigrane(c, largeur, hauteur):
     c.restoreState()
 
 
-def generer_pdf_fiche_eleve(eleve) -> bytes:
+def generer_pdf_fiche_eleve(eleve, inclure_qr_cartes: bool = True) -> bytes:
     """Produit un PDF A4 de la fiche d'identité scolaire de l'élève."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -208,24 +208,25 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
     _photo(c, eleve, photo_x, photo_top)
 
     # QR unique sous la photo
-    qr_size = 28 * mm
-    qr_y = photo_top - 40 * mm - 3 * mm
-    if eleve.qr_code:
-        try:
-            c.drawImage(
-                eleve.qr_code.path,
-                photo_x + 2 * mm,
-                qr_y - qr_size,
-                width=qr_size,
-                height=qr_size,
-                preserveAspectRatio=True,
-                mask='auto',
-            )
-        except Exception:
-            pass
-    c.setFillColorRGB(0.3, 0.35, 0.4)
-    c.setFont('Helvetica', 6.5)
-    c.drawCentredString(photo_x + 16 * mm, qr_y - qr_size - 4 * mm, _texte(eleve.code_unique))
+    if inclure_qr_cartes:
+        qr_size = 28 * mm
+        qr_y = photo_top - 40 * mm - 3 * mm
+        if eleve.qr_code:
+            try:
+                c.drawImage(
+                    eleve.qr_code.path,
+                    photo_x + 2 * mm,
+                    qr_y - qr_size,
+                    width=qr_size,
+                    height=qr_size,
+                    preserveAspectRatio=True,
+                    mask='auto',
+                )
+            except Exception:
+                pass
+        c.setFillColorRGB(0.3, 0.35, 0.4)
+        c.setFont('Helvetica', 6.5)
+        c.drawCentredString(photo_x + 16 * mm, qr_y - qr_size - 4 * mm, _texte(eleve.code_unique))
 
     y = hauteur - 78 * mm
     y = _section(c, 'Identité', y, largeur)
@@ -235,7 +236,8 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
     y = _ligne(c, 'Sexe', eleve.get_sexe_display(), y)
     y = _ligne(c, 'Né(e) le', _date_fr(eleve.date_naissance), y)
     y = _ligne(c, 'Lieu de naissance', eleve.lieu_naissance, y)
-    y = _ligne(c, 'Code QR', eleve.code_unique, y)
+    if inclure_qr_cartes:
+        y = _ligne(c, 'Code QR', eleve.code_unique, y)
 
     y -= 3 * mm
     y = _section(c, 'Scolarité', y, largeur)
@@ -273,18 +275,19 @@ def generer_pdf_fiche_eleve(eleve) -> bytes:
         y = _section(c, 'Biométrie', y, largeur)
         y = _ligne(c, 'Statut', 'Validée' if bio.validee else 'En attente', y)
 
-    cartes = list(getattr(eleve, 'cartes', []).all()[:3]) if hasattr(eleve, 'cartes') else []
-    if cartes:
-        y -= 3 * mm
-        y = _section(c, 'Cartes scolaires', y, largeur)
-        for carte in cartes:
-            y = _ligne(
-                c,
-                carte.numero_carte,
-                f'{carte.get_statut_display()} — exp. {_date_fr(carte.date_expiration)}',
-                y,
-                x_val=70 * mm,
-            )
+    if inclure_qr_cartes:
+        cartes = list(getattr(eleve, 'cartes', []).all()[:3]) if hasattr(eleve, 'cartes') else []
+        if cartes:
+            y -= 3 * mm
+            y = _section(c, 'Cartes scolaires', y, largeur)
+            for carte in cartes:
+                y = _ligne(
+                    c,
+                    carte.numero_carte,
+                    f'{carte.get_statut_display()} — exp. {_date_fr(carte.date_expiration)}',
+                    y,
+                    x_val=70 * mm,
+                )
 
     # Date d'impression — bas droit
     c.setFillColorRGB(0.35, 0.4, 0.45)

@@ -89,7 +89,7 @@
         <div class="ecole-docs-list" id="listeDocumentsEcole"></div>
     </section>
 
-    {% if request.user.est_admin or request.user.role == 'admin_ecole' or request.user.est_national %}
+    {% if request.user.est_national %}
     <section class="detail-card" id="sectionClassesEcoleLien">
         <div class="list-panel-header" style="padding:0; border:none; align-items:center">
             <div>

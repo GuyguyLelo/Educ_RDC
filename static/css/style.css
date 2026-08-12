@@ -927,6 +927,54 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     font-size: 0.9rem;
 }
 
+/* En-tête enseignant — page Élèves */
+.eleves-page-title {
+    display: inline-block;
+    font-family: 'Sora', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(120deg, var(--bleu-nuit) 0%, var(--bleu) 70%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.eleves-page-subtitle {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.55rem;
+    margin-top: 0.15rem;
+}
+
+.eleves-classe-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    color: var(--bleu-nuit);
+    background: color-mix(in srgb, var(--bleu) 14%, #fff);
+    border: 1px solid color-mix(in srgb, var(--bleu) 28%, var(--line));
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--bleu) 12%, transparent);
+}
+
+.eleves-page-sep {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--bleu) 45%, var(--muted));
+}
+
+.eleves-page-mode {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+}
+
 .topbar-meta {
     display: flex;
     align-items: center;
@@ -1208,6 +1256,17 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     line-height: 1;
 }
 
+.stat-value.stat-value-text {
+    font-size: clamp(0.95rem, 1.4vw, 1.15rem);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    font-weight: 700;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 .stat-hint {
     margin-top: 0.55rem;
     font-size: 0.78rem;
@@ -1247,9 +1306,20 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
 
 .dashboard-grid {
     display: grid;
-    grid-template-columns: 1.4fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1.25rem;
     align-items: start;
+}
+
+.chart-wrap-pie {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 280px;
+}
+
+.chart-wrap-pie canvas {
+    max-width: 100%;
 }
 
 .dash-banner {
@@ -3930,9 +4000,27 @@ body.nav-open {
 }
 
 .eval-filter select:disabled {
-    opacity: 0.75;
+    opacity: 0.85;
     cursor: not-allowed;
-    background: #f1f4f8;
+    background: color-mix(in srgb, var(--bleu) 6%, #f4f7fb);
+    color: var(--bleu-nuit);
+    font-weight: 600;
+}
+
+.eval-annee-figee {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.eval-annee-figee select {
+    flex: 1;
+    min-width: 0;
+}
+
+.eval-annee-figee .badge {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .eval-filter-actions {

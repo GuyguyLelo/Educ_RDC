@@ -365,6 +365,78 @@ const EducRDC = (() => {
         });
     }
 
+    function drawPieChart(canvasId, series) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        const sized = sizeChartCanvas(canvas);
+        const ctx = sized.ctx;
+        const w = sized.width;
+        const h = sized.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const rows = (series || []).filter((s) => Number(s.valeur) > 0);
+        const total = rows.reduce((acc, s) => acc + Number(s.valeur || 0), 0);
+        if (!total) {
+            ctx.fillStyle = '#6b7a8d';
+            ctx.font = '500 15px Figtree, sans-serif';
+            ctx.fillText('Aucune donnée disponible', Math.max(24, w / 2 - 90), h / 2);
+            return;
+        }
+
+        const cx = w * 0.38;
+        const cy = h / 2;
+        const radius = Math.min(w, h) * 0.32;
+        const inner = radius * 0.55;
+        let start = -Math.PI / 2;
+        const colors = ['#007FFF', '#CE1126', '#FCD116', '#0a7a32', '#6b7a8d'];
+
+        rows.forEach((s, i) => {
+            const val = Number(s.valeur || 0);
+            const slice = (val / total) * Math.PI * 2;
+            const color = s.couleur || colors[i % colors.length];
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, radius, start, start + slice);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+            start += slice;
+        });
+
+        // Trou central (donut)
+        ctx.beginPath();
+        ctx.arc(cx, cy, inner, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+
+        ctx.fillStyle = '#142033';
+        ctx.font = '700 22px Sora, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(total), cx, cy - 2);
+        ctx.fillStyle = '#6b7a8d';
+        ctx.font = '500 11px Figtree, sans-serif';
+        ctx.fillText('Total', cx, cy + 16);
+        ctx.textAlign = 'left';
+
+        // Légende
+        let ly = Math.max(28, cy - rows.length * 18);
+        rows.forEach((s, i) => {
+            const val = Number(s.valeur || 0);
+            const pct = Math.round((val / total) * 100);
+            const color = s.couleur || colors[i % colors.length];
+            const lx = w * 0.68;
+            ctx.fillStyle = color;
+            ctx.fillRect(lx, ly, 12, 12);
+            ctx.fillStyle = '#142033';
+            ctx.font = '600 13px Figtree, sans-serif';
+            ctx.fillText(`${s.nom || '—'}`, lx + 20, ly + 11);
+            ctx.fillStyle = '#6b7a8d';
+            ctx.font = '500 12px Figtree, sans-serif';
+            ctx.fillText(`${val} (${pct} %)`, lx + 20, ly + 28);
+            ly += 44;
+        });
+    }
+
     /* ---------- Dashboard ---------- */
     function renderDashCards(cards) {
         const grid = document.getElementById('statsGrid');
@@ -384,7 +456,12 @@ const EducRDC = (() => {
             const value = el.querySelector('.stat-value');
             const hint = el.querySelector('.stat-hint');
             if (label) label.textContent = card.label || '';
-            if (value) value.textContent = card.value ?? '—';
+            if (value) {
+                value.textContent = card.value ?? '—';
+                const asText = card.text === true
+                    || (typeof card.value === 'string' && Number.isNaN(Number(card.value)));
+                value.classList.toggle('stat-value-text', asText);
+            }
             if (hint) hint.textContent = card.hint || '';
         });
         grid.querySelectorAll('[data-card-slot]').forEach((el) => {
@@ -415,8 +492,11 @@ const EducRDC = (() => {
 
     function renderDashWorkflow(items) {
         const ol = document.getElementById('dashWorkflow');
+        const panel = ol?.closest('.panel');
         if (!ol) return;
-        ol.innerHTML = (items || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+        const list = items || [];
+        ol.innerHTML = list.map((t) => `<li>${escapeHtml(t)}</li>`).join('');
+        if (panel) panel.hidden = list.length === 0;
     }
 
     async function chargerDashboard() {
@@ -453,26 +533,39 @@ const EducRDC = (() => {
             }
 
             const chart = stats.chart || {};
-            setText('chartTitle', chart.title || 'Répartition');
-            setText('chartSubtitle', chart.subtitle || '');
-            const series = chart.series || (stats.par_province || []).map((p) => ({
-                nom: p.nom,
-                valeur: p.nb_eleves,
-            }));
-            drawBarChart(
-                'chartProvinces',
-                series.map((s) => s.nom),
-                series.map((s) => s.valeur),
-            );
+            const barPanel = document.getElementById('chartProvinces')?.closest('.panel');
+            const isClasse = stats.scope === 'classe';
+            if (barPanel) barPanel.hidden = isClasse;
+            if (!isClasse) {
+                setText('chartTitle', chart.title || 'Répartition');
+                setText('chartSubtitle', chart.subtitle || '');
+                const series = chart.series || (stats.par_province || []).map((p) => ({
+                    nom: p.nom,
+                    valeur: p.nb_eleves,
+                }));
+                drawBarChart(
+                    'chartProvinces',
+                    series.map((s) => s.nom),
+                    series.map((s) => s.valeur),
+                );
+            }
+
+            const pie = stats.pie_chart || {};
+            const piePanel = document.getElementById('panelPieChart');
+            if (piePanel) piePanel.hidden = !(pie.series && pie.series.length);
+            setText('pieChartTitle', pie.title || 'Répartition par sexe');
+            setText('pieChartSubtitle', pie.subtitle || '');
+            if (pie.series) drawPieChart('chartSexePie', pie.series);
 
             renderDashActions(stats.actions || []);
             renderDashWorkflow(stats.workflow || []);
-            setText(
-                'workflowTitle',
-                stats.scope === 'classe' ? 'Priorités classe'
-                    : (stats.scope === 'ecole' ? 'Priorités école' : 'Processus métier'),
-            );
-            setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
+            if (stats.scope !== 'classe') {
+                setText(
+                    'workflowTitle',
+                    stats.scope === 'ecole' ? 'Priorités école' : 'Processus métier',
+                );
+                setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
+            }
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -2300,12 +2393,9 @@ const EducRDC = (() => {
                         </div>
                     </a>
                 </td>
-                <td data-label="Matricule"><span class="code-chip">${escapeHtml(e.matricule)}</span></td>
                 <td data-label="N° Identification"><span class="code-chip">${escapeHtml(e.numero_identification || '—')}</span></td>
                 <td data-label="N° Permanent"><span class="code-chip">${escapeHtml(e.numero_permanent || '—')}</span></td>
-                <td data-label="N° Impôt"><span class="code-chip">${escapeHtml(e.numero_impot || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(e.sexe_display || e.sexe)}</td>
-                <td data-label="Naissance">${escapeHtml(e.date_naissance)}</td>
                 <td data-label="École / Classe">
                     <div class="entity-meta">
                         <strong title="${escapeHtml(e.ecole_nom || '')}">${escapeHtml(e.ecole_nom || '—')}</strong>
@@ -2318,7 +2408,7 @@ const EducRDC = (() => {
                 </td>
             </tr>`;
         }).join('') : emptyRow(
-            10,
+            7,
             'Aucun élève trouvé',
             ecoleId
                 ? 'Aucun élève pour cette école — affinez la recherche ou ajoutez un élève.'
@@ -2379,10 +2469,6 @@ const EducRDC = (() => {
                     badgeEcole.hidden = false;
                     badgeEcole.textContent = nomEcole;
                 }
-                const titre = document.getElementById('titreListeEleves');
-                const sous = document.getElementById('sousTitreListeEleves');
-                if (titre) titre.textContent = `Élèves — ${nomEcole}`;
-                if (sous) sous.textContent = 'Élèves de cet établissement uniquement (filtre verrouillé).';
             } else if (filtreEcole) {
                 filtreEcole.hidden = false;
                 await chargerSelectEcoles('filtreEcoleEleves', {
@@ -2464,6 +2550,11 @@ const EducRDC = (() => {
         document.getElementById('btnSearchEleves')?.addEventListener('click', () => chargerEleves(1));
         document.getElementById('searchEleves')?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') chargerEleves(1);
+        });
+        document.getElementById('btnImprimerListeEleves')?.addEventListener('click', (e) => {
+            const q = (document.getElementById('searchEleves')?.value || '').trim();
+            const base = `${API}/eleves/liste-pdf/`;
+            e.currentTarget.href = q ? `${base}?q=${encodeURIComponent(q)}` : base;
         });
 
         document.getElementById('formEleve')?.addEventListener('submit', async (e) => {
@@ -2842,8 +2933,9 @@ const EducRDC = (() => {
         ]);
 
         const tCartes = document.querySelector('#tableDetailCartes tbody');
-        const cartes = eleve.cartes || [];
-        tCartes.innerHTML = cartes.length ? cartes.map((c) => `
+        if (tCartes) {
+            const cartes = eleve.cartes || [];
+            tCartes.innerHTML = cartes.length ? cartes.map((c) => `
             <tr>
                 <td data-label="N° Carte"><span class="code-chip">${escapeHtml(c.numero_carte)}</span></td>
                 <td data-label="Statut"><span class="badge badge-info">${escapeHtml(c.statut_display)}</span></td>
@@ -2856,6 +2948,7 @@ const EducRDC = (() => {
                 </td>
             </tr>
         `).join('') : emptyRow(4, 'Aucune carte', 'Aucune carte scolaire n\'est encore associée à cet élève.');
+        }
 
         return eleve;
     }
@@ -4509,16 +4602,25 @@ const EducRDC = (() => {
             const data = await api(`${API}/annees-scolaires/?page_size=50`);
             const rows = data.results || data;
             const sel = document.getElementById('selectAnneeEval');
-            const activeId = rows.find((a) => a.active)?.id;
-            sel.innerHTML = rows.length
-                ? rows.map((a) => {
-                    const selected = activeId
-                        ? String(a.id) === String(activeId)
-                        : !!a.active;
-                    return `<option value="${a.id}" ${selected ? 'selected' : ''}>${escapeHtml(a.libelle)}${a.active ? ' (nationale)' : ''}</option>`;
-                }).join('')
-                : '<option value="">— Aucune année nationale —</option>';
-            if (activeId) sel.value = String(activeId);
+            const badge = document.getElementById('badgeAnneeEvalFigee');
+            const active = rows.find((a) => a.active) || rows[0] || null;
+            if (!sel) return;
+            if (active) {
+                sel.innerHTML = `<option value="${active.id}" selected>${escapeHtml(active.libelle)}${active.active ? ' (active)' : ''}</option>`;
+                sel.value = String(active.id);
+                sel.disabled = true;
+                if (badge) {
+                    badge.hidden = false;
+                    badge.textContent = active.active ? 'Figée — nationale' : 'Figée';
+                }
+            } else {
+                sel.innerHTML = '<option value="">— Aucune année nationale —</option>';
+                sel.disabled = true;
+                if (badge) {
+                    badge.hidden = false;
+                    badge.textContent = 'Non définie';
+                }
+            }
             majResumeSession();
         }
 

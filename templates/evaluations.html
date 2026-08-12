@@ -41,7 +41,7 @@
         <div class="eval-session-head">
             <div>
                 <h2>Session de travail</h2>
-                <p>Choisissez l’année, la classe et la matière avant de saisir ou d’imprimer</p>
+                <p>Année nationale figée — choisissez la classe et la matière avant de saisir ou d’imprimer</p>
             </div>
             <div class="eval-session-summary" id="evalSessionSummary">
                 <span class="eval-chip" id="chipAnneeEval">Année —</span>
@@ -52,9 +52,12 @@
         </div>
 
         <div class="eval-filters">
-            <div class="eval-filter">
+            <div class="eval-filter eval-filter-figee">
                 <label for="selectAnneeEval">Année scolaire (nationale)</label>
-                <select id="selectAnneeEval"></select>
+                <div class="eval-annee-figee">
+                    <select id="selectAnneeEval" disabled aria-disabled="true" title="Année nationale active — non modifiable ici"></select>
+                    <span class="badge badge-info" id="badgeAnneeEvalFigee">Figée</span>
+                </div>
             </div>
             <div class="eval-filter">
                 <label for="selectClasseEval">Classe</label>
@@ -85,7 +88,7 @@
                 <span class="eval-step-num">1</span>
                 <div>
                     <strong>Configurer</strong>
-                    <small>Année · classe · période</small>
+                    <small>Classe · période</small>
                 </div>
             </li>
             <li class="eval-step" data-eval-step="2">

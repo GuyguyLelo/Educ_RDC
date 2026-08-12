@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260811n">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260812o">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -67,7 +67,7 @@
                     Rapports
                 </a>
 
-                {% if request.user.est_national or request.user.est_admin or request.user.role == 'admin_ecole' %}
+                {% if request.user.est_national or request.user.est_admin %}
                 <div class="nav-section">Administration</div>
                 {% if request.user.est_admin %}
                 <a href="{% url 'utilisateurs' %}" class="nav-link {% if page == 'utilisateurs' %}active{% endif %}">
@@ -89,9 +89,9 @@
                         {% if request.user.est_national %}
                         <div class="nav-subheading">Territoire</div>
                         <a href="{% url 'parametres' %}" class="nav-link nav-sublink {% if page == 'parametres' %}active{% endif %}">Organisation territoriale</a>
-                        {% endif %}
                         <div class="nav-subheading">École</div>
                         <a href="{% url 'parametres_scolaire' %}?onglet=affectation" class="nav-link nav-sublink {% if page == 'parametres_scolaire' %}active{% endif %}">Structure scolaire</a>
+                        {% endif %}
                         {% if request.user.est_national or request.user.est_admin %}
                         <div class="nav-subheading">Référentiel national</div>
                         <a href="{% url 'parametres_annees' %}" class="nav-link nav-sublink {% if page == 'parametres_annees' %}active{% endif %}">Années scolaires</a>
@@ -174,7 +174,7 @@
 
     <div id="toast-container" class="toast-container"></div>
     <form id="csrfForm" class="csrf-form" aria-hidden="true">{% csrf_token %}</form>
-    <script src="{% static 'js/app.js' %}?v=20260812d"></script>
+    <script src="{% static 'js/app.js' %}?v=20260812o"></script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

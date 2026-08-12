@@ -15,10 +15,12 @@
         <span class="stat-label">Écoles</span>
         <strong class="stat-value" id="rEcoles">—</strong>
     </article>
+    {% if not request.user.est_enseignant %}
     <article class="stat-card accent">
         <span class="stat-label">Cartes</span>
         <strong class="stat-value" id="rCartes">—</strong>
     </article>
+    {% endif %}
     <article class="stat-card">
         <span class="stat-label">Biométries validées</span>
         <strong class="stat-value" id="rBiometries">—</strong>

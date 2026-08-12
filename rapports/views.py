@@ -229,7 +229,7 @@ def _workflow_for_role(role):
             'Consulter les élèves de sa classe',
             'Vérifier les fiches élèves',
             'Suivre l\'état des biométries de la classe',
-            'Consulter les cartes de ses élèves',
+            'Mettre à jour la photo des élèves',
         ],
     }
     return workflows.get(role, workflows['agent_antenne'])
@@ -278,29 +278,26 @@ def statistiques_dashboard(request):
     ]
 
     if scope == 'classe':
-        cards[0]['label'] = f"Élèves — {ctx['classe'] or 'classe'}"
-        cards[0]['hint'] = f'{nb_garcons} garçons · {nb_filles} filles'
-        cards.extend([
+        cards = [
             {
-                'key': 'cartes',
-                'label': 'Cartes de la classe',
-                'value': nb_cartes,
-                'hint': 'Cartes scolaires actives',
-                'accent': True,
+                'key': 'eleves',
+                'label': 'Effectif élèves',
+                'value': nb_eleves,
+                'hint': ctx['classe'] or 'Classe',
             },
             {
-                'key': 'biometries',
-                'label': 'Biométries',
-                'value': nb_biometries,
-                'hint': 'Captures validées',
+                'key': 'garcons',
+                'label': 'Effectif garçons',
+                'value': nb_garcons,
+                'hint': 'Sexe masculin',
             },
             {
-                'key': 'ecole',
-                'label': 'École',
-                'value': 1 if ctx['ecole_id'] else 0,
-                'hint': ctx['ecole_nom'] or 'Établissement de rattachement',
+                'key': 'filles',
+                'label': 'Effectif filles',
+                'value': nb_filles,
+                'hint': 'Sexe féminin',
             },
-        ])
+        ]
     elif scope == 'ecole':
         cards.extend([
             {
@@ -388,16 +385,28 @@ def statistiques_dashboard(request):
         'classe': ctx.get('classe'),
         'nb_eleves': nb_eleves,
         'nb_ecoles': nb_ecoles,
-        'nb_cartes': nb_cartes,
+        'nb_cartes': 0 if getattr(user, 'est_enseignant', False) else nb_cartes,
         'biometries_validees': nb_biometries,
         'nb_personnel': nb_personnel,
         'nb_garcons': nb_garcons,
         'nb_filles': nb_filles,
         'cards': cards,
         'chart': chart,
+        'pie_chart': {
+            'title': 'Répartition par sexe',
+            'subtitle': (
+                f"Classe {ctx.get('classe') or ''}".strip()
+                if scope == 'classe'
+                else 'Effectif du périmètre'
+            ),
+            'series': [
+                {'nom': 'Garçons', 'valeur': nb_garcons, 'couleur': '#007FFF'},
+                {'nom': 'Filles', 'valeur': nb_filles, 'couleur': '#CE1126'},
+            ],
+        },
         'par_province': par_province,
         'actions': actions,
-        'workflow': _workflow_for_role(user.role),
+        'workflow': [] if scope == 'classe' else _workflow_for_role(user.role),
     })
 
 
@@ -428,9 +437,10 @@ def export_rapport_pdf(request):
     stats = [
         f'Écoles actives : {ctx["ecoles_qs"].count()}',
         f'Élèves actifs : {ctx["eleves_qs"].count()}',
-        f'Cartes actives : {ctx["cartes_qs"].count()}',
-        f'Biométries validées : {ctx["biometrie_qs"].count()}',
     ]
+    if not getattr(user, 'est_enseignant', False):
+        stats.append(f'Cartes actives : {ctx["cartes_qs"].count()}')
+    stats.append(f'Biométries validées : {ctx["biometrie_qs"].count()}')
     if ctx['scope'] == 'ecole':
         stats.append(f'Personnel actif : {ctx["personnel_qs"].count()}')
 

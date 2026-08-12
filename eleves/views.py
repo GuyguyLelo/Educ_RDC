@@ -10,12 +10,13 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from utilisateurs.permissions import LecturePourTousEcritureAdmin
+from utilisateurs.permissions import EcriturePhotoEleve, LecturePourTousEcritureAdmin
 from biometrie.models import Biometrie
 from cartes.models import Carte
 from .models import Eleve
 from .import_utils import importer_eleves, reponse_modele_xlsx
 from .pdf_fiche import generer_pdf_fiche_eleve
+from .pdf_liste import generer_pdf_liste_eleves
 from .serializers import EleveSerializer, EleveDetailSerializer
 from .services import assurer_qr_eleve, generer_prochain_matricule, generer_qr_eleve
 
@@ -53,6 +54,11 @@ class EleveViewSet(viewsets.ModelViewSet):
         'telephone_pere', 'telephone_mere', 'telephone_tuteur',
     ]
     ordering_fields = ['nom', 'date_inscription', 'matricule']
+
+    def get_permissions(self):
+        if getattr(self, 'action', None) == 'photo':
+            return [IsAuthenticated(), EcriturePhotoEleve()]
+        return super().get_permissions()
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -163,16 +169,80 @@ class EleveViewSet(viewsets.ModelViewSet):
     def pdf(self, request, pk=None):
         """Télécharge la fiche élève en PDF."""
         eleve = self.get_object()
-        assurer_qr_eleve(eleve)
-        pdf = generer_pdf_fiche_eleve(eleve)
+        inclure_qr_cartes = not getattr(request.user, 'est_enseignant', False)
+        if inclure_qr_cartes:
+            assurer_qr_eleve(eleve)
+        pdf = generer_pdf_fiche_eleve(eleve, inclure_qr_cartes=inclure_qr_cartes)
         filename = f'fiche_eleve_{eleve.matricule}.pdf'.replace('/', '-')
         response = HttpResponse(pdf, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
 
+    @action(detail=False, methods=['get'], url_path='liste-pdf')
+    def liste_pdf(self, request):
+        """PDF de la liste des élèves du périmètre (enseignant : sa classe)."""
+        user = request.user
+        if not getattr(user, 'est_enseignant', False):
+            return Response(
+                {'detail': "L'impression de la liste est réservée aux enseignants."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        qs = self.filter_queryset(self.get_queryset()).order_by('nom', 'postnom', 'prenom')
+        eleves = list(qs[:500])
+        ecole_nom = ''
+        classe_nom = getattr(user, 'classe_nom', None) or ''
+        section_nom = ''
+        option_nom = ''
+        if user.classe_id:
+            from ecoles.models import Classe
+            classe = (
+                Classe.objects.select_related('section', 'option')
+                .filter(pk=user.classe_id)
+                .first()
+            )
+            if classe:
+                classe_nom = classe.nom or classe_nom
+                if classe.section_id:
+                    section_nom = classe.section.nom or ''
+                if classe.option_id:
+                    option_nom = classe.option.nom or ''
+        if user.ecole_id and getattr(user, 'ecole', None):
+            ecole_nom = user.ecole.nom
+        elif eleves:
+            ecole_nom = eleves[0].ecole.nom if eleves[0].ecole_id else ''
+        if eleves and eleves[0].classe_id:
+            cl = eleves[0].classe
+            if not classe_nom:
+                classe_nom = cl.nom
+            if not section_nom and getattr(cl, 'section', None):
+                section_nom = cl.section.nom or ''
+            if not option_nom and getattr(cl, 'option', None):
+                option_nom = cl.option.nom or ''
+        enseignant = (user.get_full_name() or user.username or '').strip()
+        pdf = generer_pdf_liste_eleves(
+            eleves,
+            contexte={
+                'ecole': ecole_nom,
+                'classe': classe_nom,
+                'section': section_nom,
+                'option': option_nom,
+                'enseignant': enseignant,
+                'recherche': request.query_params.get('q', ''),
+            },
+        )
+        safe_classe = (classe_nom or 'classe').replace(' ', '_').replace('/', '-')[:40]
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="liste_eleves_{safe_classe}.pdf"'
+        return response
+
     @action(detail=True, methods=['post'], url_path='regenerer-qr')
     def regenerer_qr(self, request, pk=None):
         """Régénère le QR code unique de l'élève."""
+        if getattr(request.user, 'est_enseignant', False):
+            return Response(
+                {'detail': "Les enseignants n'ont pas accès au QR code."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         eleve = self.get_object()
         assurer_qr_eleve(eleve)
         generer_qr_eleve(eleve, force=True)

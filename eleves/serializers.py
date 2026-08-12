@@ -122,6 +122,19 @@ class EleveSerializer(serializers.ModelSerializer):
     def get_qr_code_url(self, obj):
         return self._abs_url(obj.qr_code)
 
+    def _masquer_qr_pour_enseignant(self, data):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if getattr(user, 'est_enseignant', False):
+            data.pop('code_unique', None)
+            data.pop('qr_code', None)
+            data.pop('qr_code_url', None)
+        return data
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        return self._masquer_qr_pour_enseignant(data)
+
 
 class EleveDetailSerializer(EleveSerializer):
     """Détail enrichi : biométrie et cartes."""
@@ -152,6 +165,9 @@ class EleveDetailSerializer(EleveSerializer):
 
     def get_cartes(self, obj):
         request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if getattr(user, 'est_enseignant', False):
+            return []
         result = []
         for c in obj.cartes.all()[:10]:
             qr = None
