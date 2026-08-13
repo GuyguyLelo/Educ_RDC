@@ -219,10 +219,19 @@ class EleveViewSet(viewsets.ModelViewSet):
             if not option_nom and getattr(cl, 'option', None):
                 option_nom = cl.option.nom or ''
         enseignant = (user.get_full_name() or user.username or '').strip()
+        annee_libelle = ''
+        try:
+            from evaluations.models import AnneeScolaire
+            annee = AnneeScolaire.get_active()
+            if annee:
+                annee_libelle = annee.libelle or ''
+        except Exception:
+            annee_libelle = ''
         pdf = generer_pdf_liste_eleves(
             eleves,
             contexte={
                 'ecole': ecole_nom,
+                'annee': annee_libelle,
                 'classe': classe_nom,
                 'section': section_nom,
                 'option': option_nom,

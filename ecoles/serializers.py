@@ -350,13 +350,23 @@ class PersonnelEcoleSerializer(serializers.ModelSerializer):
     sexe_display = serializers.CharField(source='get_sexe_display', read_only=True)
     ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
     ecole_code = serializers.CharField(source='ecole.code', read_only=True)
+    a_compte = serializers.SerializerMethodField()
+    utilisateur_username = serializers.CharField(
+        source='utilisateur.username', read_only=True, allow_null=True, default=None,
+    )
 
     class Meta:
         model = PersonnelEcole
         fields = [
             'id', 'ecole', 'ecole_nom', 'ecole_code',
-            'matricule', 'nom', 'postnom', 'prenom', 'nom_complet',
+            'utilisateur', 'a_compte', 'utilisateur_username',
+            'matricule', 'reference_acte_engagement',
+            'nom', 'postnom', 'prenom', 'nom_complet',
             'sexe', 'sexe_display', 'fonction', 'fonction_display',
             'telephone', 'email', 'date_naissance', 'date_prise_service',
             'actif', 'date_creation',
         ]
+        read_only_fields = ['utilisateur', 'a_compte', 'utilisateur_username']
+
+    def get_a_compte(self, obj):
+        return bool(obj.utilisateur_id)

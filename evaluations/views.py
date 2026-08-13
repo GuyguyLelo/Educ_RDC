@@ -15,6 +15,7 @@ from .defaults import (
     matieres_queryset_pour_classe,
     synchroniser_matieres_ecole,
 )
+from .pdf_liste_cours import generer_pdf_liste_cours
 from .models import (
     AnneeScolaire,
     BulletinDecision,
@@ -390,6 +391,58 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied('Accès refusé pour cette classe.')
         serializer.save()
+
+    @action(detail=False, methods=['get'], url_path='liste-pdf')
+    def liste_pdf(self, request):
+        """PDF de la liste des cours du programme (enseignant : sa classe)."""
+        user = request.user
+        if not getattr(user, 'est_enseignant', False):
+            return Response(
+                {'detail': "L'impression de la liste des cours est réservée aux enseignants."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not user.classe_id:
+            return Response(
+                {'detail': 'Aucune classe titulaire associée à votre compte.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        annee = AnneeScolaire.get_active()
+        qs = (
+            self.get_queryset()
+            .select_related('matiere', 'classe', 'classe__section', 'classe__option', 'annee')
+            .order_by('ordre', 'matiere__nom')
+        )
+        if annee:
+            qs = qs.filter(annee_id=annee.id)
+        programmes = list(qs[:300])
+
+        classe = (
+            Classe.objects.select_related('section', 'option', 'ecole')
+            .filter(pk=user.classe_id)
+            .first()
+        )
+        ecole_nom = ''
+        if user.ecole_id and getattr(user, 'ecole', None):
+            ecole_nom = user.ecole.nom
+        elif classe and classe.ecole_id:
+            ecole_nom = classe.ecole.nom
+
+        pdf = generer_pdf_liste_cours(
+            programmes,
+            contexte={
+                'ecole': ecole_nom,
+                'classe': classe.nom if classe else getattr(user, 'classe_nom', ''),
+                'section': classe.section.nom if classe and classe.section_id else '',
+                'option': classe.option.nom if classe and classe.option_id else '',
+                'annee': annee.libelle if annee else '',
+                'enseignant': (user.get_full_name() or user.username or '').strip(),
+            },
+        )
+        safe = (getattr(user, 'classe_nom', None) or 'classe').replace(' ', '_').replace('/', '-')[:40]
+        response = HttpResponse(pdf, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="liste_cours_{safe}.pdf"'
+        return response
 
     @action(detail=False, methods=['post'], url_path='appliquer-matieres-ecole')
     def appliquer_matieres_ecole(self, request):

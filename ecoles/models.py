@@ -6,6 +6,7 @@ StructureOrganisationnelle (modèle unique de base)
 ├── ProvinceEducationnelle  → liée à ProvinceAdministrative
 └── Antenne                 → liée à ProvinceEducationnelle
 """
+from django.conf import settings
 from django.db import models
 
 
@@ -484,7 +485,22 @@ class PersonnelEcole(models.Model):
         related_name='personnels',
         verbose_name='École',
     )
+    utilisateur = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='fiche_personnel',
+        verbose_name='Compte plateforme',
+        help_text='Compte Educ_RDC lié (ex. enseignant titulaire).',
+    )
     matricule = models.CharField(max_length=40, blank=True, verbose_name='Matricule')
+    reference_acte_engagement = models.CharField(
+        max_length=80,
+        blank=True,
+        verbose_name="Référence de l'acte d'engagement",
+        help_text="N° / référence de l'acte d'engagement de l'agent.",
+    )
     nom = models.CharField(max_length=100, verbose_name='Nom')
     postnom = models.CharField(max_length=100, blank=True, verbose_name='Postnom')
     prenom = models.CharField(max_length=100, verbose_name='Prénom')

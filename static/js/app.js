@@ -1267,22 +1267,79 @@ const EducRDC = (() => {
     function syncRoleUserEcoleUI() {
         const role = document.getElementById('selectRoleUserEcole')?.value || '';
         const enseignant = role === 'enseignant';
-        ['groupeSectionUserEcole', 'groupeOptionUserEcole', 'groupeClasseUserEcole'].forEach((id) => {
+        const edition = Boolean(document.getElementById('userEcoleId')?.value);
+        // Section / option / classe : uniquement pour le rôle enseignant
+        ['groupeSectionUserEcole', 'groupeOptionUserEcole', 'groupeClasseUserEcole', 'groupePersonnelUserEcole'].forEach((id) => {
             const el = document.getElementById(id);
-            if (el) el.hidden = !enseignant;
+            if (!el) return;
+            if (id === 'groupePersonnelUserEcole') {
+                el.hidden = !enseignant || edition;
+            } else {
+                el.hidden = !enseignant;
+            }
         });
         const sel = document.getElementById('selectClasseUserEcole');
         const selSec = document.getElementById('selectSectionUserEcole');
+        const selOpt = document.getElementById('selectOptionUserEcole');
+        const selPers = document.getElementById('selectPersonnelUserEcole');
         if (sel) {
             sel.required = enseignant;
             if (!enseignant) sel.value = '';
         }
         if (selSec) selSec.required = enseignant;
+        if (selPers) {
+            selPers.required = enseignant && !edition;
+            if (!enseignant) selPers.value = '';
+        }
         if (!enseignant) {
-            const selOpt = document.getElementById('selectOptionUserEcole');
             if (selSec) selSec.value = '';
             if (selOpt) selOpt.value = '';
         }
+    }
+
+    async function chargerPersonnelsSansCompte(ecoleId, selectedId = '', { fonction = 'enseignant' } = {}) {
+        const sel = document.getElementById('selectPersonnelUserEcole');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— Choisir un agent déjà identifié —</option>';
+        if (!ecoleId) return;
+        try {
+            let url = `${API}/personnels/?ecole=${ecoleId}&sans_compte=1&actif=1&page_size=200&ordering=nom`;
+            if (fonction) url += `&fonction=${encodeURIComponent(fonction)}`;
+            const data = await api(url);
+            const rows = data.results || data;
+            sel.innerHTML = '<option value="">— Choisir un agent déjà identifié —</option>' + rows.map((p) => `
+                <option value="${p.id}"
+                    data-prenom="${escapeHtml(p.prenom || '')}"
+                    data-nom="${escapeHtml(p.nom || '')}"
+                    data-postnom="${escapeHtml(p.postnom || '')}"
+                    data-email="${escapeHtml(p.email || '')}"
+                    data-telephone="${escapeHtml(p.telephone || '')}"
+                    data-fonction="${escapeHtml(p.fonction || '')}">
+                    ${escapeHtml(p.nom_complet || `${p.nom} ${p.prenom}`)} — ${escapeHtml(p.fonction_display || p.fonction || '')}
+                </option>
+            `).join('');
+            if (selectedId) sel.value = String(selectedId);
+            if (!rows.length) {
+                sel.insertAdjacentHTML(
+                    'beforeend',
+                    '<option value="" disabled>Aucun agent sans compte — identifiez d’abord le personnel</option>',
+                );
+            }
+        } catch (err) {
+            toast(err.message || 'Impossible de charger le personnel.', 'error');
+        }
+    }
+
+    function appliquerPersonnelSurFormUserEcole() {
+        const form = document.getElementById('formUserEcole');
+        const sel = document.getElementById('selectPersonnelUserEcole');
+        const opt = sel?.selectedOptions?.[0];
+        if (!form || !opt?.value) return;
+        form.first_name.value = opt.dataset.prenom || '';
+        const nom = [opt.dataset.nom, opt.dataset.postnom].filter(Boolean).join(' ').trim();
+        form.last_name.value = nom;
+        if (opt.dataset.email) form.email.value = opt.dataset.email;
+        if (opt.dataset.telephone) form.telephone.value = opt.dataset.telephone;
     }
 
     async function chargerClassesUserEcole(ecoleId, selectedClasseId = '') {
@@ -1368,14 +1425,53 @@ const EducRDC = (() => {
             const actif = document.getElementById('userEcoleActif');
             if (actif) actif.checked = true;
         }
+        if (!user) {
+            const rolePrefer = form.dataset.rolePrefer || 'enseignant';
+            form.role.value = rolePrefer;
+            delete form.dataset.rolePrefer;
+            // personnelAdmin conservé si création depuis une fiche non-enseignant
+            if (rolePrefer === 'enseignant') delete form.dataset.personnelAdmin;
+        } else {
+            delete form.dataset.personnelAdmin;
+            delete form.dataset.rolePrefer;
+        }
         syncRoleUserEcoleUI();
-        if (ecoleId && (user?.role === 'enseignant' || !user)) {
-            const role = document.getElementById('selectRoleUserEcole')?.value || '';
-            if (role === 'enseignant') {
-                await preparerAffectationEnseignant(ecoleId, user);
+        const role = document.getElementById('selectRoleUserEcole')?.value || '';
+        if (ecoleId && role === 'enseignant') {
+            if (!user) {
+                const preselectPers = form.dataset.personnelPreselect || '';
+                await chargerPersonnelsSansCompte(ecoleId, preselectPers, { fonction: 'enseignant' });
+                delete form.dataset.personnelPreselect;
+                if (preselectPers) appliquerPersonnelSurFormUserEcole();
             }
+            await preparerAffectationEnseignant(ecoleId, user);
         }
         openModal('modalUserEcole');
+    }
+
+    async function ouvrirCompteDepuisPersonnel(personnel) {
+        if (!personnel?.id) return;
+        if (personnel.a_compte || personnel.utilisateur) {
+            toast('Cette fiche a déjà un compte associé.', 'warning');
+            return;
+        }
+        const estEnseignant = personnel.fonction === 'enseignant';
+        const form = document.getElementById('formUserEcole');
+        // Section / option / classe uniquement pour la fonction enseignant
+        if (form && estEnseignant) {
+            form.dataset.personnelPreselect = String(personnel.id);
+            form.dataset.rolePrefer = 'enseignant';
+        } else if (form) {
+            form.dataset.rolePrefer = 'admin_ecole';
+            form.dataset.personnelAdmin = String(personnel.id);
+        }
+        await ouvrirModalUserEcole(null);
+        if (!estEnseignant && form) {
+            form.first_name.value = personnel.prenom || '';
+            form.last_name.value = [personnel.nom, personnel.postnom].filter(Boolean).join(' ').trim();
+            if (personnel.email) form.email.value = personnel.email;
+            if (personnel.telephone) form.telephone.value = personnel.telephone;
+        }
     }
 
     async function chargerEcoleUtilisateurs(ecoleId) {
@@ -1434,21 +1530,40 @@ const EducRDC = (() => {
             <tr>
                 <td data-label="Nom"><strong>${escapeHtml(p.nom_complet)}</strong></td>
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(p.matricule || '—')}</span></td>
+                <td data-label="Acte d'engagement"><span class="code-chip">${escapeHtml(p.reference_acte_engagement || '—')}</span></td>
                 <td data-label="Fonction"><span class="badge badge-neutral">${escapeHtml(p.fonction_display || p.fonction)}</span></td>
                 <td data-label="Sexe">${escapeHtml(p.sexe_display || p.sexe || '—')}</td>
                 <td data-label="Téléphone">${escapeHtml(p.telephone || '—')}</td>
+                <td data-label="Compte">${
+                    p.a_compte
+                        ? `<span class="badge badge-success" title="${escapeHtml(p.utilisateur_username || '')}">Compte lié</span>`
+                        : '<span class="badge badge-neutral">Sans compte</span>'
+                }</td>
                 <td data-label="Statut"><span class="badge ${p.actif ? 'badge-success' : 'badge-danger'}">${p.actif ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions">
-                    <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">${ico('edit')}Modifier</button>
+                    <div class="actions-inline">
+                        <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">${ico('edit')}Modifier</button>
+                        ${!p.a_compte ? `<button type="button" class="btn btn-secondary btn-sm" data-compte-personnel="${p.id}">${ico('user')}Créer compte</button>` : ''}
+                    </div>
                 </td>
             </tr>
-        `).join('') : emptyRow(7, 'Aucun personnel identifié', 'Cliquez sur « Identifier » pour enregistrer un agent.');
+        `).join('') : emptyRow(9, 'Aucun personnel identifié', 'Cliquez sur « Identifier un agent » puis créez éventuellement son compte.');
 
         tbody.querySelectorAll('[data-edit-personnel]').forEach((btn) => {
             btn.addEventListener('click', async () => {
                 try {
                     const p = await api(`${API}/personnels/${btn.dataset.editPersonnel}/`);
                     ouvrirModalPersonnel(p);
+                } catch (err) {
+                    toast(err.message, 'error');
+                }
+            });
+        });
+        tbody.querySelectorAll('[data-compte-personnel]').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+                try {
+                    const p = await api(`${API}/personnels/${btn.dataset.comptePersonnel}/`);
+                    await ouvrirCompteDepuisPersonnel(p);
                 } catch (err) {
                     toast(err.message, 'error');
                 }
@@ -1470,6 +1585,9 @@ const EducRDC = (() => {
             form.prenom.value = personnel.prenom || '';
             form.sexe.value = personnel.sexe || 'M';
             form.matricule.value = personnel.matricule || '';
+            if (form.reference_acte_engagement) {
+                form.reference_acte_engagement.value = personnel.reference_acte_engagement || '';
+            }
             form.fonction.value = personnel.fonction || 'enseignant';
             form.telephone.value = personnel.telephone || '';
             form.email.value = personnel.email || '';
@@ -1978,9 +2096,18 @@ const EducRDC = (() => {
         document.getElementById('selectRoleUserEcole')?.addEventListener('change', async () => {
             syncRoleUserEcoleUI();
             const role = document.getElementById('selectRoleUserEcole')?.value;
+            const edition = Boolean(document.getElementById('userEcoleId')?.value);
+            const form = document.getElementById('formUserEcole');
+            if (role !== 'enseignant' && form) {
+                delete form.dataset.personnelPreselect;
+            }
             if (role === 'enseignant' && ecoleId) {
+                if (!edition) await chargerPersonnelsSansCompte(ecoleId, '', { fonction: 'enseignant' });
                 await preparerAffectationEnseignant(ecoleId);
             }
+        });
+        document.getElementById('selectPersonnelUserEcole')?.addEventListener('change', () => {
+            appliquerPersonnelSurFormUserEcole();
         });
         document.getElementById('selectSectionUserEcole')?.addEventListener('change', async (e) => {
             await chargerOptionsEcole(ecoleId, e.target.value, document.getElementById('selectOptionUserEcole'));
@@ -2009,6 +2136,11 @@ const EducRDC = (() => {
             const id = document.getElementById('userEcoleId')?.value || '';
             const role = form.role.value;
             if (role === 'enseignant') {
+                const personnelId = document.getElementById('selectPersonnelUserEcole')?.value;
+                if (!id && !personnelId) {
+                    toast('Sélectionnez d’abord la fiche Personnel de l’enseignant.', 'warning');
+                    return;
+                }
                 const sectionId = document.getElementById('selectSectionUserEcole')?.value;
                 if (!sectionId) {
                     toast('Sélectionnez la section de l’enseignant.', 'warning');
@@ -2045,8 +2177,14 @@ const EducRDC = (() => {
             };
             if (role === 'enseignant') {
                 payload.classe = Number(form.classe.value);
+                if (!id) {
+                    payload.personnel = Number(document.getElementById('selectPersonnelUserEcole').value);
+                }
             } else {
                 payload.classe = null;
+                // Lien éventuel fiche personnel (directeur, etc.) — sans section/option/classe
+                const persAdmin = form.dataset.personnelAdmin;
+                if (!id && persAdmin) payload.personnel = Number(persAdmin);
             }
             if (password) payload.password = password;
             const submitBtn = form.querySelector('button[type="submit"]');
@@ -2057,11 +2195,20 @@ const EducRDC = (() => {
                     toast('Compte mis à jour.', 'success');
                 } else {
                     await api(`${API}/utilisateurs/`, { method: 'POST', body: JSON.stringify(payload) });
-                    toast('Compte école créé.', 'success');
+                    toast(
+                        role === 'enseignant'
+                            ? 'Compte enseignant créé (section / option / classe).'
+                            : 'Compte administratif école créé.',
+                        'success',
+                    );
                 }
+                delete form.dataset.personnelAdmin;
                 closeModal('modalUserEcole');
                 form.reset();
-                await chargerEcoleUtilisateurs(ecoleId);
+                await Promise.all([
+                    chargerEcoleUtilisateurs(ecoleId),
+                    chargerEcolePersonnels(ecoleId),
+                ]);
             } catch (err) {
                 toast(err.message, 'error');
             } finally {
@@ -3205,6 +3352,10 @@ const EducRDC = (() => {
     let rapportsBound = false;
 
     async function initRapports() {
+        // Enseignant : page exports uniquement (pas de stats / graphique)
+        if (!document.getElementById('statsRapports') && !document.getElementById('chartRapports')) {
+            return;
+        }
         try {
             const stats = await api(`${API}/stats/`);
             setText('rEleves', stats.nb_eleves);
@@ -3222,15 +3373,16 @@ const EducRDC = (() => {
             if (chartTitle && stats.chart?.title) chartTitle.textContent = stats.chart.title;
             if (chartSub && stats.chart?.subtitle) chartSub.textContent = stats.chart.subtitle;
 
-            const series = stats.chart?.series || (stats.par_province || []).map((p) => ({
-                nom: p.nom,
-                valeur: p.nb_ecoles ?? p.nb_eleves ?? 0,
-            }));
-            // Rapports : privilégier nb_ecoles si présent, sinon valeur élèves
-            const values = series.map((s) => (
-                s.nb_ecoles != null && stats.scope !== 'ecole' ? s.nb_ecoles : s.valeur
-            ));
-            drawBarChart('chartRapports', series.map((s) => s.nom), values);
+            if (document.getElementById('chartRapports')) {
+                const series = stats.chart?.series || (stats.par_province || []).map((p) => ({
+                    nom: p.nom,
+                    valeur: p.nb_ecoles ?? p.nb_eleves ?? 0,
+                }));
+                const values = series.map((s) => (
+                    s.nb_ecoles != null && stats.scope !== 'ecole' ? s.nb_ecoles : s.valeur
+                ));
+                drawBarChart('chartRapports', series.map((s) => s.nom), values);
+            }
         } catch (err) {
             toast(err.message, 'error');
         }
@@ -6882,6 +7034,151 @@ const EducRDC = (() => {
         })().catch((err) => toast(err.message, 'error'));
     }
 
+    function initProfil() {
+        const btn = document.getElementById('btnOuvrirProfil');
+        const modal = document.getElementById('modalProfil');
+        if (!btn || !modal) return;
+        bindModalClosers();
+
+        function majAvatars(user) {
+            const url = user.photo_url || '';
+            const init = initials(user.first_name || user.username || 'U');
+            const nom = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
+
+            const sideNom = document.getElementById('sidebarUserNom');
+            if (sideNom) sideNom.textContent = nom;
+
+            const sideAvatar = document.getElementById('sidebarUserAvatar');
+            if (sideAvatar) {
+                if (url) {
+                    sideAvatar.innerHTML = `<img src="${escapeHtml(url)}" alt="" id="sidebarUserPhoto">`;
+                } else {
+                    sideAvatar.innerHTML = `<span id="sidebarUserInitial">${escapeHtml(init.slice(0, 1))}</span>`;
+                }
+            }
+
+            const img = document.getElementById('profilPhotoImg');
+            const fallback = document.getElementById('profilPhotoFallback');
+            if (img && fallback) {
+                if (url) {
+                    img.src = url;
+                    img.hidden = false;
+                    fallback.hidden = true;
+                } else {
+                    img.removeAttribute('src');
+                    img.hidden = true;
+                    fallback.hidden = false;
+                    fallback.textContent = init.slice(0, 1);
+                }
+            }
+        }
+
+        async function chargerProfil() {
+            const user = await api(`${API}/utilisateurs/moi/`);
+            document.getElementById('profilUsername').value = user.username || '';
+            document.getElementById('profilRole').value = user.role_display || user.role || '';
+            document.getElementById('profilFirstName').value = user.first_name || '';
+            document.getElementById('profilLastName').value = user.last_name || '';
+            document.getElementById('profilEmail').value = user.email || '';
+            document.getElementById('profilTelephone').value = user.telephone || '';
+            const gEcole = document.getElementById('groupeProfilEcole');
+            const gClasse = document.getElementById('groupeProfilClasse');
+            if (user.ecole_nom) {
+                gEcole.hidden = false;
+                document.getElementById('profilEcole').value = user.ecole_nom;
+            } else {
+                gEcole.hidden = true;
+            }
+            if (user.classe_nom) {
+                gClasse.hidden = false;
+                document.getElementById('profilClasse').value = [
+                    user.section_nom, user.option_nom, user.classe_nom,
+                ].filter(Boolean).join(' · ');
+            } else {
+                gClasse.hidden = true;
+            }
+            majAvatars(user);
+            return user;
+        }
+
+        btn.addEventListener('click', async () => {
+            try {
+                await chargerProfil();
+                document.getElementById('formProfilPassword')?.reset();
+                openModal('modalProfil');
+            } catch (err) {
+                toast(err.message || 'Impossible de charger le profil.', 'error');
+            }
+        });
+
+        document.getElementById('formProfil')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                email: document.getElementById('profilEmail').value.trim(),
+                telephone: document.getElementById('profilTelephone').value.trim(),
+            };
+            try {
+                const user = await api(`${API}/utilisateurs/moi/`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(payload),
+                });
+                majAvatars(user);
+                toast('Profil mis à jour.', 'success');
+            } catch (err) {
+                toast(err.message || 'Échec de la mise à jour.', 'error');
+            }
+        });
+
+        document.getElementById('formProfilPassword')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const payload = {
+                mot_de_passe_actuel: form.mot_de_passe_actuel.value,
+                nouveau_mot_de_passe: form.nouveau_mot_de_passe.value,
+                confirmation: form.confirmation.value,
+            };
+            if (payload.nouveau_mot_de_passe !== payload.confirmation) {
+                toast('La confirmation ne correspond pas.', 'warning');
+                return;
+            }
+            try {
+                await api(`${API}/utilisateurs/changer-mot-de-passe/`, {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+                form.reset();
+                toast('Mot de passe mis à jour.', 'success');
+            } catch (err) {
+                toast(err.message || 'Échec du changement de mot de passe.', 'error');
+            }
+        });
+
+        document.getElementById('inputProfilPhoto')?.addEventListener('change', async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const fd = new FormData();
+            fd.append('photo', file);
+            try {
+                const user = await api(`${API}/utilisateurs/photo/`, {
+                    method: 'POST',
+                    body: fd,
+                    headers: {},
+                });
+                majAvatars(user);
+                toast('Photo de profil mise à jour.', 'success');
+            } catch (err) {
+                toast(err.message || 'Échec de l\'upload photo.', 'error');
+            } finally {
+                e.target.value = '';
+            }
+        });
+    }
+
+    // Profil disponible sur toutes les pages authentifiées
+    if (document.getElementById('btnOuvrirProfil')) {
+        initProfil();
+    }
+
     return {
         chargerDashboard,
         initEcoles,
@@ -6898,6 +7195,7 @@ const EducRDC = (() => {
         initMonitoringUtilisateurs,
         initMonitoringCarte,
         initEvaluations,
+        initProfil,
         openModal,
         closeModal,
         toast,

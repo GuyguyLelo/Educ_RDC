@@ -66,6 +66,12 @@ class Utilisateur(AbstractUser):
         verbose_name='Classe (titulaire)',
         help_text="Classe dont l'enseignant est titulaire — limite l'accès aux élèves de cette classe.",
     )
+    photo = models.ImageField(
+        upload_to='utilisateurs/photos/',
+        blank=True,
+        null=True,
+        verbose_name='Photo de profil',
+    )
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
 
     class Meta:

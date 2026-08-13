@@ -2,10 +2,11 @@
 
 {% load ui_icons %}
 {% block title %}Rapports{% endblock %}
-{% block page_title %}Rapports administratifs{% endblock %}
-{% block page_subtitle %}Statistiques et exports PDF{% endblock %}
+{% block page_title %}{% if request.user.est_enseignant %}Rapports{% else %}Rapports administratifs{% endif %}{% endblock %}
+{% block page_subtitle %}{% if request.user.est_enseignant %}Impression PDF de votre classe{% else %}Statistiques et impressions PDF{% endif %}{% endblock %}
 
 {% block content %}
+{% if not request.user.est_enseignant %}
 <section class="stats-grid" id="statsRapports">
     <article class="stat-card">
         <span class="stat-label">Élèves</span>
@@ -15,29 +16,37 @@
         <span class="stat-label">Écoles</span>
         <strong class="stat-value" id="rEcoles">—</strong>
     </article>
-    {% if not request.user.est_enseignant %}
     <article class="stat-card accent">
         <span class="stat-label">Cartes</span>
         <strong class="stat-value" id="rCartes">—</strong>
     </article>
-    {% endif %}
     <article class="stat-card">
         <span class="stat-label">Biométries validées</span>
         <strong class="stat-value" id="rBiometries">—</strong>
     </article>
 </section>
+{% endif %}
 
 <section class="panel">
     <div class="panel-header">
-        <h2>Exports</h2>
-        <p>Documents administratifs</p>
+        <h2>Impression</h2>
+        <p>{% if request.user.est_enseignant %}Documents de votre classe{% else %}Documents administratifs{% endif %}</p>
     </div>
     <div class="export-actions">
-        <a href="/api/rapports/pdf/" class="btn btn-primary" target="_blank">{% ico 'pdf' %}Exporter le rapport PDF</a>
-        <button class="btn btn-ghost" id="btnRefreshStats">{% ico 'refresh' %}Actualiser les statistiques</button>
+        {% if request.user.est_enseignant %}
+        <a href="/api/eleves/liste-pdf/" class="btn btn-secondary" target="_blank" rel="noopener">{% ico 'pdf' %}Liste des élèves</a>
+        <a href="/api/programmes-classe/liste-pdf/" class="btn btn-secondary" target="_blank" rel="noopener">{% ico 'pdf' %}Liste de cours</a>
+        {% else %}
+        <a href="{% url 'eleves' %}" class="btn btn-secondary">{% ico 'users' %}Liste des élèves</a>
+        <a href="{% url 'evaluations' %}" class="btn btn-secondary">{% ico 'class' %}Liste de cours</a>
+        {% endif %}
+        {% if not request.user.est_enseignant %}
+        <button class="btn btn-ghost" id="btnRefreshStats" type="button">{% ico 'refresh' %}Actualiser les statistiques</button>
+        {% endif %}
     </div>
 </section>
 
+{% if not request.user.est_enseignant %}
 <section class="panel">
     <div class="panel-header">
         <h2>Répartition provinciale</h2>
@@ -47,6 +56,7 @@
         <canvas id="chartRapports" width="800" height="320"></canvas>
     </div>
 </section>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}

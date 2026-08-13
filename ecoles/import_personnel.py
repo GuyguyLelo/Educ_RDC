@@ -2,8 +2,8 @@
 Import du personnel scolaire depuis Excel (.xlsx) ou CSV.
 
 Colonnes attendues :
-  matricule;nom;postnom;prenom;sexe;fonction;telephone;email;
-  date_naissance;date_prise_service
+  matricule;reference_acte_engagement;nom;postnom;prenom;sexe;fonction;
+  telephone;email;date_naissance;date_prise_service
 
 Obligatoires : nom, prenom, sexe
 Fonction : directeur, directeur_etudes, enseignant, secretaire,
@@ -28,6 +28,15 @@ REQUIRED = ('nom', 'prenom', 'sexe')
 HEADER_ALIASES = {
     'matricule': 'matricule',
     'mat': 'matricule',
+    'reference_acte_engagement': 'reference_acte_engagement',
+    'reference acte engagement': 'reference_acte_engagement',
+    'référence_acte_engagement': 'reference_acte_engagement',
+    'référence acte engagement': 'reference_acte_engagement',
+    'ref_acte_engagement': 'reference_acte_engagement',
+    'ref acte engagement': 'reference_acte_engagement',
+    'acte_engagement': 'reference_acte_engagement',
+    'acte d engagement': 'reference_acte_engagement',
+    "acte d'engagement": 'reference_acte_engagement',
     'nom': 'nom',
     'postnom': 'postnom',
     'post-nom': 'postnom',
@@ -75,8 +84,9 @@ FONCTION_ALIASES = {
 }
 
 MODELE_HEADERS = [
-    'matricule', 'nom', 'postnom', 'prenom', 'sexe', 'fonction',
-    'telephone', 'email', 'date_naissance', 'date_prise_service',
+    'matricule', 'reference_acte_engagement', 'nom', 'postnom', 'prenom',
+    'sexe', 'fonction', 'telephone', 'email',
+    'date_naissance', 'date_prise_service',
 ]
 
 
@@ -266,6 +276,9 @@ def importer_personnel(
                     'prenom': prenom,
                     'sexe': _parse_sexe(row.get('sexe')),
                     'fonction': _parse_fonction(row.get('fonction')),
+                    'reference_acte_engagement': row.get(
+                        'reference_acte_engagement', '',
+                    ).strip()[:80],
                     'telephone': row.get('telephone', '').strip()[:20],
                     'email': row.get('email', '').strip(),
                     'date_naissance': _parse_date(row.get('date_naissance')),
@@ -325,6 +338,10 @@ def generer_modele_xlsx() -> bytes:
     info.title = 'Instructions'
     info.append(['Champ', 'Description'])
     info.append(['matricule', 'Optionnel — identifiant interne'])
+    info.append([
+        'reference_acte_engagement',
+        "Optionnel — N° / référence de l'acte d'engagement",
+    ])
     info.append(['nom / prenom', 'Obligatoires'])
     info.append(['postnom', 'Optionnel'])
     info.append(['sexe', 'Obligatoire — M ou F'])
@@ -345,12 +362,14 @@ def generer_modele_xlsx() -> bytes:
     ws = wb.create_sheet('Personnel')
     ws.append(MODELE_HEADERS)
     ws.append([
-        'PERS-001', 'KABONGO', 'MUTOMBO', 'Jean', 'M', 'enseignant',
-        '+243810000001', 'jean.kabongo@exemple.cd', '1985-03-12', '2015-09-01',
+        'PERS-001', 'AE/KIN/2024/0142', 'KABONGO', 'MUTOMBO', 'Jean', 'M',
+        'enseignant', '+243810000001', 'jean.kabongo@exemple.cd',
+        '1985-03-12', '2015-09-01',
     ])
     ws.append([
-        'PERS-002', 'MUKENDI', '', 'Marie', 'F', 'directeur',
-        '+243810000002', 'marie.mukendi@exemple.cd', '1978-07-21', '2010-01-15',
+        'PERS-002', 'AE/KIN/2010/0088', 'MUKENDI', '', 'Marie', 'F',
+        'directeur', '+243810000002', 'marie.mukendi@exemple.cd',
+        '1978-07-21', '2010-01-15',
     ])
     for sheet in wb.worksheets:
         for col in sheet.columns:

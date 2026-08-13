@@ -3,13 +3,19 @@ from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Utilisateur
-from .serializers import UtilisateurSerializer, UtilisateurCreateSerializer
+from .serializers import (
+    ChangerMotDePasseSerializer,
+    ProfilSerializer,
+    UtilisateurSerializer,
+    UtilisateurCreateSerializer,
+)
 from .permissions import GestionUtilisateurs
 
 
@@ -30,7 +36,10 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        data['user'] = UtilisateurSerializer(self.user).data
+        request = self.context.get('request')
+        data['user'] = UtilisateurSerializer(
+            self.user, context={'request': request},
+        ).data
         return data
 
 
@@ -60,7 +69,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         return UtilisateurSerializer
 
     def get_permissions(self):
-        if self.action == 'moi':
+        if self.action in ('moi', 'changer_mot_de_passe', 'photo'):
             return [IsAuthenticated()]
         return [GestionUtilisateurs()]
 
@@ -134,6 +143,7 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             if not ecole or ecole.id != request.user.ecole_id:
                 raise PermissionDenied("Vous ne pouvez créer des comptes que pour votre école.")
         self.perform_create(serializer)
+        self._sync_personnel(serializer.instance)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -157,7 +167,17 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+        self._sync_personnel(serializer.instance)
         return Response(serializer.data)
+
+    def _sync_personnel(self, user):
+        """Alimente la fiche Personnel pour les enseignants créés/modifiés."""
+        try:
+            from ecoles.services_personnel import synchroniser_personnel_depuis_utilisateur
+            synchroniser_personnel_depuis_utilisateur(user)
+        except Exception:
+            # Ne bloque pas la création du compte si la synchro échoue
+            pass
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -167,6 +187,58 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Compte hors de votre école.")
         return super().destroy(request, *args, **kwargs)
 
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    @action(detail=False, methods=['get', 'patch'], permission_classes=[IsAuthenticated])
     def moi(self, request):
-        return Response(UtilisateurSerializer(request.user).data)
+        """Profil de l'utilisateur connecté (lecture / mise à jour limitée)."""
+        user = request.user
+        if request.method == 'GET':
+            return Response(
+                UtilisateurSerializer(user, context={'request': request}).data
+            )
+        serializer = ProfilSerializer(
+            user, data=request.data, partial=True, context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            UtilisateurSerializer(user, context={'request': request}).data
+        )
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='changer-mot-de-passe',
+        permission_classes=[IsAuthenticated],
+    )
+    def changer_mot_de_passe(self, request):
+        serializer = ChangerMotDePasseSerializer(
+            data=request.data, context={'user': request.user},
+        )
+        serializer.is_valid(raise_exception=True)
+        request.user.set_password(serializer.validated_data['nouveau_mot_de_passe'])
+        request.user.save(update_fields=['password'])
+        return Response({'detail': 'Mot de passe mis à jour.'})
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='photo',
+        permission_classes=[IsAuthenticated],
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def photo(self, request):
+        """Upload / remplacement de la photo de profil."""
+        fichier = request.FILES.get('photo')
+        if not fichier:
+            return Response(
+                {'detail': 'Fichier photo requis (champ « photo »).'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        if user.photo:
+            user.photo.delete(save=False)
+        user.photo = fichier
+        user.save(update_fields=['photo'])
+        return Response(
+            UtilisateurSerializer(user, context={'request': request}).data
+        )

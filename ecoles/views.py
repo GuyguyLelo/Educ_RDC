@@ -663,7 +663,7 @@ class ClasseViewSet(viewsets.ModelViewSet):
 
 
 class PersonnelEcoleViewSet(viewsets.ModelViewSet):
-    queryset = PersonnelEcole.objects.select_related('ecole').all()
+    queryset = PersonnelEcole.objects.select_related('ecole', 'utilisateur').all()
     serializer_class = PersonnelEcoleSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -676,6 +676,7 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
         ecole = self.request.query_params.get('ecole')
         fonction = self.request.query_params.get('fonction')
         actif = self.request.query_params.get('actif')
+        sans_compte = self.request.query_params.get('sans_compte')
         if ecole:
             qs = qs.filter(ecole_id=ecole)
         if fonction:
@@ -684,6 +685,8 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(actif=True)
         elif actif in ('false', '0', 'False'):
             qs = qs.filter(actif=False)
+        if sans_compte in ('1', 'true', 'True'):
+            qs = qs.filter(utilisateur__isnull=True)
         if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(ecole_id=user.ecole_id)
         return qs

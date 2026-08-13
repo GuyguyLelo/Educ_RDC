@@ -108,6 +108,12 @@ class DocumentEcoleAdmin(admin.ModelAdmin):
 
 @admin.register(PersonnelEcole)
 class PersonnelEcoleAdmin(admin.ModelAdmin):
-    list_display = ('nom', 'postnom', 'prenom', 'fonction', 'ecole', 'telephone', 'actif')
+    list_display = (
+        'nom', 'postnom', 'prenom', 'fonction', 'ecole',
+        'matricule', 'reference_acte_engagement', 'telephone', 'actif',
+    )
     list_filter = ('fonction', 'sexe', 'actif', 'ecole__antenne')
-    search_fields = ('nom', 'postnom', 'prenom', 'matricule', 'telephone')
+    search_fields = (
+        'nom', 'postnom', 'prenom', 'matricule',
+        'reference_acte_engagement', 'telephone',
+    )

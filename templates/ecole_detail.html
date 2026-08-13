@@ -106,12 +106,44 @@
     </section>
     {% endif %}
 
+    <section class="detail-card" id="sectionPersonnelEcole">
+        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
+            <div>
+                <h3 class="detail-card-title" style="margin:0">1. Personnel de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Identifier d’abord l’agent (fiche RH) — ensuite seulement lui ouvrir un compte</p>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
+                <span class="list-count" id="countEcolePersonnels">—</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnImporterPersonnel">{% ico 'import' %}Importer Excel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">{% ico 'user' %}Identifier un agent</button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="data-table compact" id="tableEcolePersonnels">
+                <thead>
+                    <tr>
+                        <th>Nom complet</th>
+                        <th>Matricule</th>
+                        <th>Acte d'engagement</th>
+                        <th>Fonction</th>
+                        <th>Sexe</th>
+                        <th>Téléphone</th>
+                        <th>Compte</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
     {% if request.user.est_admin_ecole %}
     <section class="detail-card" id="comptes-ecole">
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
-                <h3 class="detail-card-title" style="margin:0">Comptes utilisateurs de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Administratifs et enseignants — création, modification et suppression</p>
+                <h3 class="detail-card-title" style="margin:0">2. Comptes utilisateurs de l'école</h3>
+                <p class="form-hint" style="margin:0.25rem 0 0">Accès plateforme — section, option et classe uniquement pour un enseignant</p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcoleUtilisateurs">—</span>
@@ -135,36 +167,6 @@
         </div>
     </section>
     {% endif %}
-
-    <section class="detail-card" id="sectionPersonnelEcole">
-        <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
-            <div>
-                <h3 class="detail-card-title" style="margin:0">Personnel de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Identification des agents et enseignants</p>
-            </div>
-            <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
-                <span class="list-count" id="countEcolePersonnels">—</span>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnImporterPersonnel">{% ico 'import' %}Importer Excel</button>
-                <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">{% ico 'user' %}Identifier un agent</button>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table class="data-table compact" id="tableEcolePersonnels">
-                <thead>
-                    <tr>
-                        <th>Nom complet</th>
-                        <th>Matricule</th>
-                        <th>Fonction</th>
-                        <th>Sexe</th>
-                        <th>Téléphone</th>
-                        <th>Statut</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-        </div>
-    </section>
 
     <section class="detail-card" id="sectionElevesEcoleLien">
         <div class="list-panel-header" style="padding:0; border:none; align-items:center">
@@ -221,6 +223,10 @@
                         <div class="form-group">
                             <label>Matricule</label>
                             <input name="matricule" placeholder="Matricule / N° agent">
+                        </div>
+                        <div class="form-group">
+                            <label>Référence acte d'engagement</label>
+                            <input name="reference_acte_engagement" placeholder="ex. AE/KIN/2024/0142" maxlength="80">
                         </div>
                         <div class="form-group">
                             <label>Fonction <span class="req">*</span></label>
@@ -302,7 +308,8 @@
                         Colonnes obligatoires :
                         <code>nom</code>, <code>prenom</code>, <code>sexe</code> (M/F).
                         Optionnelles :
-                        <code>matricule</code>, <code>postnom</code>, <code>fonction</code>,
+                        <code>matricule</code>, <code>reference_acte_engagement</code>,
+                        <code>postnom</code>, <code>fonction</code>,
                         <code>telephone</code>, <code>email</code>,
                         <code>date_naissance</code>, <code>date_prise_service</code>.
                     </p>
@@ -667,6 +674,13 @@
                                 <option value="enseignant" selected>Enseignant</option>
                             </select>
                         </div>
+                        <div class="form-group" id="groupePersonnelUserEcole" hidden>
+                            <label>Fiche personnel <span class="req">*</span></label>
+                            <select name="personnel" id="selectPersonnelUserEcole">
+                                <option value="">— Choisir un agent déjà identifié —</option>
+                            </select>
+                            <span class="form-hint">Obligatoire pour un enseignant (fonction Enseignant). Identifiez d’abord l’agent dans « Personnel ».</span>
+                        </div>
                         <div class="form-group" id="groupeSectionUserEcole" hidden>
                             <label>Section <span class="req">*</span></label>
                             <select id="selectSectionUserEcole">
@@ -684,7 +698,7 @@
                             <select name="classe" id="selectClasseUserEcole">
                                 <option value="">— Sélectionner —</option>
                             </select>
-                            <span class="form-hint">L’enseignant ne verra que les cours (programme) de cette classe.</span>
+                            <span class="form-hint">Réservé aux enseignants — uniquement les cours de cette classe.</span>
                         </div>
                         <div class="form-group">
                             <label>Identifiant <span class="req">*</span></label>
