@@ -305,19 +305,7 @@ def statistiques_dashboard(request):
                 'label': 'Personnel',
                 'value': nb_personnel,
                 'hint': 'Agents et enseignants identifiés',
-            },
-            {
-                'key': 'cartes',
-                'label': 'Cartes produites',
-                'value': nb_cartes,
-                'hint': 'Cartes scolaires actives',
                 'accent': True,
-            },
-            {
-                'key': 'biometries',
-                'label': 'Biométries',
-                'value': nb_biometries,
-                'hint': 'Captures validées',
             },
         ])
     else:

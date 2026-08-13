@@ -351,6 +351,7 @@ class PersonnelEcoleSerializer(serializers.ModelSerializer):
     ecole_nom = serializers.CharField(source='ecole.nom', read_only=True)
     ecole_code = serializers.CharField(source='ecole.code', read_only=True)
     a_compte = serializers.SerializerMethodField()
+    photo_url = serializers.SerializerMethodField()
     utilisateur_username = serializers.CharField(
         source='utilisateur.username', read_only=True, allow_null=True, default=None,
     )
@@ -364,9 +365,21 @@ class PersonnelEcoleSerializer(serializers.ModelSerializer):
             'nom', 'postnom', 'prenom', 'nom_complet',
             'sexe', 'sexe_display', 'fonction', 'fonction_display',
             'telephone', 'email', 'date_naissance', 'date_prise_service',
+            'photo', 'photo_url',
             'actif', 'date_creation',
         ]
-        read_only_fields = ['utilisateur', 'a_compte', 'utilisateur_username']
+        read_only_fields = ['utilisateur', 'a_compte', 'utilisateur_username', 'photo_url']
+        extra_kwargs = {
+            'photo': {'required': False, 'allow_null': True, 'write_only': True},
+        }
 
     def get_a_compte(self, obj):
         return bool(obj.utilisateur_id)
+
+    def get_photo_url(self, obj):
+        if not obj.photo:
+            return None
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.photo.url)
+        return obj.photo.url

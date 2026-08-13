@@ -558,13 +558,16 @@ const EducRDC = (() => {
             if (pie.series) drawPieChart('chartSexePie', pie.series);
 
             renderDashActions(stats.actions || []);
-            renderDashWorkflow(stats.workflow || []);
-            if (stats.scope !== 'classe') {
-                setText(
-                    'workflowTitle',
-                    stats.scope === 'ecole' ? 'Priorités école' : 'Processus métier',
-                );
-                setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
+            // Tableau de bord école : pas de carte « Priorités école »
+            if (stats.scope === 'ecole') {
+                const wfPanel = document.getElementById('dashWorkflow')?.closest('.panel');
+                if (wfPanel) wfPanel.hidden = true;
+            } else {
+                renderDashWorkflow(stats.workflow || []);
+                if (stats.scope !== 'classe') {
+                    setText('workflowTitle', 'Processus métier');
+                    setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
+                }
             }
         } catch (err) {
             toast(err.message, 'error');
@@ -1526,8 +1529,13 @@ const EducRDC = (() => {
         }
         const tbody = document.querySelector('#tableEcolePersonnels tbody');
         if (!tbody) return;
-        tbody.innerHTML = rows.length ? rows.map((p) => `
+        tbody.innerHTML = rows.length ? rows.map((p) => {
+            const avatar = p.photo_url
+                ? `<div class="entity-avatar has-photo"><img src="${escapeHtml(p.photo_url)}" alt=""></div>`
+                : `<div class="entity-avatar">${escapeHtml(initialsShort(p.nom_complet || '?'))}</div>`;
+            return `
             <tr>
+                <td data-label="Photo">${avatar}</td>
                 <td data-label="Nom"><strong>${escapeHtml(p.nom_complet)}</strong></td>
                 <td data-label="Matricule"><span class="code-chip">${escapeHtml(p.matricule || '—')}</span></td>
                 <td data-label="Acte d'engagement"><span class="code-chip">${escapeHtml(p.reference_acte_engagement || '—')}</span></td>
@@ -1547,7 +1555,8 @@ const EducRDC = (() => {
                     </div>
                 </td>
             </tr>
-        `).join('') : emptyRow(9, 'Aucun personnel identifié', 'Cliquez sur « Identifier un agent » puis créez éventuellement son compte.');
+        `;
+        }).join('') : emptyRow(10, 'Aucun personnel identifié', 'Cliquez sur « Identifier un agent » puis créez éventuellement son compte.');
 
         tbody.querySelectorAll('[data-edit-personnel]').forEach((btn) => {
             btn.addEventListener('click', async () => {
@@ -1571,6 +1580,23 @@ const EducRDC = (() => {
         });
     }
 
+    function resetPersonnelPhotoPreview(url = '') {
+        const preview = document.getElementById('personnelPhotoPreview');
+        const drop = document.getElementById('personnelPhoto')?.closest('.file-drop');
+        const title = drop?.querySelector('.file-drop-title');
+        if (preview) {
+            if (url) {
+                preview.classList.add('has-photo');
+                preview.innerHTML = `<img src="${escapeHtml(url)}" alt="">`;
+            } else {
+                preview.classList.remove('has-photo');
+                preview.textContent = '—';
+            }
+        }
+        if (drop) drop.classList.remove('has-file', 'is-dragover');
+        if (title) title.textContent = 'Déposer une photo ou cliquer pour parcourir';
+    }
+
     function ouvrirModalPersonnel(personnel = null) {
         const form = document.getElementById('formPersonnel');
         if (!form) return;
@@ -1579,6 +1605,7 @@ const EducRDC = (() => {
         document.getElementById('titreModalPersonnel').textContent = personnel
             ? 'Modifier le personnel'
             : 'Identifier un agent';
+        resetPersonnelPhotoPreview(personnel?.photo_url || '');
         if (personnel) {
             form.nom.value = personnel.nom || '';
             form.postnom.value = personnel.postnom || '';
@@ -1661,10 +1688,20 @@ const EducRDC = (() => {
         const id = root.dataset.ecoleId;
         const ecole = await api(`${API}/ecoles/${id}/`);
 
-        document.getElementById('detailEcoleCode').textContent = ecole.code || '—';
-        document.getElementById('detailEcoleNom').textContent = ecole.nom || '—';
-        document.getElementById('detailEcoleSousTitre').textContent =
-            `${ecole.antenne_nom || '—'} · ${ecole.province_educationnelle_nom || ecole.province_nom || '—'}`;
+        const sousTitre = document.getElementById('detailEcoleSousTitre');
+        if (sousTitre) {
+            sousTitre.textContent =
+                `${ecole.antenne_nom || '—'} · ${ecole.province_educationnelle_nom || ecole.province_nom || '—'}`;
+        }
+        // En-tête de page : nom + code (unique — plus de doublon dans le hero)
+        const pageNom = document.getElementById('pageEcoleNom');
+        const pageCode = document.getElementById('pageEcoleCode');
+        if (pageNom) pageNom.textContent = ecole.nom || 'École';
+        if (pageCode) {
+            pageCode.textContent = ecole.code || '—';
+            pageCode.hidden = !ecole.code;
+        }
+        if (ecole.nom) document.title = `${ecole.nom} — Educ_RDC`;
         document.getElementById('detailEcoleType').textContent = ecole.type_display || ecole.type_ecole || '—';
         document.getElementById('detailEcoleNiveau').textContent = ecole.niveau_display || ecole.niveau || '—';
 
@@ -1881,6 +1918,16 @@ const EducRDC = (() => {
         bindModalClosers();
         bindFileDropPreview('importPersonnelFile');
         bindFileDropPreview('importClassesFile');
+        bindFileDropPreview('personnelPhoto');
+        document.getElementById('personnelPhoto')?.addEventListener('change', (e) => {
+            const file = e.target.files?.[0];
+            const preview = document.getElementById('personnelPhotoPreview');
+            if (!preview) return;
+            if (!file) return;
+            const url = URL.createObjectURL(file);
+            preview.classList.add('has-photo');
+            preview.innerHTML = `<img src="${url}" alt="">`;
+        });
         const root = document.getElementById('ecoleDetail');
         const ecoleId = root?.dataset.ecoleId;
 
@@ -2421,21 +2468,24 @@ const EducRDC = (() => {
                 return;
             }
             const id = document.getElementById('personnelId').value;
-            const payload = Object.fromEntries(new FormData(form).entries());
-            payload.ecole = Number(ecoleId);
-            payload.actif = true;
-            if (!payload.date_naissance) delete payload.date_naissance;
-            if (!payload.date_prise_service) delete payload.date_prise_service;
+            const fd = new FormData(form);
+            fd.set('ecole', String(ecoleId));
+            fd.set('actif', 'true');
+            if (!fd.get('date_naissance')) fd.delete('date_naissance');
+            if (!fd.get('date_prise_service')) fd.delete('date_prise_service');
+            const photo = fd.get('photo');
+            if (photo instanceof File && !photo.size) fd.delete('photo');
             try {
                 if (id) {
-                    await api(`${API}/personnels/${id}/`, { method: 'PUT', body: JSON.stringify(payload) });
+                    await api(`${API}/personnels/${id}/`, { method: 'PATCH', body: fd, headers: {} });
                     toast('Personnel mis à jour.', 'success');
                 } else {
-                    await api(`${API}/personnels/`, { method: 'POST', body: JSON.stringify(payload) });
+                    await api(`${API}/personnels/`, { method: 'POST', body: fd, headers: {} });
                     toast('Personnel identifié avec succès.', 'success');
                 }
                 closeModal('modalPersonnel');
                 form.reset();
+                resetPersonnelPhotoPreview();
                 await chargerEcolePersonnels(ecoleId);
                 const ecole = await api(`${API}/ecoles/${ecoleId}/`);
                 fillDetailList('blocEcoleEffectifs', [

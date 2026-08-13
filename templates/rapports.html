@@ -3,7 +3,17 @@
 {% load ui_icons %}
 {% block title %}Rapports{% endblock %}
 {% block page_title %}{% if request.user.est_enseignant %}Rapports{% else %}Rapports administratifs{% endif %}{% endblock %}
-{% block page_subtitle %}{% if request.user.est_enseignant %}Impression PDF de votre classe{% else %}Statistiques et impressions PDF{% endif %}{% endblock %}
+{% block page_subtitle %}
+{% if request.user.est_enseignant %}
+<span class="page-head-meta">
+    {% if request.user.classe_nom %}<span class="eleves-classe-chip">Classe {{ request.user.classe_nom }}</span>{% endif %}
+    <span class="page-head-dot" aria-hidden="true"></span>
+    <span class="page-head-label">Impression PDF</span>
+</span>
+{% else %}
+Statistiques et impressions PDF
+{% endif %}
+{% endblock %}
 
 {% block content %}
 {% if not request.user.est_enseignant %}

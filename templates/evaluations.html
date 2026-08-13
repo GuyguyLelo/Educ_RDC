@@ -3,7 +3,19 @@
 
 {% block title %}Évaluation{% endblock %}
 {% block page_title %}Évaluation scolaire{% endblock %}
-{% block page_subtitle %}Notes, programme de classe et bulletins officiels IGE/EPSP{% endblock %}
+{% block page_subtitle %}
+{% if est_enseignant %}
+<span class="page-head-meta">
+    {% if classe_nom %}<span class="eleves-classe-chip">{{ classe_nom }}</span>{% endif %}
+    {% if section_nom or option_nom %}
+    <span class="page-head-dot" aria-hidden="true"></span>
+    <span class="page-head-label">{{ section_nom }}{% if section_nom and option_nom %} · {% endif %}{{ option_nom }}</span>
+    {% endif %}
+</span>
+{% else %}
+Notes, programme de classe et bulletins officiels IGE/EPSP
+{% endif %}
+{% endblock %}
 
 {% block content %}
 <div

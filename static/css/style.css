@@ -980,72 +980,149 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1.1rem 1.75rem;
-    background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
+    padding: 1.05rem 1.75rem 1.15rem;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 250, 253, 0.9) 100%);
+    backdrop-filter: blur(16px) saturate(1.15);
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 85%, var(--bleu) 15%);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 8px 20px rgba(10, 40, 80, 0.04);
 }
 
-.topbar-title { flex: 1; min-width: 0; }
+.topbar::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 3px;
+    background: linear-gradient(
+        90deg,
+        var(--bleu) 0%,
+        var(--bleu) 33.33%,
+        var(--jaune) 33.33%,
+        var(--jaune) 66.66%,
+        var(--rouge) 66.66%,
+        var(--rouge) 100%
+    );
+}
 
-.topbar-title h1 {
+.topbar-title,
+.page-head {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Titre de page — même style que le nom d'école (ACADEMIE…) */
+.topbar-title h1,
+.page-head h1,
+.page-head-brand {
     margin: 0;
-    font-size: clamp(1.25rem, 2vw, 1.55rem);
-    color: var(--bleu-nuit);
-}
-
-.topbar-title p {
-    margin: 0.2rem 0 0;
-    color: var(--muted);
-    font-size: 0.9rem;
-}
-
-/* En-tête enseignant — page Élèves */
-.eleves-page-title {
-    display: inline-block;
-    font-family: 'Sora', sans-serif;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    background: linear-gradient(120deg, var(--bleu-nuit) 0%, var(--bleu) 70%);
+    font-family: var(--font-display), "Sora", sans-serif;
+    font-size: clamp(1.25rem, 2.2vw, 1.65rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    text-wrap: balance;
+    background-image: linear-gradient(115deg, var(--bleu-nuit) 0%, var(--bleu) 55%, #1a6bb8 100%);
+    background-size: 100% 100%;
     -webkit-background-clip: text;
     background-clip: text;
+    -webkit-text-fill-color: transparent;
     color: transparent;
 }
 
-.eleves-page-subtitle {
+.topbar-title p,
+.page-head p {
+    margin: 0.4rem 0 0;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.6rem;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--ink-soft);
+    line-height: 1.35;
+    -webkit-text-fill-color: var(--ink-soft);
+}
+
+.topbar-title p:not(:has(.page-head-meta, .ecole-page-meta, .eleves-page-subtitle)),
+.page-head p:not(:has(.page-head-meta, .ecole-page-meta, .eleves-page-subtitle)) {
+    display: inline-flex;
+    max-width: 100%;
+    padding: 0.18rem 0.7rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bleu) 8%, #fff);
+    border: 1px solid color-mix(in srgb, var(--bleu) 18%, var(--line));
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--bleu) 8%, transparent);
+}
+
+/* Spans dans le h1 (ex. nom d'école) — même dégradé */
+.topbar-title h1 > span,
+.page-head h1 > span {
+    font: inherit;
+    font-weight: inherit;
+    letter-spacing: inherit;
+    background-image: inherit;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+}
+
+.ecole-page-meta,
+.eleves-page-subtitle,
+.page-head-meta {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.45rem 0.55rem;
-    margin-top: 0.15rem;
+    gap: 0.45rem 0.6rem;
 }
 
+.ecole-page-code,
+.page-head-chip,
 .eleves-classe-chip {
     display: inline-flex;
     align-items: center;
-    padding: 0.22rem 0.7rem;
+    padding: 0.2rem 0.7rem;
     border-radius: 999px;
+    font-family: var(--font-display);
     font-size: 0.78rem;
-    font-weight: 650;
-    letter-spacing: 0.01em;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #fff;
+    -webkit-text-fill-color: #fff;
+    background: linear-gradient(135deg, var(--bleu) 0%, var(--bleu-profond) 100%);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.22) inset,
+        0 4px 12px rgba(0, 80, 158, 0.22);
+}
+
+.eleves-classe-chip {
     color: var(--bleu-nuit);
+    -webkit-text-fill-color: var(--bleu-nuit);
     background: color-mix(in srgb, var(--bleu) 14%, #fff);
     border: 1px solid color-mix(in srgb, var(--bleu) 28%, var(--line));
     box-shadow: 0 1px 0 color-mix(in srgb, var(--bleu) 12%, transparent);
 }
 
-.eleves-page-sep {
+.ecole-page-dot,
+.eleves-page-sep,
+.page-head-dot {
     width: 4px;
     height: 4px;
     border-radius: 50%;
-    background: color-mix(in srgb, var(--bleu) 45%, var(--muted));
+    background: color-mix(in srgb, var(--jaune-profond) 70%, var(--muted));
 }
 
-.eleves-page-mode {
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: var(--muted);
-    letter-spacing: 0.02em;
+.ecole-page-label,
+.eleves-page-mode,
+.page-head-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    color: var(--ink-soft);
+    -webkit-text-fill-color: var(--ink-soft);
 }
 
 .topbar-meta {
@@ -1791,6 +1868,24 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     object-fit: cover;
 }
 
+.personnel-photo-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.85rem;
+}
+
+.personnel-photo-row .entity-avatar {
+    width: 72px;
+    height: 86px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+}
+
+.personnel-photo-row .file-drop {
+    flex: 1;
+    min-width: 0;
+}
+
 /* ---------- Fiche détail élève (compacte) ---------- */
 .detail-shell {
     display: flex;
@@ -1809,6 +1904,18 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     border: 1px solid var(--line);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
+}
+
+.detail-hero--no-photo {
+    padding: 0.75rem 1rem;
+}
+
+.detail-hero--no-photo .detail-sub {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--ink-soft);
+    letter-spacing: 0.01em;
+    line-height: 1.35;
 }
 
 .detail-photo-wrap {
@@ -3585,12 +3692,14 @@ body.nav-open {
     }
 
     .topbar {
-        padding: 0.9rem 1.1rem;
+        padding: 0.85rem 1.1rem 0.95rem;
         gap: 0.75rem;
     }
 
-    .topbar-title h1 { font-size: 1.25rem; }
-    .topbar-title p { font-size: 0.84rem; }
+    .topbar-title h1,
+    .page-head-brand { font-size: 1.2rem; }
+    .topbar-title p { font-size: 0.82rem; }
+    .page-head-label { display: none; }
 
     .content { padding: 1.1rem 1.1rem 2rem; }
     .form-grid { grid-template-columns: 1fr 1fr; }

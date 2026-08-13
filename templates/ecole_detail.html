@@ -1,29 +1,32 @@
 {% extends 'base.html' %}
 
 {% load ui_icons %}
-{% block title %}Détail école{% endblock %}
-{% block page_title %}Fiche école{% endblock %}
-{% block page_subtitle %}Identification, effectifs, personnel et localisation{% endblock %}
+{% block title %}{{ ecole.nom }}{% endblock %}
+{% block page_title %}<span id="pageEcoleNom">{{ ecole.nom }}</span>{% endblock %}
+{% block page_subtitle %}
+<span class="page-head-meta">
+    {% if ecole.code %}
+    <span class="ecole-page-code" id="pageEcoleCode">{{ ecole.code }}</span>
+    {% else %}
+    <span class="ecole-page-code" id="pageEcoleCode" hidden>—</span>
+    {% endif %}
+    <span class="page-head-dot" aria-hidden="true"></span>
+    <span class="page-head-label">Fiche établissement</span>
+</span>
+{% endblock %}
 
 {% block content %}
 <div class="detail-shell" id="ecoleDetail" data-ecole-id="{{ ecole_id }}">
-    <section class="detail-hero">
-        <div class="detail-photo-wrap">
-            <div id="detailEcoleAvatar" class="detail-photo-fallback school">—</div>
-        </div>
-
+    <section class="detail-hero detail-hero--no-photo">
         <div class="detail-hero-info">
             <div class="detail-hero-top">
                 <div>
-                    <p class="detail-kicker" id="detailEcoleCode">—</p>
-                    <h2 id="detailEcoleNom">Chargement…</h2>
                     <p class="detail-sub" id="detailEcoleSousTitre">—</p>
                 </div>
                 <div class="detail-hero-actions">
                     <a href="{% url 'ecoles' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEcole">{% ico 'edit' %}Modifier</button>
                     <button type="button" class="btn btn-ghost btn-sm" id="btnPersonnelEcole">{% ico 'users' %}Personnel</button>
-                    <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel">{% ico 'user' %}Identifier</button>
                     {% if request.user.est_admin or request.user.role == 'admin_ecole' or request.user.est_national %}
                     <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEcole">{% ico 'trash' %}Supprimer</button>
                     {% endif %}
@@ -122,6 +125,7 @@
             <table class="data-table compact" id="tableEcolePersonnels">
                 <thead>
                     <tr>
+                        <th>Photo</th>
                         <th>Nom complet</th>
                         <th>Matricule</th>
                         <th>Acte d'engagement</th>
@@ -201,6 +205,17 @@
                 <section class="form-section">
                     <h4 class="form-section-title">Identité</h4>
                     <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Photo</label>
+                            <div class="personnel-photo-row">
+                                <div class="entity-avatar" id="personnelPhotoPreview" aria-hidden="true">—</div>
+                                <div class="file-drop">
+                                    <input type="file" name="photo" id="personnelPhoto" accept="image/*">
+                                    <span class="file-drop-title">Déposer une photo ou cliquer pour parcourir</span>
+                                    <span class="file-drop-sub">JPG ou PNG — portrait recommandé</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="form-group">
                             <label>Nom <span class="req">*</span></label>
                             <input name="nom" required placeholder="Nom">

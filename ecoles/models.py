@@ -515,6 +515,12 @@ class PersonnelEcole(models.Model):
     email = models.EmailField(blank=True, verbose_name='Email')
     date_naissance = models.DateField(null=True, blank=True, verbose_name='Date de naissance')
     date_prise_service = models.DateField(null=True, blank=True, verbose_name='Date de prise de service')
+    photo = models.ImageField(
+        upload_to='personnels/photos/',
+        blank=True,
+        null=True,
+        verbose_name='Photo',
+    )
     actif = models.BooleanField(default=True, verbose_name='Actif')
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
     date_modification = models.DateTimeField(auto_now=True)

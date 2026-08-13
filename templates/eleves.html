@@ -2,8 +2,18 @@
 
 {% load ui_icons %}
 {% block title %}Élèves{% endblock %}
-{% block page_title %}{% if request.user.est_enseignant %}<span class="eleves-page-title">Élèves de ma classe</span>{% else %}Gestion des élèves{% endif %}{% endblock %}
-{% block page_subtitle %}{% if request.user.est_enseignant %}<span class="eleves-page-subtitle"><span class="eleves-classe-chip">Classe {{ request.user.classe_nom|default:"—" }}</span><span class="eleves-page-sep" aria-hidden="true"></span><span class="eleves-page-mode">consultation</span></span>{% else %}Enregistrement et recherche des élèves{% endif %}{% endblock %}
+{% block page_title %}{% if request.user.est_enseignant %}Élèves de ma classe{% else %}Gestion des élèves{% endif %}{% endblock %}
+{% block page_subtitle %}
+{% if request.user.est_enseignant %}
+<span class="page-head-meta">
+    <span class="eleves-classe-chip">Classe {{ request.user.classe_nom|default:"—" }}</span>
+    <span class="page-head-dot" aria-hidden="true"></span>
+    <span class="page-head-label">consultation</span>
+</span>
+{% else %}
+Enregistrement et recherche des élèves
+{% endif %}
+{% endblock %}
 
 {% block content %}
 <div class="list-shell" id="elevesApp"

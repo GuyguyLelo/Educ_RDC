@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260813c">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260813g">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -122,8 +122,8 @@
         <div class="main-area">
             <header class="topbar">
                 <button class="menu-toggle" id="menuToggle" type="button" aria-label="Ouvrir le menu" aria-controls="sidebar" aria-expanded="false">☰</button>
-                <div class="topbar-title">
-                    <h1>{% block page_title %}Tableau de bord{% endblock %}</h1>
+                <div class="topbar-title page-head">
+                    <h1 class="page-head-brand">{% block page_title %}Tableau de bord{% endblock %}</h1>
                     <p>{% block page_subtitle %}Plateforme nationale d'identification scolaire{% endblock %}</p>
                 </div>
                 {% if request.user.est_enseignant and request.user.ecole %}
