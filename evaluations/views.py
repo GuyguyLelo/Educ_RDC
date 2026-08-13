@@ -266,6 +266,11 @@ class MatiereViewSet(viewsets.ModelViewSet):
         classe_id = self.request.query_params.get('classe')
         option_id = self.request.query_params.get('option')
         section_id = self.request.query_params.get('section')
+        # Enseignant : forcément sa classe titulaire
+        if getattr(user, 'est_enseignant', False):
+            if not user.classe_id:
+                return qs.none()
+            classe_id = str(user.classe_id)
         # scope=hierarchie (défaut si classe fournie) : classe + option (+ section)
         scope = (self.request.query_params.get('scope') or '').lower()
         use_hierarchie = scope in ('hierarchie', '1', 'true') or (
@@ -365,13 +370,16 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
         annee = self.request.query_params.get('annee')
         classe = self.request.query_params.get('classe')
         user = self.request.user
-        if getattr(user, 'est_enseignant', False) and user.classe_id:
+        if getattr(user, 'est_enseignant', False):
+            # Uniquement le programme de sa classe titulaire (section/option via la classe)
+            if not user.classe_id:
+                return qs.none()
             qs = qs.filter(classe_id=user.classe_id)
         elif user.role == 'admin_ecole' and user.ecole_id:
             qs = qs.filter(classe__ecole_id=user.ecole_id)
         if annee:
             qs = qs.filter(annee_id=annee)
-        if classe:
+        if classe and not getattr(user, 'est_enseignant', False):
             qs = qs.filter(classe_id=classe)
         return qs
 
@@ -459,7 +467,9 @@ class NoteViewSet(viewsets.ModelViewSet):
             'eleve', 'programme__matiere', 'programme__classe', 'periode',
         ).all()
         user = self.request.user
-        if getattr(user, 'est_enseignant', False) and user.classe_id:
+        if getattr(user, 'est_enseignant', False):
+            if not user.classe_id:
+                return qs.none()
             qs = qs.filter(eleve__classe_id=user.classe_id)
         elif user.role == 'admin_ecole' and user.ecole_id:
             qs = qs.filter(eleve__ecole_id=user.ecole_id)

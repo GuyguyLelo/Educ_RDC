@@ -559,6 +559,12 @@ class ClasseViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         qs = _scope_classes_ecole(qs, self.request.user, self.request)
+        user = self.request.user
+        # Enseignant : uniquement sa classe titulaire
+        if getattr(user, 'est_enseignant', False):
+            if not user.classe_id:
+                return qs.none()
+            return qs.filter(pk=user.classe_id)
         section = self.request.query_params.get('section')
         option = self.request.query_params.get('option')
         if section:

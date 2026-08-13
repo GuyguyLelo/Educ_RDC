@@ -21,6 +21,10 @@ def _valider_rattachement_scolaire(attrs, instance=None):
             raise serializers.ValidationError({
                 'classe': "La classe doit appartenir à l'école sélectionnée.",
             })
+        if not getattr(classe, 'section_id', None):
+            raise serializers.ValidationError({
+                'classe': "La classe de l'enseignant doit être rattachée à une section (et option si applicable).",
+            })
     return attrs
 
 
@@ -44,6 +48,10 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     classe_nom = serializers.CharField(
         source='classe.nom', read_only=True, allow_null=True, default=None,
     )
+    section = serializers.SerializerMethodField()
+    section_nom = serializers.SerializerMethodField()
+    option = serializers.SerializerMethodField()
+    option_nom = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -56,9 +64,29 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'antenne', 'antenne_nom',
             'ecole', 'ecole_nom', 'ecole_code',
             'classe', 'classe_nom',
+            'section', 'section_nom', 'option', 'option_nom',
             'is_active', 'date_creation', 'password',
         ]
-        read_only_fields = ['date_creation', 'classe_nom']
+        read_only_fields = [
+            'date_creation', 'classe_nom',
+            'section', 'section_nom', 'option', 'option_nom',
+        ]
+
+    def get_section(self, obj):
+        return obj.classe.section_id if obj.classe_id else None
+
+    def get_section_nom(self, obj):
+        if not obj.classe_id or not getattr(obj.classe, 'section_id', None):
+            return None
+        return obj.classe.section.nom
+
+    def get_option(self, obj):
+        return obj.classe.option_id if obj.classe_id else None
+
+    def get_option_nom(self, obj):
+        if not obj.classe_id or not getattr(obj.classe, 'option_id', None):
+            return None
+        return obj.classe.option.nom
 
     def validate(self, attrs):
         return _valider_rattachement_scolaire(attrs, self.instance)

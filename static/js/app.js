@@ -1267,13 +1267,54 @@ const EducRDC = (() => {
     function syncRoleUserEcoleUI() {
         const role = document.getElementById('selectRoleUserEcole')?.value || '';
         const enseignant = role === 'enseignant';
-        const groupe = document.getElementById('groupeClasseUserEcole');
+        ['groupeSectionUserEcole', 'groupeOptionUserEcole', 'groupeClasseUserEcole'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = !enseignant;
+        });
         const sel = document.getElementById('selectClasseUserEcole');
-        if (groupe) groupe.hidden = !enseignant;
+        const selSec = document.getElementById('selectSectionUserEcole');
         if (sel) {
             sel.required = enseignant;
             if (!enseignant) sel.value = '';
         }
+        if (selSec) selSec.required = enseignant;
+        if (!enseignant) {
+            const selOpt = document.getElementById('selectOptionUserEcole');
+            if (selSec) selSec.value = '';
+            if (selOpt) selOpt.value = '';
+        }
+    }
+
+    async function chargerClassesUserEcole(ecoleId, selectedClasseId = '') {
+        const selSec = document.getElementById('selectSectionUserEcole');
+        const selOpt = document.getElementById('selectOptionUserEcole');
+        const selCla = document.getElementById('selectClasseUserEcole');
+        if (!selCla) return;
+        const sectionId = selSec?.value || '';
+        const optionId = selOpt?.value || '';
+        selCla.innerHTML = '<option value="">— Sélectionner —</option>';
+        if (!ecoleId || !sectionId) return;
+        let url = `${API}/classes/?ecole=${ecoleId}&actif=1&section=${sectionId}&page_size=200&ordering=nom`;
+        if (optionId) url += `&option=${optionId}`;
+        try {
+            const data = await api(url);
+            const rows = data.results || data;
+            selCla.innerHTML = '<option value="">— Sélectionner —</option>' + rows.map((c) => {
+                const parts = [c.section_nom, c.option_nom, c.nom].filter(Boolean);
+                return `<option value="${c.id}" data-section="${c.section || ''}" data-option="${c.option || ''}">${escapeHtml(parts.join(' · '))}</option>`;
+            }).join('');
+            if (selectedClasseId) selCla.value = String(selectedClasseId);
+        } catch (err) {
+            toast(err.message || 'Impossible de charger les classes.', 'error');
+        }
+    }
+
+    async function preparerAffectationEnseignant(ecoleId, user = null) {
+        const selSec = document.getElementById('selectSectionUserEcole');
+        const selOpt = document.getElementById('selectOptionUserEcole');
+        await chargerSectionsEcole(ecoleId, selSec, user?.section || '');
+        await chargerOptionsEcole(ecoleId, selSec?.value || user?.section || '', selOpt, user?.option || '');
+        await chargerClassesUserEcole(ecoleId, user?.classe || '');
     }
 
     function setModePasswordUserEcole(edition) {
@@ -1328,8 +1369,11 @@ const EducRDC = (() => {
             if (actif) actif.checked = true;
         }
         syncRoleUserEcoleUI();
-        if (ecoleId) {
-            await remplirSelectClasses(ecoleId, 'selectClasseUserEcole', user?.classe || '');
+        if (ecoleId && (user?.role === 'enseignant' || !user)) {
+            const role = document.getElementById('selectRoleUserEcole')?.value || '';
+            if (role === 'enseignant') {
+                await preparerAffectationEnseignant(ecoleId, user);
+            }
         }
         openModal('modalUserEcole');
     }
@@ -1344,8 +1388,11 @@ const EducRDC = (() => {
             setCount('countEcoleUtilisateurs', data.count ?? rows.length, 'compte');
             tbody.innerHTML = rows.length ? rows.map((u) => {
                 const nom = [u.first_name, u.last_name].filter(Boolean).join(' ') || u.username;
-                const roleHtml = u.role === 'enseignant' && u.classe_nom
-                    ? `<span class="badge badge-neutral">${escapeHtml(u.role_display || u.role)}</span> <span class="code-chip">${escapeHtml(u.classe_nom)}</span>`
+                const affectation = u.role === 'enseignant'
+                    ? [u.section_nom, u.option_nom, u.classe_nom].filter(Boolean).join(' · ')
+                    : '';
+                const roleHtml = u.role === 'enseignant' && affectation
+                    ? `<span class="badge badge-neutral">${escapeHtml(u.role_display || u.role)}</span> <span class="code-chip" title="Section · Option · Classe">${escapeHtml(affectation)}</span>`
                     : `<span class="badge badge-neutral">${escapeHtml(u.role_display || u.role)}</span>`;
                 return `
                 <tr>
@@ -1928,7 +1975,20 @@ const EducRDC = (() => {
 
         document.getElementById('btnNouveauUserEcole')?.addEventListener('click', () => ouvrirModalUserEcole());
 
-        document.getElementById('selectRoleUserEcole')?.addEventListener('change', syncRoleUserEcoleUI);
+        document.getElementById('selectRoleUserEcole')?.addEventListener('change', async () => {
+            syncRoleUserEcoleUI();
+            const role = document.getElementById('selectRoleUserEcole')?.value;
+            if (role === 'enseignant' && ecoleId) {
+                await preparerAffectationEnseignant(ecoleId);
+            }
+        });
+        document.getElementById('selectSectionUserEcole')?.addEventListener('change', async (e) => {
+            await chargerOptionsEcole(ecoleId, e.target.value, document.getElementById('selectOptionUserEcole'));
+            await chargerClassesUserEcole(ecoleId);
+        });
+        document.getElementById('selectOptionUserEcole')?.addEventListener('change', async () => {
+            await chargerClassesUserEcole(ecoleId);
+        });
 
         document.getElementById('btnSupprimerUserEcole')?.addEventListener('click', async () => {
             const id = document.getElementById('userEcoleId')?.value;
@@ -1948,9 +2008,16 @@ const EducRDC = (() => {
             const form = e.target;
             const id = document.getElementById('userEcoleId')?.value || '';
             const role = form.role.value;
-            if (role === 'enseignant' && !form.classe?.value) {
-                toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
-                return;
+            if (role === 'enseignant') {
+                const sectionId = document.getElementById('selectSectionUserEcole')?.value;
+                if (!sectionId) {
+                    toast('Sélectionnez la section de l’enseignant.', 'warning');
+                    return;
+                }
+                if (!form.classe?.value) {
+                    toast('Sélectionnez la classe dont l’enseignant est titulaire.', 'warning');
+                    return;
+                }
             }
             if (!form.checkValidity()) {
                 toast('Veuillez compléter les champs obligatoires.', 'warning');
@@ -4540,7 +4607,18 @@ const EducRDC = (() => {
             const chipP = document.getElementById('chipPeriodeEval');
             const chipM = document.getElementById('chipMatiereEval');
             if (chipA) chipA.textContent = selectedLabel(anneeSel) || 'Année —';
-            if (chipC) chipC.textContent = selectedLabel(classeSel) || 'Classe —';
+            if (chipC) {
+                if (estEnseignant) {
+                    const parts = [
+                        root.dataset.sectionNom,
+                        root.dataset.optionNom,
+                        root.dataset.classeNom || selectedLabel(classeSel),
+                    ].filter(Boolean);
+                    chipC.textContent = parts.length ? parts.join(' · ') : 'Classe —';
+                } else {
+                    chipC.textContent = selectedLabel(classeSel) || 'Classe —';
+                }
+            }
             if (chipP) {
                 const lab = selectedLabel(periodeSel);
                 chipP.textContent = lab && !lab.startsWith('—')
@@ -4632,11 +4710,28 @@ const EducRDC = (() => {
 
         async function chargerClasses() {
             const sel = document.getElementById('selectClasseEval');
+            if (!sel) return;
+            // Enseignant : uniquement sa classe (section / option / classe figées)
+            if (estEnseignant && classeFixe) {
+                const secNom = root.dataset.sectionNom || '';
+                const optNom = root.dataset.optionNom || '';
+                const claNom = root.dataset.classeNom || `Classe #${classeFixe}`;
+                const label = [secNom, optNom, claNom].filter(Boolean).join(' · ') || claNom;
+                sel.innerHTML = `<option value="${classeFixe}"
+                    data-section="${escapeHtml(root.dataset.sectionId || '')}"
+                    data-option="${escapeHtml(root.dataset.optionId || '')}"
+                    data-section-nom="${escapeHtml(secNom)}"
+                    data-option-nom="${escapeHtml(optNom)}"
+                    data-ecole="${escapeHtml(ecoleId)}"
+                    selected>${escapeHtml(label)}</option>`;
+                sel.disabled = true;
+                majResumeSession();
+                return;
+            }
             let url = `${API}/classes/?actif=1&page_size=300&ordering=nom`;
             if (ecoleId) url += `&ecole=${ecoleId}`;
             const data = await api(url);
             const rows = data.results || data;
-            // Tri section → option → nom
             rows.sort((a, b) => labelClasseEval(a).localeCompare(labelClasseEval(b), 'fr'));
             sel.innerHTML = rows.map((c) => `
                 <option value="${c.id}"
@@ -4648,10 +4743,6 @@ const EducRDC = (() => {
                     ${escapeHtml(labelClasseEval(c))}
                 </option>
             `).join('') || '<option value="">— Aucune classe —</option>';
-            if (classeFixe) {
-                sel.value = String(classeFixe);
-                sel.disabled = true;
-            }
             majResumeSession();
         }
 
@@ -4724,7 +4815,9 @@ const EducRDC = (() => {
             const rows = data.results || data;
             sel.innerHTML = rows.length
                 ? rows.map((p) => `<option value="${p.id}">${escapeHtml(p.matiere_nom)} (max ${p.maximum_effectif})</option>`).join('')
-                : '<option value="">— Aucune matière au programme —</option>';
+                : `<option value="">— ${estEnseignant
+                    ? 'Aucun cours pour votre classe (demandez à l’administratif d’appliquer le programme)'
+                    : 'Aucune matière au programme'} —</option>`;
             majResumeSession();
         }
 

@@ -11,6 +11,11 @@
     class="eval-page"
     data-enseignant="{{ est_enseignant|yesno:'1,0' }}"
     data-classe-id="{{ classe_id }}"
+    data-classe-nom="{{ classe_nom }}"
+    data-section-id="{{ section_id }}"
+    data-section-nom="{{ section_nom }}"
+    data-option-id="{{ option_id }}"
+    data-option-nom="{{ option_nom }}"
     data-ecole-id="{{ ecole_id }}"
     data-peut-configurer="{{ peut_configurer|yesno:'1,0' }}"
 >
@@ -41,7 +46,7 @@
         <div class="eval-session-head">
             <div>
                 <h2>Session de travail</h2>
-                <p>Année nationale figée — choisissez la classe et la matière avant de saisir ou d’imprimer</p>
+                <p>{% if est_enseignant %}Votre section, option et classe sont figées — seuls les cours de votre classe sont proposés{% else %}Année nationale figée — choisissez la classe et la matière avant de saisir ou d’imprimer{% endif %}</p>
             </div>
             <div class="eval-session-summary" id="evalSessionSummary">
                 <span class="eval-chip" id="chipAnneeEval">Année —</span>
@@ -59,16 +64,34 @@
                     <span class="badge badge-info" id="badgeAnneeEvalFigee">Figée</span>
                 </div>
             </div>
+            {% if est_enseignant %}
+            <div class="eval-filter eval-filter-figee">
+                <label>Section</label>
+                <input type="text" id="inputSectionEvalFigee" value="{{ section_nom|default:'—' }}" readonly disabled title="Section de votre classe titulaire">
+            </div>
+            <div class="eval-filter eval-filter-figee">
+                <label>Option</label>
+                <input type="text" id="inputOptionEvalFigee" value="{{ option_nom|default:'—' }}" readonly disabled title="Option de votre classe titulaire">
+            </div>
+            <div class="eval-filter eval-filter-figee">
+                <label for="selectClasseEval">Classe (titulaire)</label>
+                <div class="eval-annee-figee">
+                    <select id="selectClasseEval" disabled aria-disabled="true" title="Classe titulaire — non modifiable"></select>
+                    <span class="badge badge-info">Figée</span>
+                </div>
+            </div>
+            {% else %}
             <div class="eval-filter">
                 <label for="selectClasseEval">Classe</label>
-                <select id="selectClasseEval" {% if est_enseignant %}disabled{% endif %}></select>
+                <select id="selectClasseEval"></select>
             </div>
+            {% endif %}
             <div class="eval-filter">
                 <label for="selectPeriodeEval">Période de saisie</label>
                 <select id="selectPeriodeEval"></select>
             </div>
             <div class="eval-filter eval-filter-grow">
-                <label for="selectProgrammeEval">Matière</label>
+                <label for="selectProgrammeEval">Matière (cours de la classe)</label>
                 <select id="selectProgrammeEval"></select>
             </div>
             {% if peut_configurer %}

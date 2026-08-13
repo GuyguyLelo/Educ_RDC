@@ -132,11 +132,24 @@ def vue_eleves(request):
 def vue_evaluations(request):
     """Saisie des notes et impression des bulletins (modèle RDC)."""
     user = request.user
+    classe = None
+    if getattr(user, 'est_enseignant', False) and user.classe_id:
+        from ecoles.models import Classe
+        classe = (
+            Classe.objects.select_related('section', 'option')
+            .filter(pk=user.classe_id)
+            .first()
+        )
     # Module école : enseignant, admin_ecole, admin / agents
     return render(request, 'evaluations.html', {
         'page': 'evaluations',
         'est_enseignant': getattr(user, 'est_enseignant', False),
         'classe_id': getattr(user, 'classe_id', None) or '',
+        'classe_nom': (classe.nom if classe else '') or getattr(user, 'classe_nom', '') or '',
+        'section_id': (classe.section_id if classe else '') or '',
+        'section_nom': (classe.section.nom if classe and classe.section_id else '') or '',
+        'option_id': (classe.option_id if classe else '') or '',
+        'option_nom': (classe.option.nom if classe and classe.option_id else '') or '',
         'ecole_id': getattr(user, 'ecole_id', None) or '',
         'peut_configurer': bool(
             getattr(user, 'est_admin', False)

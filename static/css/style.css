@@ -3999,12 +3999,24 @@ body.nav-open {
     box-shadow: 0 0 0 3px rgba(0, 127, 255, 0.14);
 }
 
-.eval-filter select:disabled {
+.eval-filter select:disabled,
+.eval-filter input:disabled {
     opacity: 0.85;
     cursor: not-allowed;
     background: color-mix(in srgb, var(--bleu) 6%, #f4f7fb);
     color: var(--bleu-nuit);
     font-weight: 600;
+}
+
+.eval-filter input[type="text"] {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: #fbfcfe;
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    color: var(--ink);
 }
 
 .eval-annee-figee {

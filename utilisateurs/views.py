@@ -45,6 +45,8 @@ class UtilisateurViewSet(viewsets.ModelViewSet):
         'antenne',
         'ecole',
         'classe',
+        'classe__section',
+        'classe__option',
     ).all()
     permission_classes = [IsAuthenticated]
     search_fields = ['username', 'first_name', 'last_name', 'email', 'telephone']
