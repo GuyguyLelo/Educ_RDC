@@ -67,7 +67,6 @@ class EcriturePhotoEleve(BasePermission):
             or getattr(user, 'est_national', False)
             or user.role in (
                 'agent_provincial',
-                'agent_antenne',
                 'admin',
                 'admin_ecole',
             )

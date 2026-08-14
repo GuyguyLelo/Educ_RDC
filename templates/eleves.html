@@ -19,7 +19,8 @@ Enregistrement et recherche des élèves
 <div class="list-shell" id="elevesApp"
      data-ecole-id="{% if request.user.ecole_id %}{{ request.user.ecole_id }}{% endif %}"
      data-ecole-figee="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}1{% else %}0{% endif %}"
-     data-ecole-nom="{% if request.user.ecole %}{{ request.user.ecole.nom }}{% endif %}">
+     data-ecole-nom="{% if request.user.ecole %}{{ request.user.ecole.nom }}{% endif %}"
+     data-role="{{ request.user.role }}">
     <section class="toolbar">
         <div class="search-box">
             <div class="search-field">
@@ -34,8 +35,13 @@ Enregistrement et recherche des élèves
             <select id="filtreEcoleEleves" aria-label="Filtrer par école" {% if request.user.est_utilisateur_ecole and request.user.ecole_id or request.user.est_enseignant %}hidden{% endif %}>
                 <option value="">Toutes les écoles</option>
             </select>
+            {% if request.user.role == 'admin_ecole' %}
+            <select id="filtreClasseEleves" aria-label="Filtrer par classe">
+                <option value="">Toutes les classes</option>
+            </select>
+            {% endif %}
         </div>
-        {% if not request.user.est_enseignant %}
+        {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
         <div class="toolbar-actions">
             <button class="btn btn-secondary" id="btnImporterEleves" type="button">{% ico 'import' %}Importer Excel</button>
             <button class="btn btn-primary" id="btnNouvelEleve" type="button">{% ico 'plus' %}Nouvel élève</button>
@@ -51,7 +57,7 @@ Enregistrement et recherche des élèves
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEleves">— résultats</span>
-                {% if not request.user.est_enseignant %}
+                {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
                 <button class="btn btn-secondary btn-sm" id="btnImporterEleves2" type="button">{% ico 'import' %}Importer Excel</button>
                 {% endif %}
             </div>
@@ -64,7 +70,10 @@ Enregistrement et recherche des élèves
                         <th>N° Identification</th>
                         <th>N° Permanent</th>
                         <th>Sexe</th>
-                        <th>École / Classe</th>
+                        {% if request.user.role != 'admin_ecole' %}
+                        <th>École</th>
+                        {% endif %}
+                        <th>Classe</th>
                         <th>Statut</th>
                         <th>Actions</th>
                     </tr>
@@ -88,9 +97,17 @@ Enregistrement et recherche des élèves
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
-        <form id="formEleve" novalidate>
-            <div class="form-sections">
-                <section class="form-section">
+        <form id="formEleve" class="form-wizard" novalidate data-step="1">
+            <nav class="wizard-steps" aria-label="Étapes du formulaire">
+                <button type="button" class="wizard-step is-active" data-goto-step="1"><span>1</span>Identité</button>
+                <button type="button" class="wizard-step" data-goto-step="2"><span>2</span>Photo</button>
+                <button type="button" class="wizard-step" data-goto-step="3"><span>3</span>Scolarité</button>
+                <button type="button" class="wizard-step" data-goto-step="4"><span>4</span>Parents</button>
+                <button type="button" class="wizard-step" data-goto-step="5"><span>5</span>Tuteur</button>
+            </nav>
+
+            <div class="form-sections wizard-panels">
+                <section class="form-section wizard-panel is-active" data-step-panel="1">
                     <h4 class="form-section-title">Identité</h4>
                     <div class="form-grid">
                         <div class="form-group">
@@ -114,13 +131,6 @@ Enregistrement et recherche des élèves
                             <input name="numero_impot" placeholder="Ex: NIF-…">
                         </div>
                         <div class="form-group">
-                            <label>Sexe <span class="req">*</span></label>
-                            <select name="sexe" required>
-                                <option value="M">Masculin</option>
-                                <option value="F">Féminin</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
                             <label>Nom <span class="req">*</span></label>
                             <input name="nom" required placeholder="Nom de famille">
                         </div>
@@ -136,14 +146,21 @@ Enregistrement et recherche des élèves
                             <label>Date de naissance <span class="req">*</span></label>
                             <input type="date" name="date_naissance" required>
                         </div>
-                        <div class="form-group full">
+                        <div class="form-group">
+                            <label>Sexe <span class="req">*</span></label>
+                            <select name="sexe" required>
+                                <option value="M">Masculin</option>
+                                <option value="F">Féminin</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
                             <label>Lieu de naissance</label>
                             <input name="lieu_naissance" placeholder="Ville / territoire">
                         </div>
                     </div>
                 </section>
 
-                <section class="form-section">
+                <section class="form-section wizard-panel" data-step-panel="2">
                     <h4 class="form-section-title">Photo</h4>
                     <div class="form-grid">
                         <div class="form-group full">
@@ -157,12 +174,20 @@ Enregistrement et recherche des élèves
                     </div>
                 </section>
 
-                <section class="form-section">
-                    <h4 class="form-section-title">Scolarité</h4>
+                <section class="form-section wizard-panel" data-step-panel="3">
+                    <h4 class="form-section-title">Scolarité & adresse</h4>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>École <span class="req">*</span></label>
-                            <select name="ecole" id="selectEcoleEleve" required></select>
+                            <label>Section <span class="req">*</span></label>
+                            <select id="selectSectionEleve" required>
+                                <option value="">— Sélectionner une section —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Option <span class="req">*</span></label>
+                            <select id="selectOptionEleve" required>
+                                <option value="">— Sélectionner une option —</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Classe <span class="req">*</span></label>
@@ -171,12 +196,10 @@ Enregistrement et recherche des élèves
                             </select>
                             <span class="form-hint">Les classes sont créées par l'administratif de l'école.</span>
                         </div>
-                    </div>
-                </section>
-
-                <section class="form-section">
-                    <h4 class="form-section-title">Adresse</h4>
-                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>École <span class="req">*</span></label>
+                            <select name="ecole" id="selectEcoleEleve" required></select>
+                        </div>
                         <div class="form-group full">
                             <label>Adresse de résidence</label>
                             <input name="adresse" placeholder="Avenue, commune, ville">
@@ -184,20 +207,13 @@ Enregistrement et recherche des élèves
                     </div>
                 </section>
 
-                <section class="form-section">
-                    <h4 class="form-section-title">Père</h4>
+                <section class="form-section wizard-panel" data-step-panel="4">
+                    <h4 class="form-section-title">Père & mère</h4>
                     <div class="form-grid">
+                        <div class="form-group full"><strong class="wizard-subhead">Père</strong></div>
                         <div class="form-group">
-                            <label>Nom</label>
-                            <input name="nom_pere" placeholder="Nom">
-                        </div>
-                        <div class="form-group">
-                            <label>Postnom</label>
-                            <input name="postnom_pere" placeholder="Postnom">
-                        </div>
-                        <div class="form-group">
-                            <label>Prénom</label>
-                            <input name="prenom_pere" placeholder="Prénom">
+                            <label>Nom complet</label>
+                            <input name="nom_pere" placeholder="Nom complet du père">
                         </div>
                         <div class="form-group">
                             <label>Téléphone</label>
@@ -219,23 +235,11 @@ Enregistrement et recherche des élèves
                                 <span class="file-drop-sub">JPG ou PNG</span>
                             </div>
                         </div>
-                    </div>
-                </section>
 
-                <section class="form-section">
-                    <h4 class="form-section-title">Mère</h4>
-                    <div class="form-grid">
+                        <div class="form-group full"><strong class="wizard-subhead">Mère</strong></div>
                         <div class="form-group">
-                            <label>Nom</label>
-                            <input name="nom_mere" placeholder="Nom">
-                        </div>
-                        <div class="form-group">
-                            <label>Postnom</label>
-                            <input name="postnom_mere" placeholder="Postnom">
-                        </div>
-                        <div class="form-group">
-                            <label>Prénom</label>
-                            <input name="prenom_mere" placeholder="Prénom">
+                            <label>Nom complet</label>
+                            <input name="nom_mere" placeholder="Nom complet de la mère">
                         </div>
                         <div class="form-group">
                             <label>Téléphone</label>
@@ -260,7 +264,7 @@ Enregistrement et recherche des élèves
                     </div>
                 </section>
 
-                <section class="form-section">
+                <section class="form-section wizard-panel" data-step-panel="5">
                     <h4 class="form-section-title">Tuteur / responsable</h4>
                     <div class="form-grid">
                         <div class="form-group">
@@ -298,9 +302,11 @@ Enregistrement et recherche des élèves
                     </div>
                 </section>
             </div>
-            <div class="modal-actions">
+            <div class="modal-actions wizard-actions">
                 <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
-                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer l'élève</button>
+                <button type="button" class="btn btn-secondary is-wizard-hidden" id="btnElevePrev" hidden>{% ico 'back' %}Précédent</button>
+                <button type="button" class="btn btn-primary" id="btnEleveNext">Suivant</button>
+                <button type="submit" class="btn btn-primary is-wizard-hidden" id="btnEleveSubmit" hidden>{% ico 'save' %}Enregistrer l'élève</button>
             </div>
         </form>
     </div>
@@ -346,19 +352,15 @@ Enregistrement et recherche des élèves
                     <p class="form-hint" style="margin:0 0 0.75rem">
                         Colonnes obligatoires :
                         <code>matricule</code>, <code>nom</code>, <code>prenom</code>,
-                        <code>date_naissance</code>, <code>sexe</code> (M/F),
-                        <code>classe</code> (nom exact d'une classe déjà créée).
-                        Optionnelles : <code>numero_identification</code>,
-                        <code>numero_permanent</code>, <code>numero_impot</code>, <code>postnom</code>,
-                        <code>ecole_code</code>, <code>lieu_naissance</code>,
-                        <code>adresse</code>, identité/contacts père &amp; mère
-                        (<code>nom_pere</code>, <code>telephone_pere</code>…),
-                        tuteur (<code>lien_tuteur</code>, <code>nom_tuteur</code>,
-                        <code>telephone_tuteur</code>, <code>email_tuteur</code>).
-                        Ordre recommandé : importer d'abord les
-                        <strong>classes</strong>, puis les élèves.
+                        <code>date_naissance</code>, <code>sexe</code>,
+                        <code>classe</code>.
+                        Dans le modèle Excel, <strong>sexe</strong>, <strong>classe</strong>,
+                        <strong>ecole_code</strong> et <strong>lien_tuteur</strong> sont des
+                        listes déroulantes (feuilles de référence protégées, non modifiables).
+                        Pour l’admin école, la liste des classes est celle de votre établissement.
+                        Ordre recommandé : créer d’abord les <strong>classes</strong>, puis importer les élèves.
                     </p>
-                    <a class="btn btn-ghost btn-sm" href="/api/eleves/modele-import/">
+                    <a class="btn btn-ghost btn-sm" id="lienModeleImportEleves" href="/api/eleves/modele-import/">
                         {% ico 'download' %}Télécharger le modèle Excel
                     </a>
                     <div id="importElevesResult" class="form-hint" hidden style="margin-top:0.85rem"></div>

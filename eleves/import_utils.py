@@ -398,63 +398,408 @@ def importer_eleves(
     }
 
 
-def generer_modele_xlsx() -> bytes:
+def _slug_fichier(texte: str, max_len: int = 60) -> str:
+    """Nom de fichier sûr (sans accents problématiques / caractères réservés)."""
+    import unicodedata
+    raw = (texte or '').strip()
+    raw = unicodedata.normalize('NFKD', raw)
+    raw = ''.join(c for c in raw if not unicodedata.combining(c))
+    raw = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', '', raw)
+    raw = re.sub(r'\s+', '_', raw)
+    raw = re.sub(r'_+', '_', raw).strip('._')
+    return (raw or 'Ecole')[:max_len]
+
+
+def _nom_fichier_modele_eleves(ecole: Ecole | None) -> str:
+    if ecole:
+        nom = _slug_fichier(ecole.nom or 'Ecole')
+        code = _slug_fichier((ecole.code or str(ecole.id)).strip(), max_len=24)
+        return f'Import_eleves_{nom}_{code}.xlsx'
+    return 'Import_eleves_modele.xlsx'
+
+
+def generer_modele_xlsx(ecole_id: int | None = None) -> tuple[bytes, str]:
+    """
+    Génère le modèle Excel d'import élèves (mise en forme professionnelle).
+    Retourne (contenu_bytes, nom_fichier).
+    """
+    from openpyxl.styles import Font, PatternFill, Alignment, Protection, Border, Side
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from datetime import date as date_cls
+
+    ecole = None
+    if ecole_id:
+        ecole = Ecole.objects.filter(pk=ecole_id).first()
+
+    classes_noms: list[str] = []
+    if ecole:
+        classes_noms = list(
+            Classe.objects.filter(ecole=ecole, active=True)
+            .order_by('nom')
+            .values_list('nom', flat=True)
+        )
+    if not classes_noms:
+        classes_noms = ['6ème Primaire', '5ème Primaire']
+
+    ecole_codes: list[str] = []
+    if ecole and (ecole.code or '').strip():
+        ecole_codes = [(ecole.code or '').strip()]
+    else:
+        ecole_codes = ['7-136755']
+
+    sexes = ['M', 'F']
+    liens = [c.value for c in Eleve.LienTuteur]
+    nom_fichier = _nom_fichier_modele_eleves(ecole)
+
+    # Palette RDC / Educ_RDC
+    BLEU_NUIT = '062849'
+    BLEU = '007FFF'
+    BLEU_PROFOND = '0A3D7A'
+    JAUNE = 'FCD116'
+    ROUGE = 'CE1126'
+    GRIS_LIGNE = 'D6DEE8'
+    GRIS_FOND = 'F4F7FB'
+    BLANC = 'FFFFFF'
+    VERT_DOUX = 'E8F5EE'
+
+    font_title = Font(name='Calibri', bold=True, size=18, color=BLANC)
+    font_sub = Font(name='Calibri', bold=True, size=12, color=BLEU_NUIT)
+    font_body = Font(name='Calibri', size=11, color='1A2332')
+    font_muted = Font(name='Calibri', size=10, color='5A6B7D', italic=True)
+    font_header = Font(name='Calibri', bold=True, size=10, color=BLANC)
+    font_chip = Font(name='Calibri', bold=True, size=10, color=BLEU_NUIT)
+
+    fill_banner = PatternFill('solid', fgColor=BLEU_PROFOND)
+    fill_accent = PatternFill('solid', fgColor=JAUNE)
+    fill_header = PatternFill('solid', fgColor=BLEU_PROFOND)
+    fill_header_req = PatternFill('solid', fgColor='0B5CAD')
+    fill_header_list = PatternFill('solid', fgColor='1565C0')
+    fill_zebra = PatternFill('solid', fgColor=GRIS_FOND)
+    fill_lock = PatternFill('solid', fgColor='E8EEF6')
+    fill_ok = PatternFill('solid', fgColor=VERT_DOUX)
+    fill_note = PatternFill('solid', fgColor='FFF8E1')
+
+    thin = Border(
+        left=Side(style='thin', color=GRIS_LIGNE),
+        right=Side(style='thin', color=GRIS_LIGNE),
+        top=Side(style='thin', color=GRIS_LIGNE),
+        bottom=Side(style='thin', color=GRIS_LIGNE),
+    )
+    align_c = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    align_l = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+    REQUIRED_COLS = {'matricule', 'nom', 'prenom', 'date_naissance', 'sexe', 'classe'}
+    LIST_COLS = {'sexe', 'classe', 'ecole_code', 'lien_tuteur'}
+
     wb = Workbook()
+
+    # ═══════════ Instructions (couverture) ═══════════
     info = wb.active
     info.title = 'Instructions'
-    info.append(['Champ', 'Description'])
-    info.append(['matricule', 'Optionnel à la création UI — format AAAA-0001 ; obligatoire à l’import'])
-    info.append(['numero_identification', 'Auto — code école + n° d’ordre du matricule'])
-    info.append(['numero_permanent', 'Optionnel — unique si renseigné'])
-    info.append(['numero_impot', 'Optionnel — unique si renseigné'])
-    info.append(['nom / prenom', 'Obligatoires'])
-    info.append(['postnom', 'Optionnel'])
-    info.append(['date_naissance', 'Obligatoire — AAAA-MM-JJ'])
-    info.append(['sexe', 'Obligatoire — M ou F'])
-    info.append([
-        'classe',
-        'Obligatoire — nom exact d\'une classe déjà créée pour l\'école',
-    ])
-    info.append(['ecole_code', 'Code école (sinon école choisie à l\'import)'])
-    info.append(['lieu_naissance / adresse', 'Optionnels'])
-    info.append(['nom_pere / postnom_pere / prenom_pere / telephone_pere / email_pere / profession_pere', 'Optionnels'])
-    info.append(['nom_mere / postnom_mere / prenom_mere / telephone_mere / email_mere / profession_mere', 'Optionnels'])
-    info.append(['lien_tuteur', 'Optionnel — pere|mere|tuteur|oncle_tante|grand_parent|autre'])
-    info.append(['nom_tuteur / telephone_tuteur / email_tuteur', 'Optionnels'])
-    info.append(['', ''])
-    info.append(['Ordre recommandé', '1) Classes  2) Élèves  3) Comptes enseignants'])
+    info.sheet_view.showGridLines = False
+    info.sheet_properties.tabColor = BLEU_PROFOND
 
-    ws = wb.create_sheet('Eleves')
+    info.merge_cells('A1:D1')
+    info['A1'] = 'Educ_RDC — Modèle d’import des élèves'
+    info['A1'].font = font_title
+    info['A1'].fill = fill_banner
+    info['A1'].alignment = Alignment(horizontal='left', vertical='center')
+    info.row_dimensions[1].height = 36
+    for col in ('B', 'C', 'D'):
+        info[f'{col}1'].fill = fill_banner
+
+    info.merge_cells('A2:D2')
+    info['A2'] = ''
+    info['A2'].fill = fill_accent
+    info.row_dimensions[2].height = 6
+    for col in ('B', 'C', 'D'):
+        info[f'{col}2'].fill = fill_accent
+
+    ecole_lib = (
+        f'{ecole.nom}  ·  Code {ecole.code}' if ecole and ecole.code
+        else (ecole.nom if ecole else 'Modèle générique (sélectionnez une école à l’import)')
+    )
+    info.merge_cells('A3:D3')
+    info['A3'] = ecole_lib
+    info['A3'].font = font_sub
+    info['A3'].alignment = align_l
+    info.row_dimensions[3].height = 22
+
+    info.merge_cells('A4:D4')
+    info['A4'] = (
+        f'Document généré le {date_cls.today().strftime("%d/%m/%Y")} — '
+        'Remplir uniquement la feuille « Eleves ». '
+        'Les listes (Sexe, Classes, Ecoles, Liens) sont protégées.'
+    )
+    info['A4'].font = font_muted
+    info['A4'].alignment = align_l
+
+    info['A6'] = 'Guide des colonnes'
+    info['A6'].font = Font(name='Calibri', bold=True, size=13, color=BLEU_NUIT)
+    info.merge_cells('A6:D6')
+
+    headers_guide = ['Champ', 'Obligatoire', 'Type', 'Description']
+    for i, h in enumerate(headers_guide, start=1):
+        cell = info.cell(7, i, h)
+        cell.font = font_header
+        cell.fill = fill_header
+        cell.alignment = align_c
+        cell.border = thin
+    info.row_dimensions[7].height = 20
+
+    guide_rows = [
+        ('matricule', 'Oui', 'Texte', 'Format AAAA-0001 (ex. 2026-0001)'),
+        ('numero_identification', 'Non', 'Texte', 'Souvent auto — code école + n° d’ordre'),
+        ('numero_permanent', 'Non', 'Texte', 'Unique si renseigné'),
+        ('numero_impot', 'Non', 'Texte', 'Unique si renseigné'),
+        ('nom', 'Oui', 'Texte', 'Nom de famille'),
+        ('postnom', 'Non', 'Texte', 'Postnom'),
+        ('prenom', 'Oui', 'Texte', 'Prénom'),
+        ('date_naissance', 'Oui', 'Date', 'AAAA-MM-JJ'),
+        ('sexe', 'Oui', 'Liste', 'Choisir M ou F'),
+        ('classe', 'Oui', 'Liste', 'Choisir une classe existante de l’école'),
+        ('ecole_code', 'Non*', 'Liste', 'Code école (*sinon école choisie à l’import)'),
+        ('lieu_naissance', 'Non', 'Texte', 'Ville / territoire'),
+        ('adresse', 'Non', 'Texte', 'Adresse de résidence'),
+        ('nom_pere … profession_pere', 'Non', 'Texte', 'Identité et contacts du père'),
+        ('nom_mere … profession_mere', 'Non', 'Texte', 'Identité et contacts de la mère'),
+        ('lien_tuteur', 'Non', 'Liste', 'Lien de parenté du responsable'),
+        ('nom_tuteur / téléphone / e-mail', 'Non', 'Texte', 'Coordonnées du tuteur'),
+    ]
+    for r_idx, row in enumerate(guide_rows, start=8):
+        for c_idx, val in enumerate(row, start=1):
+            cell = info.cell(r_idx, c_idx, val)
+            cell.font = font_body
+            cell.alignment = align_l if c_idx != 2 else align_c
+            cell.border = thin
+            if r_idx % 2 == 0:
+                cell.fill = fill_zebra
+            if c_idx == 2 and val == 'Oui':
+                cell.fill = fill_ok
+                cell.font = font_chip
+
+    note_row = 8 + len(guide_rows) + 1
+    info.merge_cells(f'A{note_row}:D{note_row}')
+    info[f'A{note_row}'] = (
+        'Ordre recommandé : 1) Créer / importer les classes  →  2) Importer les élèves  →  '
+        '3) Créer les comptes enseignants. Ne pas modifier les feuilles de listes.'
+    )
+    info[f'A{note_row}'].font = font_muted
+    info[f'A{note_row}'].fill = fill_note
+    info[f'A{note_row}'].alignment = align_l
+    info.row_dimensions[note_row].height = 32
+
+    info.column_dimensions['A'].width = 32
+    info.column_dimensions['B'].width = 12
+    info.column_dimensions['C'].width = 10
+    info.column_dimensions['D'].width = 52
+    info.freeze_panes = 'A8'
+    info.print_title_rows = '1:2'
+
+    def _feuille_liste(titre: str, entete: str, valeurs: list[str], note: str, tab_color: str) -> str:
+        ws = wb.create_sheet(titre)
+        ws.sheet_properties.tabColor = tab_color
+        ws.sheet_view.showGridLines = False
+
+        ws.merge_cells('A1:B1')
+        ws['A1'] = f'Référentiel — {entete}'
+        ws['A1'].font = Font(name='Calibri', bold=True, size=12, color=BLANC)
+        ws['A1'].fill = fill_banner
+        ws['A1'].alignment = align_l
+        ws['B1'].fill = fill_banner
+        ws.row_dimensions[1].height = 24
+
+        ws['A2'] = 'Valeur'
+        ws['B2'] = 'Statut'
+        for col in (1, 2):
+            cell = ws.cell(2, col)
+            cell.font = font_header
+            cell.fill = fill_header
+            cell.alignment = align_c
+            cell.border = thin
+            cell.protection = Protection(locked=True)
+
+        for i, v in enumerate(valeurs, start=3):
+            c1 = ws.cell(i, 1, v)
+            c2 = ws.cell(i, 2, 'Protégé')
+            for c in (c1, c2):
+                c.font = font_body
+                c.border = thin
+                c.protection = Protection(locked=True)
+                c.fill = fill_lock
+            c1.alignment = align_l
+            c2.alignment = align_c
+            c2.font = font_chip
+
+        note_r = 3 + len(valeurs) + 1
+        ws.merge_cells(f'A{note_r}:B{note_r}')
+        ws[f'A{note_r}'] = note
+        ws[f'A{note_r}'].font = font_muted
+        ws[f'A{note_r}'].fill = fill_note
+
+        ws.column_dimensions['A'].width = max(22, min(48, max((len(str(v)) for v in valeurs), default=12) + 4))
+        ws.column_dimensions['B'].width = 12
+        ws.protection.sheet = True
+        ws.protection.enable()
+        ws.protection.password = 'EducRDC'
+        ws.freeze_panes = 'A3'
+        return titre
+
+    sheet_sexe = _feuille_liste(
+        'Sexe', 'sexe', sexes,
+        'Feuille protégée — ne pas modifier ces valeurs.',
+        ROUGE,
+    )
+    sheet_liens = _feuille_liste(
+        'Liens', 'lien_tuteur', liens,
+        'Feuille protégée — ne pas modifier ces valeurs.',
+        JAUNE,
+    )
+    sheet_classes = _feuille_liste(
+        'Classes', 'classe', classes_noms,
+        'Feuille protégée — classes actives de l’école. Ne pas modifier.',
+        BLEU,
+    )
+    sheet_ecoles = _feuille_liste(
+        'Ecoles', 'ecole_code', ecole_codes,
+        'Feuille protégée — code école autorisé. Ne pas modifier.',
+        BLEU_NUIT,
+    )
+
+    # ═══════════ Eleves (saisie) ═══════════
+    ws = wb.create_sheet('Eleves', 1)
+    ws.sheet_properties.tabColor = '1B7A4E'
+    ws.sheet_view.showGridLines = False
+
+    # Bandeau info au-dessus des en-têtes ? — l’import lit la 1re ligne = headers.
+    # On met donc le bandeau en commentaire de cellule A1 + style pro des headers.
     ws.append(MODELE_HEADERS)
-    ws.append([
-        'ELV-2026-DEMO-001', 'ID-KIN-001', 'NP-2026-0001',
-        'KABONGO', 'MUTOMBO', 'Jean', '2015-03-12', 'M',
-        '6ème Primaire', '7-136755', 'Kinshasa', 'Av. de la Libération',
-        'KABONGO', 'ILUNGA', 'Pierre', '+243810000010', 'pierre.kabongo@email.cd', 'Commerçant',
-        'MWAMBA', 'KABONGO', 'Jeanne', '+243810000011', 'jeanne.mwamba@email.cd', 'Enseignante',
-        'mere', 'MWAMBA Jeanne', '+243810000011', 'jeanne.mwamba@email.cd',
-    ])
-    ws.append([
-        'ELV-2026-DEMO-002', 'ID-KIN-002', 'NP-2026-0002',
-        'MUKENDI', '', 'Marie', '2016-07-21', 'F',
-        '5ème Primaire', '7-136755', 'Kinshasa', 'C/Gombe',
-        'MUKENDI', '', 'Joseph', '+243810000020', '', 'Chauffeur',
-        'KALALA', '', 'Sophie', '+243810000021', '', '',
-        'pere', 'MUKENDI Joseph', '+243810000020', '',
-    ])
-    for sheet in wb.worksheets:
-        for col in sheet.columns:
-            max_len = max(len(str(c.value or '')) for c in col)
-            sheet.column_dimensions[col[0].column_letter].width = min(max(max_len + 2, 14), 48)
+    for col_idx, name in enumerate(MODELE_HEADERS, start=1):
+        cell = ws.cell(1, col_idx)
+        cell.font = font_header
+        if name in REQUIRED_COLS and name in LIST_COLS:
+            cell.fill = fill_header_list
+        elif name in REQUIRED_COLS:
+            cell.fill = fill_header_req
+        elif name in LIST_COLS:
+            cell.fill = fill_header_list
+        else:
+            cell.fill = fill_header
+        cell.alignment = align_c
+        cell.border = thin
+        # Largeurs ciblées
+        widths = {
+            'matricule': 16, 'numero_identification': 18, 'numero_permanent': 16, 'numero_impot': 14,
+            'nom': 14, 'postnom': 14, 'prenom': 14, 'date_naissance': 14, 'sexe': 8,
+            'classe': 18, 'ecole_code': 12, 'lieu_naissance': 16, 'adresse': 28,
+            'email_pere': 26, 'email_mere': 26, 'email_tuteur': 26,
+            'telephone_pere': 16, 'telephone_mere': 16, 'telephone_tuteur': 16,
+            'lien_tuteur': 14, 'nom_tuteur': 20, 'profession_pere': 16, 'profession_mere': 16,
+        }
+        ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(name, 14)
+
+    ws.row_dimensions[1].height = 32
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(MODELE_HEADERS))}1'
+    ws.freeze_panes = 'A2'
+    ws.print_title_rows = '1:1'
+
+    demo_classe = classes_noms[0]
+    demo_ecole = ecole_codes[0]
+    demos = [
+        [
+            'ELV-2026-DEMO-001', 'ID-KIN-001', 'NP-2026-0001', '',
+            'KABONGO', 'MUTOMBO', 'Jean', '2015-03-12', 'M',
+            demo_classe, demo_ecole, 'Kinshasa', 'Av. de la Libération',
+            'KABONGO', 'ILUNGA', 'Pierre', '+243810000010', 'pierre.kabongo@email.cd', 'Commerçant',
+            'MWAMBA', 'KABONGO', 'Jeanne', '+243810000011', 'jeanne.mwamba@email.cd', 'Enseignante',
+            'mere', 'MWAMBA Jeanne', '+243810000011', 'jeanne.mwamba@email.cd',
+        ],
+        [
+            'ELV-2026-DEMO-002', 'ID-KIN-002', 'NP-2026-0002', '',
+            'MUKENDI', '', 'Marie', '2016-07-21', 'F',
+            classes_noms[1] if len(classes_noms) > 1 else demo_classe, demo_ecole, 'Kinshasa', 'C/Gombe',
+            'MUKENDI', '', 'Joseph', '+243810000020', '', 'Chauffeur',
+            'KALALA', '', 'Sophie', '+243810000021', '', '',
+            'pere', 'MUKENDI Joseph', '+243810000020', '',
+        ],
+    ]
+    for r_i, demo in enumerate(demos):
+        ws.append(demo)
+        row_num = 2 + r_i
+        for col_idx in range(1, len(MODELE_HEADERS) + 1):
+            cell = ws.cell(row_num, col_idx)
+            cell.font = font_body
+            cell.border = thin
+            cell.alignment = align_l
+            if r_i % 2 == 1:
+                cell.fill = fill_zebra
+            cell.protection = Protection(locked=False)
+
+    # Zone de saisie étendue (lignes vides prêtes)
+    for row_num in range(4, 201):
+        for col_idx in range(1, len(MODELE_HEADERS) + 1):
+            cell = ws.cell(row_num, col_idx)
+            cell.border = thin
+            cell.protection = Protection(locked=False)
+            if row_num % 2 == 0:
+                cell.fill = fill_zebra
+
+    # Zebra pour lignes encore vides via règle (optionnel, déjà appliqué)
+
+    def _col(name: str) -> str:
+        return get_column_letter(MODELE_HEADERS.index(name) + 1)
+
+    def _ajouter_validation(feuille_liste: str, nb: int, col_name: str, obligatoire: bool = False):
+        # Valeurs en A3… (ligne 1 titre, ligne 2 en-tête)
+        debut = 3
+        fin = debut + max(nb, 1) - 1
+        formule = f"'{feuille_liste}'!$A${debut}:$A${fin}"
+        dv = DataValidation(
+            type='list',
+            formula1=formule,
+            allow_blank=not obligatoire,
+            showDropDown=False,
+            showErrorMessage=True,
+            showInputMessage=True,
+            errorTitle='Valeur non autorisée',
+            error='Choisissez une valeur dans la liste déroulante.',
+            promptTitle=col_name,
+            prompt='Sélectionnez une valeur dans la liste (référentiel protégé).',
+        )
+        dv.errorStyle = 'stop'
+        lettre = _col(col_name)
+        dv.add(f'{lettre}2:{lettre}2000')
+        ws.add_data_validation(dv)
+
+    _ajouter_validation(sheet_sexe, len(sexes), 'sexe', obligatoire=True)
+    _ajouter_validation(sheet_classes, len(classes_noms), 'classe', obligatoire=True)
+    _ajouter_validation(sheet_ecoles, len(ecole_codes), 'ecole_code', obligatoire=False)
+    _ajouter_validation(sheet_liens, len(liens), 'lien_tuteur', obligatoire=False)
+
+    # Propriétés document
+    wb.properties.title = f'Import élèves — {ecole.nom if ecole else "Modèle"}'
+    wb.properties.creator = 'Educ_RDC'
+    wb.properties.description = (
+        f'Modèle d’import élèves ({ecole_lib}). Listes déroulantes protégées.'
+    )
+
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    return buf.getvalue(), nom_fichier
 
 
-def reponse_modele_xlsx() -> HttpResponse:
+def reponse_modele_xlsx(ecole_id: int | None = None) -> HttpResponse:
+    contenu, nom_fichier = generer_modele_xlsx(ecole_id=ecole_id)
+    # RFC 5987 pour accents dans le nom
+    from urllib.parse import quote
+    disposition = (
+        f"attachment; filename=\"{nom_fichier}\"; "
+        f"filename*=UTF-8''{quote(nom_fichier)}"
+    )
     response = HttpResponse(
-        generer_modele_xlsx(),
+        contenu,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-    response['Content-Disposition'] = 'attachment; filename="modele_import_eleves.xlsx"'
+    response['Content-Disposition'] = disposition
     return response

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260813g">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260814t">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -48,7 +48,7 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 19c.8-3.2 3.2-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2c2.2.3 3.9 1.6 4.5 3.8"/></svg>
                     Élèves
                 </a>
-                {% if request.user.est_enseignant or request.user.role == 'admin_ecole' or request.user.est_admin or request.user.role == 'agent_antenne' or request.user.role == 'agent_provincial' or request.user.est_national %}
+                {% if request.user.est_enseignant or request.user.role == 'admin_ecole' or request.user.est_admin or request.user.role == 'agent_provincial' or request.user.est_national %}
                 <a href="{% url 'evaluations' %}" class="nav-link {% if page == 'evaluations' %}active{% endif %}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V5h12v14H4z"/><path d="M8 8h4M8 12h4M8 16h2"/><path d="M16 8h4v8a2 2 0 01-2 2h-2"/></svg>
                     Évaluation
@@ -269,7 +269,13 @@
         </div>
     </div>
 
-    <script src="{% static 'js/app.js' %}?v=20260813e"></script>
+    <script src="{% static 'js/app.js' %}?v=20260814ai"></script>
+
+
+
+
+
+
     {% block extra_js %}{% endblock %}
 </body>
 </html>

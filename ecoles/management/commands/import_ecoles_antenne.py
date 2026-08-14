@@ -76,7 +76,9 @@ def is_null(value: str) -> bool:
 
 def guess_niveau(nom: str, mat: int, prim: int, sec: int) -> str:
     n = nom.upper()
-    if n.startswith('EM ') or n.startswith('E.M') or 'MATERNELLE' in n:
+    if 'CRECHE' in n or 'CRÈCHE' in n or n.startswith('EC ') or n.startswith('E.C'):
+        return Ecole.Niveau.CRECHE
+    if n.startswith('EM ') or n.startswith('E.M') or 'MATERNELLE' in n or 'PRESCOLAIRE' in n:
         return Ecole.Niveau.MATERNELLE
     if n.startswith('EP ') or n.startswith('E.P') or n.startswith('ECOLE PRIMAIRE'):
         return Ecole.Niveau.PRIMAIRE

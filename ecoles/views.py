@@ -1,6 +1,7 @@
 """Vues API — Structures hiérarchiques et écoles."""
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -23,6 +24,7 @@ from .import_personnel import importer_personnel, reponse_modele_xlsx
 from .import_classes import importer_classes, reponse_modele_xlsx as reponse_modele_classes
 from .programme_rdc import (
     affecter_structure_ecole,
+    assurer_structure_selon_niveau,
     catalogue_referentiel_rdc,
     charger_programme_rdc,
     retirer_structure_ecole,
@@ -149,43 +151,52 @@ class EcoleViewSet(viewsets.ModelViewSet):
         return EcoleSerializer
 
     def get_queryset(self):
+        action = getattr(self, 'action', None)
+        list_like = action in ('list', 'choix')
         leger = self.request.query_params.get('leger') in ('1', 'true', 'True')
-        if leger or getattr(self, 'action', None) == 'choix':
-            qs = Ecole.objects.only('id', 'nom', 'code', 'niveau', 'active', 'antenne_id', 'province_educationnelle_id')
+        if leger or action == 'choix':
+            qs = Ecole.objects.only(
+                'id', 'nom', 'code', 'niveau', 'active',
+                'antenne_id', 'province_educationnelle_id',
+            )
         else:
             qs = super().get_queryset()
         user = self.request.user
-        pe = self.request.query_params.get('province_educationnelle')
-        pa = self.request.query_params.get('province_administrative')
-        antenne = self.request.query_params.get('antenne')
-        province = self.request.query_params.get('province')
-        if pe:
-            qs = qs.filter(province_educationnelle_id=pe)
-        if pa:
-            qs = qs.filter(province_educationnelle__province_administrative_id=pa)
-        if province and not pe:
-            qs = qs.filter(province_educationnelle_id=province)
-        if antenne:
-            qs = qs.filter(antenne_id=antenne)
-        type_ecole = self.request.query_params.get('type_ecole')
-        niveau = self.request.query_params.get('niveau')
-        active = (
-            self.request.query_params.get('active')
-            or self.request.query_params.get('actif')
-        )
-        if type_ecole:
-            qs = qs.filter(type_ecole=type_ecole)
-        if niveau:
-            qs = qs.filter(niveau=niveau)
-        if active in ('true', '1', 'True'):
-            qs = qs.filter(active=True)
-        elif active in ('false', '0', 'False'):
-            qs = qs.filter(active=False)
-        # Écoles ayant déjà sections / options / classes (programme chargé)
-        avec_structure = self.request.query_params.get('avec_structure')
-        if avec_structure in ('true', '1', 'True'):
-            from django.db.models import Exists, OuterRef
-            qs = qs.filter(Exists(SectionScolaire.objects.filter(ecole_id=OuterRef('pk'))))
+        # Filtres de liste uniquement — ne pas appliquer sur les actions détail
+        # (sinon ?niveau=prescolaire|tous du référentiel EPSP vide le queryset → 404)
+        if list_like:
+            pe = self.request.query_params.get('province_educationnelle')
+            pa = self.request.query_params.get('province_administrative')
+            antenne = self.request.query_params.get('antenne')
+            province = self.request.query_params.get('province')
+            if pe:
+                qs = qs.filter(province_educationnelle_id=pe)
+            if pa:
+                qs = qs.filter(province_educationnelle__province_administrative_id=pa)
+            if province and not pe:
+                qs = qs.filter(province_educationnelle_id=province)
+            if antenne:
+                qs = qs.filter(antenne_id=antenne)
+            type_ecole = self.request.query_params.get('type_ecole')
+            niveau = self.request.query_params.get('niveau')
+            active = (
+                self.request.query_params.get('active')
+                or self.request.query_params.get('actif')
+            )
+            if type_ecole:
+                qs = qs.filter(type_ecole=type_ecole)
+            niveaux_ecole = {c.value for c in Ecole.Niveau}
+            if niveau and niveau in niveaux_ecole:
+                qs = qs.filter(niveau=niveau)
+            if active in ('true', '1', 'True'):
+                qs = qs.filter(active=True)
+            elif active in ('false', '0', 'False'):
+                qs = qs.filter(active=False)
+            avec_structure = self.request.query_params.get('avec_structure')
+            if avec_structure in ('true', '1', 'True'):
+                from django.db.models import Exists, OuterRef
+                qs = qs.filter(Exists(SectionScolaire.objects.filter(ecole_id=OuterRef('pk'))))
+        # Portée utilisateur (toujours)
         if user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
@@ -193,6 +204,28 @@ class EcoleViewSet(viewsets.ModelViewSet):
         elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(id=user.ecole_id)
         return qs
+
+    def _interdit_ecriture_agent_antenne(self, message=None):
+        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+            raise PermissionDenied(
+                message or "L'agent antenne ne peut pas modifier une école."
+            )
+
+    def perform_create(self, serializer):
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas créer d'école."
+        )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._interdit_ecriture_agent_antenne()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas supprimer une école."
+        )
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='choix')
     def choix(self, request):
@@ -217,27 +250,43 @@ class EcoleViewSet(viewsets.ModelViewSet):
     def referentiel_rdc(self, request, pk=None):
         """Catalogue EPSP (sections/options) pour sélection par l'école."""
         ecole = self.get_object()
-        niveau = (request.query_params.get('niveau') or 'tous').lower()
+        # niveau_programme = catalogue EPSP (prescolaire, primaire…)
+        # ne pas confondre avec le filtre liste ?niveau= sur Ecole
+        niveau = (
+            request.query_params.get('niveau_programme')
+            or request.query_params.get('niveau')
+            or 'tous'
+        ).lower().replace('è', 'e').replace('é', 'e')
         if request.query_params.get('auto_niveau'):
-            if ecole.niveau == Ecole.Niveau.PRIMAIRE:
-                niveau = 'primaire'
-            elif ecole.niveau == Ecole.Niveau.SECONDAIRE:
-                niveau = 'secondaire'
+            niveau = self._auto_niveau_catalogue(ecole)
         data = catalogue_referentiel_rdc(niveau=niveau, ecole_id=ecole.id)
         data['ecole'] = ecole.id
         data['ecole_nom'] = ecole.nom
+        data['ecole_niveau'] = ecole.niveau
         return Response(data)
 
+    def _auto_niveau_catalogue(self, ecole):
+        """Niveau catalogue EPSP selon le niveau déclaré de l'école."""
+        if ecole.niveau == Ecole.Niveau.CRECHE:
+            return 'creche'
+        if ecole.niveau == Ecole.Niveau.MATERNELLE:
+            return 'prescolaire'  # crèche + maternelle (structures EPSP)
+        if ecole.niveau == Ecole.Niveau.PRIMAIRE:
+            return 'primaire'
+        if ecole.niveau == Ecole.Niveau.SECONDAIRE:
+            return 'secondaire'
+        return 'tous'
+
     def _niveau_ecole(self, ecole, request_data_or_params):
-        niveau = (request_data_or_params.get('niveau') or 'tous').lower()
-        if niveau not in ('primaire', 'secondaire', 'tous', 'all'):
+        niveau = (request_data_or_params.get('niveau') or 'tous').lower().replace('è', 'e').replace('é', 'e')
+        valides = (
+            'creche', 'maternelle', 'prescolaire',
+            'primaire', 'secondaire', 'tous', 'all',
+        )
+        if niveau not in valides:
             return None
         if request_data_or_params.get('auto_niveau'):
-            if ecole.niveau == Ecole.Niveau.PRIMAIRE:
-                return 'primaire'
-            if ecole.niveau == Ecole.Niveau.SECONDAIRE:
-                return 'secondaire'
-            return 'tous'
+            return self._auto_niveau_catalogue(ecole)
         return niveau
 
     def _codes_liste(self, data, *keys):
@@ -268,7 +317,7 @@ class EcoleViewSet(viewsets.ModelViewSet):
         niveau = self._niveau_ecole(ecole, request.data)
         if niveau is None:
             return Response(
-                {'detail': 'niveau invalide (primaire | secondaire | tous).'},
+                {'detail': 'niveau invalide (creche | maternelle | prescolaire | primaire | secondaire | tous).'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         options = self._codes_liste(request.data, 'options', 'option_codes')
@@ -285,6 +334,33 @@ class EcoleViewSet(viewsets.ModelViewSet):
             'detail': (
                 f"{result['options_created']} option(s) et "
                 f"{result['classes_created']} classe(s) affectée(s) à l'école."
+            ),
+            **result,
+        })
+
+    @action(detail=True, methods=['post'], url_path='assurer-structure-niveau')
+    def assurer_structure_niveau(self, request, pk=None):
+        """
+        Pour une école crèche/maternelle : crée les sections/options/classes
+        préscolaires EPSP manquantes (sans retirer le reste).
+        """
+        ecole = self.get_object()
+        if not self._peut_gerer_programme_ecole(request.user, ecole):
+            return Response(
+                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        result = assurer_structure_selon_niveau(ecole)
+        if result.get('skipped'):
+            return Response({
+                'detail': 'Structure préscolaire déjà en place.' if result.get('reason') == 'deja_present'
+                else 'Niveau non préscolaire — aucune action.',
+                **result,
+            })
+        return Response({
+            'detail': (
+                f"Préscolaire ajouté : {result.get('options_created', 0)} option(s), "
+                f"{result.get('classes_created', 0)} classe(s)."
             ),
             **result,
         })
@@ -328,6 +404,10 @@ class EcoleViewSet(viewsets.ModelViewSet):
                 ecole.photos.all(), many=True, context={'request': request},
             )
             return Response(ser.data)
+
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas ajouter de photo d'école."
+        )
 
         images = []
         for key in ('image', 'images', 'photo', 'photos'):
@@ -407,6 +487,9 @@ class EcoleViewSet(viewsets.ModelViewSet):
     )
     def supprimer_photo(self, request, pk=None, photo_id=None):
         """Supprime une photo d'école."""
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas supprimer une photo d'école."
+        )
         ecole = self.get_object()
         photo = ecole.photos.filter(pk=photo_id).first()
         if not photo:
@@ -430,6 +513,10 @@ class EcoleViewSet(viewsets.ModelViewSet):
                 ecole.documents.all(), many=True, context={'request': request},
             )
             return Response(ser.data)
+
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas ajouter de document d'école."
+        )
 
         fichier = request.FILES.get('fichier') or request.FILES.get('file') or request.FILES.get('document')
         if not fichier:
@@ -470,6 +557,9 @@ class EcoleViewSet(viewsets.ModelViewSet):
     )
     def supprimer_document(self, request, pk=None, document_id=None):
         """Supprime un document d'école."""
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas supprimer un document d'école."
+        )
         ecole = self.get_object()
         doc = ecole.documents.filter(pk=document_id).first()
         if not doc:
@@ -689,7 +779,35 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(utilisateur__isnull=True)
         if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(ecole_id=user.ecole_id)
+        elif user.role == 'agent_antenne' and user.antenne_id:
+            qs = qs.filter(ecole__antenne_id=user.antenne_id)
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
+            qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
         return qs
+
+    def _interdit_ecriture_agent_antenne(self, message=None):
+        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+            raise PermissionDenied(
+                message or "L'agent antenne ne peut pas gérer le personnel d'une école."
+            )
+
+    def perform_create(self, serializer):
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas identifier un agent."
+        )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas modifier un personnel d'école."
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas supprimer un personnel d'école."
+        )
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='modele-import')
     def modele_import(self, request):
@@ -704,6 +822,8 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
     )
     def import_fichier(self, request):
         """Importe le personnel depuis un fichier Excel (.xlsx) ou CSV."""
+        if getattr(request.user, 'role', None) == 'agent_antenne':
+            raise PermissionDenied("L'agent antenne ne peut pas importer le personnel d'une école.")
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(

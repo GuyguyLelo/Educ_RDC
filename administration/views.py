@@ -132,6 +132,9 @@ def vue_eleves(request):
 def vue_evaluations(request):
     """Saisie des notes et impression des bulletins (modèle RDC)."""
     user = request.user
+    if getattr(user, 'role', None) == 'agent_antenne':
+        messages.warning(request, "L'agent antenne n'a pas accès au module Évaluation.")
+        return redirect('dashboard')
     classe = None
     if getattr(user, 'est_enseignant', False) and user.classe_id:
         from ecoles.models import Classe
@@ -270,6 +273,33 @@ def vue_utilisateurs(request):
         messages.warning(request, 'Accès réservé aux administrateurs.')
         return redirect('dashboard')
     return render(request, 'utilisateurs.html', {'page': 'utilisateurs'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_utilisateur_detail(request, utilisateur_id):
+    """Page détail d'un utilisateur (identité, rôle, rattachement)."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé aux administrateurs.')
+        return redirect('dashboard')
+    from utilisateurs.models import Utilisateur
+    utilisateur = get_object_or_404(
+        Utilisateur.objects.select_related(
+            'province_administrative',
+            'province_educationnelle',
+            'antenne',
+            'ecole',
+            'classe',
+            'classe__section',
+            'classe__option',
+        ),
+        pk=utilisateur_id,
+    )
+    return render(request, 'utilisateur_detail.html', {
+        'page': 'utilisateurs',
+        'utilisateur_id': utilisateur.id,
+        'utilisateur': utilisateur,
+    })
 
 
 @login_required

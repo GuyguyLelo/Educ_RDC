@@ -26,6 +26,7 @@ Statistiques et impressions PDF
         <span class="stat-label">Écoles</span>
         <strong class="stat-value" id="rEcoles">—</strong>
     </article>
+    {% if request.user.role != 'agent_antenne' %}
     <article class="stat-card accent">
         <span class="stat-label">Cartes</span>
         <strong class="stat-value" id="rCartes">—</strong>
@@ -34,6 +35,7 @@ Statistiques et impressions PDF
         <span class="stat-label">Biométries validées</span>
         <strong class="stat-value" id="rBiometries">—</strong>
     </article>
+    {% endif %}
 </section>
 {% endif %}
 
@@ -48,7 +50,9 @@ Statistiques et impressions PDF
         <a href="/api/programmes-classe/liste-pdf/" class="btn btn-secondary" target="_blank" rel="noopener">{% ico 'pdf' %}Liste de cours</a>
         {% else %}
         <a href="{% url 'eleves' %}" class="btn btn-secondary">{% ico 'users' %}Liste des élèves</a>
+        {% if request.user.role != 'agent_antenne' %}
         <a href="{% url 'evaluations' %}" class="btn btn-secondary">{% ico 'class' %}Liste de cours</a>
+        {% endif %}
         {% endif %}
         {% if not request.user.est_enseignant %}
         <button class="btn btn-ghost" id="btnRefreshStats" type="button">{% ico 'refresh' %}Actualiser les statistiques</button>

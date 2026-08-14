@@ -17,9 +17,9 @@ class Command(BaseCommand):
         parser.add_argument('--code', type=str, help='Code de l\'école')
         parser.add_argument(
             '--niveau',
-            choices=['primaire', 'secondaire', 'tous'],
+            choices=['creche', 'maternelle', 'prescolaire', 'primaire', 'secondaire', 'tous'],
             default='tous',
-            help='Niveau à charger (défaut: tous)',
+            help='Niveau à charger (défaut: tous ; prescolaire = crèche + maternelle)',
         )
         parser.add_argument(
             '--options',
@@ -71,10 +71,15 @@ class Command(BaseCommand):
 
         for ecole in ecoles:
             n = niveau
-            if niveau == 'tous' and ecole.niveau == Ecole.Niveau.PRIMAIRE:
-                n = 'primaire'
-            elif niveau == 'tous' and ecole.niveau == Ecole.Niveau.SECONDAIRE:
-                n = 'secondaire'
+            if niveau == 'tous':
+                if ecole.niveau == Ecole.Niveau.CRECHE:
+                    n = 'creche'
+                elif ecole.niveau == Ecole.Niveau.MATERNELLE:
+                    n = 'prescolaire'
+                elif ecole.niveau == Ecole.Niveau.PRIMAIRE:
+                    n = 'primaire'
+                elif ecole.niveau == Ecole.Niveau.SECONDAIRE:
+                    n = 'secondaire'
             stats = charger_programme_rdc(
                 ecole.id,
                 niveau=n,

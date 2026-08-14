@@ -166,6 +166,7 @@ class Ecole(models.Model):
         CONVENTIONNEE = 'conventionnee', 'Conventionnée'
 
     class Niveau(models.TextChoices):
+        CRECHE = 'creche', 'Crèche'
         MATERNELLE = 'maternelle', 'Maternelle'
         PRIMAIRE = 'primaire', 'Primaire'
         SECONDAIRE = 'secondaire', 'Secondaire'

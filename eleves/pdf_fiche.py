@@ -35,17 +35,17 @@ def _dessiner_en_tete(c, largeur, hauteur):
     c.rect(0, hauteur - 36 * mm, largeur, 2 * mm, fill=1, stroke=0)
 
     c.setFillColorRGB(1, 1, 1)
+    c.setFont('Helvetica-Bold', 10)
+    c.drawCentredString(largeur / 2, hauteur - 12 * mm, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
     c.setFont('Helvetica-Bold', 13)
-    c.drawCentredString(largeur / 2, hauteur - 14 * mm, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
-    c.setFont('Helvetica-Bold', 14)
-    c.drawCentredString(largeur / 2, hauteur - 21 * mm, 'Ministère de l’Éducation Nationale')
-    c.setFont('Helvetica-Bold', 12)
-    c.drawCentredString(largeur / 2, hauteur - 28 * mm, 'Fiche élève — Educ_RDC')
+    c.drawCentredString(largeur / 2, hauteur - 17 * mm, 'Ministère de l’Éducation Nationale et de Nouvelle Citoyenneté')
+    c.setFont('Helvetica-Bold', 16)
+    c.drawCentredString(largeur / 2, hauteur - 27 * mm, "FICHE DE L'ÉLÈVE")
 
 
 def _section(c, titre, y, largeur):
     c.setFillColorRGB(0.024, 0.16, 0.29)
-    c.setFont('Helvetica-Bold', 11)
+    c.setFont('Helvetica-Bold', 12)
     c.drawString(18 * mm, y, titre)
     y -= 2 * mm
     c.setStrokeColorRGB(0.0, 0.5, 1.0)
@@ -56,12 +56,12 @@ def _section(c, titre, y, largeur):
 
 def _ligne(c, label, valeur, y, x=20 * mm, x_val=70 * mm):
     c.setFillColorRGB(0.35, 0.4, 0.45)
-    c.setFont('Helvetica', 9)
+    c.setFont('Helvetica', 10)
     c.drawString(x, y, label)
     c.setFillColorRGB(0, 0, 0)
-    c.setFont('Helvetica-Bold', 9)
+    c.setFont('Helvetica-Bold', 10)
     c.drawString(x_val, y, _texte(valeur)[:72])
-    return y - 5.5 * mm
+    return y - 6 * mm
 
 
 def _photo(c, eleve, x, y, w=32 * mm, h=40 * mm):
@@ -89,6 +89,37 @@ def _photo(c, eleve, x, y, w=32 * mm, h=40 * mm):
         c.setFillColorRGB(0.55, 0.58, 0.62)
         c.setFont('Helvetica', 8)
         c.drawCentredString(x + w / 2, y - h / 2, 'Photo indisponible')
+
+
+def _photo_fichier(c, file_field, x, y, w, h, label='', placeholder='Sans photo'):
+    """Cadre photo (ImageField ou None) avec libellé sous le cadre."""
+    c.setStrokeColorRGB(0.75, 0.78, 0.82)
+    c.setLineWidth(0.8)
+    c.setFillColorRGB(0.97, 0.98, 0.99)
+    c.rect(x, y - h, w, h, fill=1, stroke=1)
+    dessinee = False
+    if file_field and getattr(file_field, 'name', None):
+        try:
+            c.drawImage(
+                file_field.path,
+                x + 0.6 * mm,
+                y - h + 0.6 * mm,
+                width=w - 1.2 * mm,
+                height=h - 1.2 * mm,
+                preserveAspectRatio=True,
+                mask='auto',
+            )
+            dessinee = True
+        except Exception:
+            dessinee = False
+    if not dessinee:
+        c.setFillColorRGB(0.55, 0.58, 0.62)
+        c.setFont('Helvetica', 7)
+        c.drawCentredString(x + w / 2, y - h / 2, placeholder)
+    if label:
+        c.setFillColorRGB(0.02, 0.16, 0.29)
+        c.setFont('Helvetica-Bold', 8)
+        c.drawCentredString(x + w / 2, y - h - 4 * mm, label)
 
 
 def _etoile(c, cx, cy, r):
@@ -198,10 +229,6 @@ def generer_pdf_fiche_eleve(eleve, inclure_qr_cartes: bool = True) -> bytes:
     c.setFont('Helvetica', 11)
     c.setFillColorRGB(0.3, 0.35, 0.4)
     c.drawString(18 * mm, y, f'Numéro Permanent : {_texte(eleve.numero_permanent)}')
-    y -= 6 * mm
-    c.setFont('Helvetica', 11)
-    c.setFillColorRGB(0.3, 0.35, 0.4)
-    c.drawString(18 * mm, y, f'Numéro Impôt : {_texte(eleve.numero_impot)}')
 
     photo_x = largeur - 52 * mm
     photo_top = hauteur - 38 * mm  # juste sous le bandeau
@@ -269,12 +296,6 @@ def generer_pdf_fiche_eleve(eleve, inclure_qr_cartes: bool = True) -> bytes:
     y = _ligne(c, 'Lien tuteur', eleve.get_lien_tuteur_display() if eleve.lien_tuteur else '—', y)
     y = _ligne(c, 'Tél. tuteur', eleve.telephone_tuteur, y)
 
-    bio = getattr(eleve, 'biometrie', None)
-    if bio:
-        y -= 3 * mm
-        y = _section(c, 'Biométrie', y, largeur)
-        y = _ligne(c, 'Statut', 'Validée' if bio.validee else 'En attente', y)
-
     if inclure_qr_cartes:
         cartes = list(getattr(eleve, 'cartes', []).all()[:3]) if hasattr(eleve, 'cartes') else []
         if cartes:
@@ -288,6 +309,30 @@ def generer_pdf_fiche_eleve(eleve, inclure_qr_cartes: bool = True) -> bytes:
                     y,
                     x_val=70 * mm,
                 )
+
+    # Photos père / mère / tuteur — ancrées en bas de page (au-dessus du pied)
+    photo_h = 22 * mm
+    photo_w = 18 * mm
+    gap = 6 * mm
+    total_w = 3 * photo_w + 2 * gap
+    x0 = (largeur - total_w) / 2
+    # Haut des cadres juste au-dessus du pied de page
+    top_photos = 28 * mm + photo_h + 5 * mm
+    photos = [
+        (getattr(eleve, 'photo_pere', None), 'Père'),
+        (getattr(eleve, 'photo_mere', None), 'Mère'),
+        (getattr(eleve, 'photo_tuteur', None), 'Tuteur'),
+    ]
+    for i, (fichier, label) in enumerate(photos):
+        _photo_fichier(
+            c,
+            fichier if fichier else None,
+            x0 + i * (photo_w + gap),
+            top_photos,
+            photo_w,
+            photo_h,
+            label=label,
+        )
 
     # Date d'impression — bas droit
     c.setFillColorRGB(0.35, 0.4, 0.45)

@@ -15,6 +15,12 @@ class EleveSerializer(serializers.ModelSerializer):
         source='ecole.province_administrative.nom', read_only=True,
     )
     classe_nom = serializers.CharField(source='classe.nom', read_only=True, allow_null=True, default=None)
+    section = serializers.IntegerField(
+        source='classe.section_id', read_only=True, allow_null=True, default=None,
+    )
+    option = serializers.IntegerField(
+        source='classe.option_id', read_only=True, allow_null=True, default=None,
+    )
     section_nom = serializers.CharField(
         source='classe.section.nom', read_only=True, allow_null=True, default=None,
     )
@@ -39,7 +45,7 @@ class EleveSerializer(serializers.ModelSerializer):
             'date_naissance', 'lieu_naissance', 'sexe', 'sexe_display',
             'ecole', 'ecole_nom', 'ecole_code',
             'province_nom', 'province_administrative_nom', 'antenne_nom',
-            'classe', 'classe_nom', 'section_nom', 'option_nom', 'adresse',
+            'classe', 'classe_nom', 'section', 'option', 'section_nom', 'option_nom', 'adresse',
             'nom_pere', 'postnom_pere', 'prenom_pere', 'nom_complet_pere',
             'telephone_pere', 'email_pere', 'profession_pere',
             'photo_pere', 'photo_pere_url',
@@ -53,7 +59,7 @@ class EleveSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'code_unique', 'qr_code', 'qr_code_url',
-            'photo_url', 'a_photo', 'classe_nom', 'section_nom', 'option_nom',
+            'photo_url', 'a_photo', 'classe_nom', 'section', 'option', 'section_nom', 'option_nom',
             'photo_pere_url', 'photo_mere_url', 'photo_tuteur_url',
             'nom_complet_pere', 'nom_complet_mere', 'lien_tuteur_display',
         ]

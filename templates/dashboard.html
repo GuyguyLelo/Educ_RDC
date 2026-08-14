@@ -1,12 +1,12 @@
 {% extends 'base.html' %}
-{% load static %}
+{% load static ui_icons %}
 
 {% block title %}Tableau de bord{% endblock %}
 {% block page_title %}Tableau de bord{% endblock %}
 {% block page_subtitle %}Chargement du périmètre…{% endblock %}
 
 {% block content %}
-<section class="dash-banner" id="dashBanner" hidden>
+<section class="dash-banner" id="dashBanner">
     <div class="dash-banner-main">
         <span class="dash-role-badge" id="dashRoleBadge">—</span>
         <div>
@@ -14,7 +14,12 @@
             <p id="dashScopeLabel">—</p>
         </div>
     </div>
-    <div class="dash-actions" id="dashActions"></div>
+    <div class="dash-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btnRefreshDashboard">
+            {% ico 'refresh' %}Actualiser
+        </button>
+        <span class="dash-actions-dynamic" id="dashActions"></span>
+    </div>
 </section>
 
 <section class="stats-grid" id="statsGrid">
@@ -41,13 +46,33 @@
 </section>
 
 <div class="dashboard-grid">
-    <section class="panel">
+    <section class="panel" id="panelBarChart">
         <div class="panel-header">
             <h2 id="chartTitle">Répartition</h2>
             <p id="chartSubtitle">Chargement…</p>
         </div>
         <div class="chart-wrap">
             <canvas id="chartProvinces" width="800" height="320"></canvas>
+        </div>
+    </section>
+
+    <section class="panel" id="panelSecondaryChart" hidden>
+        <div class="panel-header">
+            <h2 id="secondaryChartTitle">Écoles</h2>
+            <p id="secondaryChartSubtitle">—</p>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="chartSecondary" width="800" height="320"></canvas>
+        </div>
+    </section>
+
+    <section class="panel" id="panelTertiaryChart" hidden>
+        <div class="panel-header">
+            <h2 id="tertiaryChartTitle">Élèves</h2>
+            <p id="tertiaryChartSubtitle">—</p>
+        </div>
+        <div class="chart-wrap">
+            <canvas id="chartTertiary" width="800" height="320"></canvas>
         </div>
     </section>
 
@@ -61,7 +86,7 @@
         </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="panelWorkflow">
         <div class="panel-header">
             <h2 id="workflowTitle">Priorités</h2>
             <p id="workflowSubtitle">Selon votre rôle</p>
@@ -69,10 +94,43 @@
         <ol class="workflow" id="dashWorkflow"></ol>
     </section>
 </div>
+
+<section class="panel panel-span" id="panelEffectifsEcoles" hidden>
+    <div class="panel-header">
+        <h2>Effectif élèves par école</h2>
+        <p id="effectifsEcolesSubtitle">Élèves actifs de l’antenne</p>
+    </div>
+    <div class="table-responsive table-effectifs-wrap">
+        <table class="data-table compact table-effectifs-ecoles" id="tableEffectifsEcoles">
+            <colgroup>
+                <col class="col-ecole">
+                <col class="col-code">
+                <col class="col-num">
+                <col class="col-num">
+                <col class="col-num">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>École</th>
+                    <th>Code</th>
+                    <th>Élèves</th>
+                    <th>Garçons</th>
+                    <th>Filles</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</section>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.addEventListener('DOMContentLoaded', () => EducRDC.chargerDashboard());
+document.addEventListener('DOMContentLoaded', () => {
+    EducRDC.chargerDashboard();
+    document.getElementById('btnRefreshDashboard')?.addEventListener('click', () => {
+        EducRDC.chargerDashboard({ fromUser: true });
+    });
+});
 </script>
 {% endblock %}

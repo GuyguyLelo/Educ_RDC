@@ -16,7 +16,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="detail-shell" id="ecoleDetail" data-ecole-id="{{ ecole_id }}">
+<div class="detail-shell" id="ecoleDetail" data-ecole-id="{{ ecole_id }}" data-role="{{ request.user.role }}">
     <section class="detail-hero detail-hero--no-photo">
         <div class="detail-hero-info">
             <div class="detail-hero-top">
@@ -25,7 +25,9 @@
                 </div>
                 <div class="detail-hero-actions">
                     <a href="{% url 'ecoles' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
+                    {% if request.user.role != 'agent_antenne' %}
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEcole">{% ico 'edit' %}Modifier</button>
+                    {% endif %}
                     <button type="button" class="btn btn-ghost btn-sm" id="btnPersonnelEcole">{% ico 'users' %}Personnel</button>
                     {% if request.user.est_admin or request.user.role == 'admin_ecole' or request.user.est_national %}
                     <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEcole">{% ico 'trash' %}Supprimer</button>
@@ -72,7 +74,9 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcolePhotos">—</span>
+                {% if request.user.role != 'agent_antenne' %}
                 <button type="button" class="btn btn-primary btn-sm" id="btnAjouterPhotoEcole">{% ico 'photo' %}Ajouter des photos</button>
+                {% endif %}
             </div>
         </div>
         <div class="ecole-photo-grid" id="grillePhotosEcole"></div>
@@ -86,7 +90,9 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcoleDocuments">—</span>
+                {% if request.user.role != 'agent_antenne' %}
                 <button type="button" class="btn btn-primary btn-sm" id="btnAjouterDocumentEcole">{% ico 'plus' %}Ajouter un document</button>
+                {% endif %}
             </div>
         </div>
         <div class="ecole-docs-list" id="listeDocumentsEcole"></div>
@@ -113,12 +119,20 @@
         <div class="list-panel-header" style="padding:0 0 0.85rem; border:none">
             <div>
                 <h3 class="detail-card-title" style="margin:0">1. Personnel de l'école</h3>
-                <p class="form-hint" style="margin:0.25rem 0 0">Identifier d’abord l’agent (fiche RH) — ensuite seulement lui ouvrir un compte</p>
+                <p class="form-hint" style="margin:0.25rem 0 0">
+                    {% if request.user.role != 'agent_antenne' %}
+                    Identifier d’abord l’agent (fiche RH) — ensuite seulement lui ouvrir un compte
+                    {% else %}
+                    Consultation du personnel de l’établissement
+                    {% endif %}
+                </p>
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcolePersonnels">—</span>
+                {% if request.user.role != 'agent_antenne' %}
                 <button type="button" class="btn btn-secondary btn-sm" id="btnImporterPersonnel">{% ico 'import' %}Importer Excel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">{% ico 'user' %}Identifier un agent</button>
+                {% endif %}
             </div>
         </div>
         <div class="table-responsive">
@@ -389,6 +403,7 @@
                         <div class="form-group">
                             <label>Niveau</label>
                             <select name="niveau">
+                                <option value="creche">Crèche</option>
                                 <option value="maternelle">Maternelle</option>
                                 <option value="primaire">Primaire</option>
                                 <option value="secondaire">Secondaire</option>
@@ -750,7 +765,6 @@
                 </section>
             </div>
             <div class="modal-actions">
-                <button type="button" class="btn btn-danger" id="btnSupprimerUserEcole" hidden>{% ico 'trash' %}Supprimer</button>
                 <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
                 <button type="submit" class="btn btn-primary" id="btnSubmitUserEcole">{% ico 'save' %}Enregistrer</button>
             </div>

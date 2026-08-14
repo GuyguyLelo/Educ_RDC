@@ -97,10 +97,10 @@ def generer_pdf_liste_cours(programmes, *, contexte=None) -> bytes:
         c.rect(0, hauteur - 32 * mm, largeur, 2 * mm, fill=1, stroke=0)
 
         c.setFillColorRGB(1, 1, 1)
-        c.setFont('Helvetica-Bold', 11)
+        c.setFont('Helvetica-Bold', 9)
         c.drawCentredString(largeur / 2, hauteur - 11 * mm, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
         c.setFont('Helvetica-Bold', 12)
-        c.drawCentredString(largeur / 2, hauteur - 18 * mm, 'Ministère de l’Éducation Nationale')
+        c.drawCentredString(largeur / 2, hauteur - 16 * mm, 'Ministère de l’Éducation Nationale et de Nouvelle Citoyenneté')
         c.setFont('Helvetica', 9)
         c.drawCentredString(largeur / 2, hauteur - 24.5 * mm, 'Liste des cours — Educ_RDC')
 

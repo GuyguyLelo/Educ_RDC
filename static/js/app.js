@@ -231,8 +231,31 @@ const EducRDC = (() => {
         if (!drop) return;
         input.dataset.dropBound = '1';
         const title = drop.querySelector('.file-drop-title');
+        const sub = drop.querySelector('.file-drop-sub');
         const defaultTitle = title?.textContent || 'Déposer un fichier ou cliquer pour parcourir';
         const allowMultiple = input.hasAttribute('multiple');
+        const acceptsImages = !input.accept || input.accept.includes('image');
+        let objectUrl = null;
+
+        let preview = drop.querySelector('.file-drop-preview');
+        if (!preview && acceptsImages) {
+            preview = document.createElement('div');
+            preview.className = 'file-drop-preview';
+            preview.hidden = true;
+            preview.innerHTML = '<img alt="Aperçu">';
+            drop.insertBefore(preview, title || input.nextSibling);
+        }
+        const previewImg = preview?.querySelector('img');
+
+        const clearPreview = () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrl = null;
+            }
+            if (preview) preview.hidden = true;
+            if (previewImg) previewImg.removeAttribute('src');
+            drop.classList.remove('has-preview');
+        };
 
         const showFileName = () => {
             const files = input.files ? Array.from(input.files) : [];
@@ -246,9 +269,30 @@ const EducRDC = (() => {
                 }
             }
             drop.classList.toggle('has-file', files.length > 0);
+
+            clearPreview();
+            const file = files[0];
+            if (file && file.type.startsWith('image/') && previewImg) {
+                objectUrl = URL.createObjectURL(file);
+                previewImg.src = objectUrl;
+                preview.hidden = false;
+                drop.classList.add('has-preview');
+                if (sub) sub.textContent = 'Cliquez pour changer la photo';
+            } else if (sub) {
+                sub.textContent = sub.dataset.defaultSub || sub.textContent;
+            }
         };
 
         input.addEventListener('change', showFileName);
+        input._resetFileDropPreview = () => {
+            clearPreview();
+            if (title) title.textContent = defaultTitle;
+            drop.classList.remove('has-file', 'is-dragover');
+            if (sub && sub.dataset.defaultSub) sub.textContent = sub.dataset.defaultSub;
+        };
+        if (sub && !sub.dataset.defaultSub) {
+            sub.dataset.defaultSub = sub.textContent || '';
+        }
 
         ['dragenter', 'dragover'].forEach((evt) => {
             drop.addEventListener(evt, (e) => {
@@ -499,7 +543,17 @@ const EducRDC = (() => {
         if (panel) panel.hidden = list.length === 0;
     }
 
-    async function chargerDashboard() {
+    let dashChargementEnCours = false;
+
+    async function chargerDashboard({ fromUser = false } = {}) {
+        if (dashChargementEnCours) return;
+        dashChargementEnCours = true;
+        const btnRefresh = document.getElementById('btnRefreshDashboard');
+        if (btnRefresh) {
+            btnRefresh.disabled = true;
+            btnRefresh.classList.add('is-refreshing');
+            btnRefresh.setAttribute('aria-busy', 'true');
+        }
         try {
             const stats = await api(`${API}/stats/`);
 
@@ -533,10 +587,12 @@ const EducRDC = (() => {
             }
 
             const chart = stats.chart || {};
-            const barPanel = document.getElementById('chartProvinces')?.closest('.panel');
+            const barPanel = document.getElementById('panelBarChart')
+                || document.getElementById('chartProvinces')?.closest('.panel');
             const isClasse = stats.scope === 'classe';
-            if (barPanel) barPanel.hidden = isClasse;
-            if (!isClasse) {
+            const hideBar = isClasse || stats.scope === 'antenne';
+            if (barPanel) barPanel.hidden = hideBar;
+            if (!hideBar) {
                 setText('chartTitle', chart.title || 'Répartition');
                 setText('chartSubtitle', chart.subtitle || '');
                 const series = chart.series || (stats.par_province || []).map((p) => ({
@@ -550,27 +606,97 @@ const EducRDC = (() => {
                 );
             }
 
+            const renderExtraBar = (panelId, titleId, subId, canvasId, data) => {
+                const panel = document.getElementById(panelId);
+                if (!panel) return;
+                const has = data && Array.isArray(data.series) && data.series.length;
+                panel.hidden = !has;
+                if (!has) return;
+                setText(titleId, data.title || '');
+                setText(subId, data.subtitle || '');
+                drawBarChart(
+                    canvasId,
+                    data.series.map((s) => s.nom),
+                    data.series.map((s) => s.valeur),
+                );
+            };
+            renderExtraBar(
+                'panelSecondaryChart',
+                'secondaryChartTitle',
+                'secondaryChartSubtitle',
+                'chartSecondary',
+                stats.secondary_chart,
+            );
+            renderExtraBar(
+                'panelTertiaryChart',
+                'tertiaryChartTitle',
+                'tertiaryChartSubtitle',
+                'chartTertiary',
+                stats.tertiary_chart,
+            );
+
             const pie = stats.pie_chart || {};
             const piePanel = document.getElementById('panelPieChart');
-            if (piePanel) piePanel.hidden = !(pie.series && pie.series.length);
-            setText('pieChartTitle', pie.title || 'Répartition par sexe');
-            setText('pieChartSubtitle', pie.subtitle || '');
-            if (pie.series) drawPieChart('chartSexePie', pie.series);
+            const hidePie = stats.hide_pie || !(pie.series && pie.series.length);
+            if (piePanel) piePanel.hidden = hidePie;
+            if (!hidePie) {
+                setText('pieChartTitle', pie.title || 'Répartition par sexe');
+                setText('pieChartSubtitle', pie.subtitle || '');
+                drawPieChart('chartSexePie', pie.series);
+            }
+
+            const panelEff = document.getElementById('panelEffectifsEcoles');
+            const tbodyEff = document.querySelector('#tableEffectifsEcoles tbody');
+            const rowsEff = stats.effectifs_par_ecole || [];
+            if (panelEff && tbodyEff) {
+                const showTable = stats.scope === 'antenne' && rowsEff.length;
+                panelEff.hidden = !showTable;
+                if (showTable) {
+                    setText(
+                        'effectifsEcolesSubtitle',
+                        `${rowsEff.length} établissement(s) — ${stats.nb_eleves ?? 0} élève(s) actif(s)`,
+                    );
+                    tbodyEff.innerHTML = rowsEff.map((e) => `
+                        <tr>
+                            <td data-label="École">
+                                <a class="entity-link" href="/ecoles/${e.id}/">${escapeHtml(e.nom || '—')}</a>
+                            </td>
+                            <td data-label="Code"><span class="code-chip">${escapeHtml(e.code || '—')}</span></td>
+                            <td data-label="Élèves"><strong>${e.nb_eleves ?? 0}</strong></td>
+                            <td data-label="Garçons">${e.nb_garcons ?? 0}</td>
+                            <td data-label="Filles">${e.nb_filles ?? 0}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbodyEff.innerHTML = '';
+                }
+            }
 
             renderDashActions(stats.actions || []);
-            // Tableau de bord école : pas de carte « Priorités école »
-            if (stats.scope === 'ecole') {
-                const wfPanel = document.getElementById('dashWorkflow')?.closest('.panel');
+            const wfPanel = document.getElementById('panelWorkflow')
+                || document.getElementById('dashWorkflow')?.closest('.panel');
+            if (stats.hide_workflow || stats.scope === 'ecole' || stats.scope === 'antenne') {
                 if (wfPanel) wfPanel.hidden = true;
             } else {
+                if (wfPanel) wfPanel.hidden = false;
                 renderDashWorkflow(stats.workflow || []);
                 if (stats.scope !== 'classe') {
                     setText('workflowTitle', 'Processus métier');
                     setText('workflowSubtitle', stats.role_display || 'Selon votre rôle');
                 }
             }
+            if (fromUser) toast('Tableau de bord actualisé.', 'success');
         } catch (err) {
+            const banner = document.getElementById('dashBanner');
+            if (banner) banner.hidden = false;
             toast(err.message, 'error');
+        } finally {
+            dashChargementEnCours = false;
+            if (btnRefresh) {
+                btnRefresh.disabled = false;
+                btnRefresh.classList.remove('is-refreshing');
+                btnRefresh.removeAttribute('aria-busy');
+            }
         }
     }
 
@@ -1113,12 +1239,24 @@ const EducRDC = (() => {
         openModal('modalProgrammeRdc');
 
         try {
-            const data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?auto_niveau=1`);
+            const eco = await api(`${API}/ecoles/${ecoleId}/?leger=1`);
+            const nEco = String(eco.niveau || '').toLowerCase();
+            let niveauRef = 'tous';
+            if (nEco === 'creche' || nEco === 'crèche') niveauRef = 'creche';
+            else if (nEco === 'maternelle') niveauRef = 'prescolaire';
+            else if (nEco === 'primaire') niveauRef = 'primaire';
+            else if (nEco === 'secondaire') niveauRef = 'secondaire';
+            let data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?niveau_programme=${encodeURIComponent(niveauRef)}`);
+            if (!(data.sections || []).length) {
+                data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?niveau_programme=tous`);
+                niveauRef = 'tous';
+            }
             const sections = data.sections || [];
             if (!sections.length) {
-                tree.innerHTML = '<div class="empty-state"><strong>Référentiel vide</strong><span>Aucune option pour ce niveau.</span></div>';
+                tree.innerHTML = '<div class="empty-state"><strong>Référentiel vide</strong><span>Aucune option pour ce niveau. Redémarrez le serveur Django pour charger crèche / maternelle.</span></div>';
                 return;
             }
+            tree.dataset.niveauRef = niveauRef;
             tree.innerHTML = sections.map((sec) => {
                 const opts = (sec.options || []).map((o) => `
                     <li class="prog-rdc-option">
@@ -1200,7 +1338,7 @@ const EducRDC = (() => {
                 const data = await api(`${API}/ecoles/${ecoleId}/affecter-structure/`, {
                     method: 'POST',
                     body: JSON.stringify({
-                        auto_niveau: true,
+                        niveau: tree.dataset.niveauRef || 'tous',
                         options: codes,
                     }),
                 });
@@ -1403,11 +1541,9 @@ const EducRDC = (() => {
         const titre = document.getElementById('titreModalUserEcole');
         const sub = document.getElementById('sousTitreUserEcole');
         const idEl = document.getElementById('userEcoleId');
-        const btnDel = document.getElementById('btnSupprimerUserEcole');
         const btnSubmit = document.getElementById('btnSubmitUserEcole');
         if (idEl) idEl.value = user?.id || '';
         setModePasswordUserEcole(Boolean(user));
-        if (btnDel) btnDel.hidden = !user?.id;
         if (titre) titre.textContent = user ? 'Modifier le compte' : 'Créer un compte école';
         if (btnSubmit) btnSubmit.innerHTML = `${ico('save')}${user ? 'Enregistrer' : 'Créer le compte'}`;
         if (sub && ecole) {
@@ -1529,10 +1665,17 @@ const EducRDC = (() => {
         }
         const tbody = document.querySelector('#tableEcolePersonnels tbody');
         if (!tbody) return;
+        const peutGerer = peutModifierEcole();
         tbody.innerHTML = rows.length ? rows.map((p) => {
             const avatar = p.photo_url
                 ? `<div class="entity-avatar has-photo"><img src="${escapeHtml(p.photo_url)}" alt=""></div>`
                 : `<div class="entity-avatar">${escapeHtml(initialsShort(p.nom_complet || '?'))}</div>`;
+            const actions = peutGerer
+                ? `<div class="actions-inline">
+                        <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">${ico('edit')}Modifier</button>
+                        ${!p.a_compte ? `<button type="button" class="btn btn-secondary btn-sm" data-compte-personnel="${p.id}">${ico('user')}Créer compte</button>` : ''}
+                    </div>`
+                : '—';
             return `
             <tr>
                 <td data-label="Photo">${avatar}</td>
@@ -1548,15 +1691,16 @@ const EducRDC = (() => {
                         : '<span class="badge badge-neutral">Sans compte</span>'
                 }</td>
                 <td data-label="Statut"><span class="badge ${p.actif ? 'badge-success' : 'badge-danger'}">${p.actif ? 'Actif' : 'Inactif'}</span></td>
-                <td data-label="Actions">
-                    <div class="actions-inline">
-                        <button type="button" class="btn btn-ghost btn-sm" data-edit-personnel="${p.id}">${ico('edit')}Modifier</button>
-                        ${!p.a_compte ? `<button type="button" class="btn btn-secondary btn-sm" data-compte-personnel="${p.id}">${ico('user')}Créer compte</button>` : ''}
-                    </div>
-                </td>
+                <td data-label="Actions">${actions}</td>
             </tr>
         `;
-        }).join('') : emptyRow(10, 'Aucun personnel identifié', 'Cliquez sur « Identifier un agent » puis créez éventuellement son compte.');
+        }).join('') : emptyRow(
+            10,
+            'Aucun personnel identifié',
+            peutGerer
+                ? 'Cliquez sur « Identifier un agent » puis créez éventuellement son compte.'
+                : 'Aucun agent n\'est encore identifié pour cet établissement.',
+        );
 
         tbody.querySelectorAll('[data-edit-personnel]').forEach((btn) => {
             btn.addEventListener('click', async () => {
@@ -1598,6 +1742,10 @@ const EducRDC = (() => {
     }
 
     function ouvrirModalPersonnel(personnel = null) {
+        if (!peutModifierEcole()) {
+            toast('L\'agent antenne ne peut pas gérer le personnel d\'une école.', 'error');
+            return;
+        }
         const form = document.getElementById('formPersonnel');
         if (!form) return;
         form.reset();
@@ -1624,19 +1772,29 @@ const EducRDC = (() => {
         openModal('modalPersonnel');
     }
 
+    function peutModifierEcole() {
+        return document.getElementById('ecoleDetail')?.dataset.role !== 'agent_antenne';
+    }
+
     function renderPhotosEcole(ecole) {
         const grille = document.getElementById('grillePhotosEcole');
         if (!grille) return;
         const photos = ecole.photos || [];
+        const peutGerer = peutModifierEcole();
         setCount('countEcolePhotos', photos.length, 'photo');
         if (!photos.length) {
-            grille.innerHTML = '<p class="empty-inline">Aucune photo pour le moment. Ajoutez une vue de l\'établissement.</p>';
+            grille.innerHTML = peutGerer
+                ? '<p class="empty-inline">Aucune photo pour le moment. Ajoutez une vue de l\'établissement.</p>'
+                : '<p class="empty-inline">Aucune photo pour le moment.</p>';
             return;
         }
         grille.innerHTML = photos.map((p) => {
             const src = escapeHtml(p.image_url || p.image || '');
             const legende = escapeHtml(p.legende || '');
             const badge = p.est_principale ? '<span class="photo-badge">Principale</span>' : '';
+            const actions = peutGerer
+                ? `<button type="button" class="btn-link danger" data-photo-delete="${p.id}" title="Supprimer">${ico('trash')}Supprimer</button>`
+                : '';
             return `
                 <figure class="ecole-photo-card${p.est_principale ? ' is-main' : ''}">
                     <a href="${src}" target="_blank" rel="noopener" class="ecole-photo-link">
@@ -1645,7 +1803,7 @@ const EducRDC = (() => {
                     ${badge}
                     <figcaption>
                         <span>${legende || 'Sans légende'}</span>
-                        <button type="button" class="btn-link danger" data-photo-delete="${p.id}" title="Supprimer">${ico('trash')}Supprimer</button>
+                        ${actions}
                     </figcaption>
                 </figure>
             `;
@@ -1656,9 +1814,12 @@ const EducRDC = (() => {
         const liste = document.getElementById('listeDocumentsEcole');
         if (!liste) return;
         const docs = ecole.documents || [];
+        const peutGerer = peutModifierEcole();
         setCount('countEcoleDocuments', docs.length, 'document');
         if (!docs.length) {
-            liste.innerHTML = '<p class="empty-inline">Aucun document de création. Ajoutez l\'agrément ou l\'autorisation d\'ouverture.</p>';
+            liste.innerHTML = peutGerer
+                ? '<p class="empty-inline">Aucun document de création. Ajoutez l\'agrément ou l\'autorisation d\'ouverture.</p>'
+                : '<p class="empty-inline">Aucun document de création.</p>';
             return;
         }
         liste.innerHTML = docs.map((d) => {
@@ -1666,6 +1827,9 @@ const EducRDC = (() => {
             const titre = escapeHtml(d.titre || d.nom_fichier || 'Document');
             const type = escapeHtml(d.type_display || d.type_document || '');
             const date = d.date_document ? escapeHtml(String(d.date_document).slice(0, 10)) : '—';
+            const supprimer = peutGerer
+                ? `<button type="button" class="btn-link danger" data-document-delete="${d.id}" title="Supprimer">${ico('trash')}Supprimer</button>`
+                : '';
             return `
                 <article class="ecole-doc-card">
                     <div class="ecole-doc-meta">
@@ -1675,7 +1839,7 @@ const EducRDC = (() => {
                     </div>
                     <div class="ecole-doc-actions">
                         <a class="btn btn-ghost btn-sm" href="${url}" target="_blank" rel="noopener">${ico('download')}Ouvrir</a>
-                        <button type="button" class="btn-link danger" data-document-delete="${d.id}" title="Supprimer">${ico('trash')}Supprimer</button>
+                        ${supprimer}
                     </div>
                 </article>
             `;
@@ -1830,6 +1994,10 @@ const EducRDC = (() => {
     }
 
     async function ouvrirModalEditEcole() {
+        if (document.getElementById('ecoleDetail')?.dataset.role === 'agent_antenne') {
+            toast('L\'agent antenne ne peut pas modifier une école.', 'error');
+            return;
+        }
         const root = document.getElementById('ecoleDetail');
         const form = document.getElementById('formEditEcole');
         const ecole = root?._ecoleCache;
@@ -2164,19 +2332,6 @@ const EducRDC = (() => {
             await chargerClassesUserEcole(ecoleId);
         });
 
-        document.getElementById('btnSupprimerUserEcole')?.addEventListener('click', async () => {
-            const id = document.getElementById('userEcoleId')?.value;
-            if (!id || !confirm('Supprimer ce compte utilisateur ?')) return;
-            try {
-                await api(`${API}/utilisateurs/${id}/`, { method: 'DELETE' });
-                toast('Compte supprimé.', 'success');
-                closeModal('modalUserEcole');
-                await chargerEcoleUtilisateurs(ecoleId);
-            } catch (err) {
-                toast(err.message, 'error');
-            }
-        });
-
         document.getElementById('formUserEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const form = e.target;
@@ -2331,6 +2486,10 @@ const EducRDC = (() => {
         document.getElementById('formPhotoEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             e.stopPropagation();
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas ajouter de photo d\'école.', 'error');
+                return;
+            }
             const form = e.target;
             const fileInput = document.getElementById('ecolePhotoFile');
             const fichiers = fileInput?.files ? Array.from(fileInput.files).filter((f) => f && f.size) : [];
@@ -2380,6 +2539,10 @@ const EducRDC = (() => {
         document.getElementById('grillePhotosEcole')?.addEventListener('click', async (e) => {
             const btn = e.target.closest('[data-photo-delete]');
             if (!btn) return;
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas modifier les photos d\'école.', 'error');
+                return;
+            }
             const photoId = btn.getAttribute('data-photo-delete');
             if (!photoId || !window.confirm('Supprimer cette photo ?')) return;
             try {
@@ -2403,6 +2566,10 @@ const EducRDC = (() => {
 
         document.getElementById('formDocumentEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas ajouter de document d\'école.', 'error');
+                return;
+            }
             const form = e.target;
             const fileInput = document.getElementById('ecoleDocumentFile');
             const fichier = fileInput?.files?.[0];
@@ -2447,6 +2614,10 @@ const EducRDC = (() => {
         document.getElementById('listeDocumentsEcole')?.addEventListener('click', async (e) => {
             const btn = e.target.closest('[data-document-delete]');
             if (!btn) return;
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas supprimer un document d\'école.', 'error');
+                return;
+            }
             const documentId = btn.getAttribute('data-document-delete');
             if (!documentId || !ecoleId) return;
             if (!window.confirm('Supprimer ce document ?')) return;
@@ -2461,6 +2632,10 @@ const EducRDC = (() => {
 
         document.getElementById('formPersonnel')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas gérer le personnel d\'une école.', 'error');
+                return;
+            }
             const form = e.target;
             if (!form.checkValidity()) {
                 toast('Veuillez compléter les champs obligatoires.', 'warning');
@@ -2503,6 +2678,10 @@ const EducRDC = (() => {
 
         document.getElementById('formImportPersonnel')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!peutModifierEcole()) {
+                toast('L\'agent antenne ne peut pas importer le personnel d\'une école.', 'error');
+                return;
+            }
             const form = e.target;
             const fichier = document.getElementById('importPersonnelFile')?.files?.[0];
             if (!fichier) {
@@ -2626,26 +2805,64 @@ const EducRDC = (() => {
             : opts;
     }
 
+    async function remplirFiltreClassesEleves(ecoleId, selectedId = '') {
+        const sel = document.getElementById('filtreClasseEleves');
+        if (!sel) return;
+        const keep = selectedId || sel.value || '';
+        sel.innerHTML = '<option value="">Toutes les classes</option>';
+        const app = document.getElementById('elevesApp');
+        const ecole = ecoleId || app?.dataset.ecoleId || '';
+        if (!ecole) return;
+        try {
+            const data = await api(
+                `${API}/classes/?ecole=${encodeURIComponent(ecole)}&actif=1&page_size=300&ordering=nom`,
+            );
+            const rows = data.results || data;
+            rows.forEach((c) => {
+                const label = [c.nom, c.section_nom, c.option_nom].filter(Boolean).join(' · ');
+                sel.insertAdjacentHTML(
+                    'beforeend',
+                    `<option value="${c.id}">${escapeHtml(label || c.nom || `Classe #${c.id}`)}</option>`,
+                );
+            });
+            if (keep && [...sel.options].some((o) => o.value === String(keep))) {
+                sel.value = String(keep);
+            }
+        } catch (err) {
+            toast(err.message, 'error');
+        }
+    }
+
     async function chargerEleves(page = 1) {
         pageEleves = page;
         const app = document.getElementById('elevesApp');
+        const isAdminEcole = app?.dataset.role === 'admin_ecole';
         const q = document.getElementById('searchEleves')?.value || '';
         const ecoleFigee = app?.dataset.ecoleFigee === '1';
         const ecoleId = ecoleFigee
             ? (app?.dataset.ecoleId || '')
             : (document.getElementById('filtreEcoleEleves')?.value || app?.dataset.ecoleId || '');
+        const classeId = document.getElementById('filtreClasseEleves')?.value || '';
         let url = `${API}/eleves/?page=${page}`;
         if (q) url += `&q=${encodeURIComponent(q)}`;
         if (ecoleId) url += `&ecole=${encodeURIComponent(ecoleId)}`;
+        if (classeId) url += `&classe=${encodeURIComponent(classeId)}`;
         const data = await api(url);
         const rows = data.results || data;
         const tbody = document.querySelector('#tableEleves tbody');
         setCount('countEleves', data.count ?? rows.length);
+        const colCount = isAdminEcole ? 7 : 8;
 
         tbody.innerHTML = rows.length ? rows.map((e) => {
             const avatar = e.photo_url
                 ? `<div class="entity-avatar has-photo"><img src="${escapeHtml(e.photo_url)}" alt="${escapeHtml(e.nom_complet)}"></div>`
                 : `<div class="entity-avatar">${escapeHtml(initials(e.nom_complet))}</div>`;
+            const classeLibelle = [e.classe_nom, e.section_nom, e.option_nom].filter(Boolean).join(' · ') || '—';
+            const ecoleCell = isAdminEcole
+                ? ''
+                : `<td data-label="École">
+                    <strong title="${escapeHtml(e.ecole_nom || '')}">${escapeHtml(e.ecole_nom || '—')}</strong>
+                   </td>`;
             return `
             <tr>
                 <td data-label="Élève">
@@ -2660,22 +2877,18 @@ const EducRDC = (() => {
                 <td data-label="N° Identification"><span class="code-chip">${escapeHtml(e.numero_identification || '—')}</span></td>
                 <td data-label="N° Permanent"><span class="code-chip">${escapeHtml(e.numero_permanent || '—')}</span></td>
                 <td data-label="Sexe">${escapeHtml(e.sexe_display || e.sexe)}</td>
-                <td data-label="École / Classe">
-                    <div class="entity-meta">
-                        <strong title="${escapeHtml(e.ecole_nom || '')}">${escapeHtml(e.ecole_nom || '—')}</strong>
-                        <span>${escapeHtml([e.classe_nom, e.section_nom, e.option_nom].filter(Boolean).join(' · ') || '')}</span>
-                    </div>
-                </td>
+                ${ecoleCell}
+                <td data-label="Classe">${escapeHtml(classeLibelle)}</td>
                 <td data-label="Statut"><span class="badge ${e.actif ? 'badge-success' : 'badge-danger'}">${e.actif ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions">
                     <a class="btn btn-secondary btn-sm" href="/eleves/${e.id}/">${ico('eye')}Détail</a>
                 </td>
             </tr>`;
         }).join('') : emptyRow(
-            7,
+            colCount,
             'Aucun élève trouvé',
-            ecoleId
-                ? 'Aucun élève pour cette école — affinez la recherche ou ajoutez un élève.'
+            ecoleId || classeId
+                ? 'Aucun élève pour ce filtre — affinez la recherche ou ajoutez un élève.'
                 : 'Sélectionnez une école ou affinez votre recherche.',
         );
 
@@ -2766,30 +2979,213 @@ const EducRDC = (() => {
                     selImport.value = String(ecoleFigeeId);
                     selImport.disabled = true;
                 }
-                await remplirSelectClasses(ecoleFigeeId, 'selectClasseEleve');
+                await syncScolariteEleveCascade(ecoleFigeeId, { from: 'ecole' });
+            }
+            const ecolePourClasses = ecoleFigee && ecoleFigeeId
+                ? ecoleFigeeId
+                : (filtreEcole?.value || app?.dataset.ecoleId || ecoleUrl || '');
+            if (app?.dataset.role === 'admin_ecole') {
+                await remplirFiltreClassesEleves(ecolePourClasses || app?.dataset.ecoleId);
             }
             await chargerEleves(1);
         };
         boot().catch((e) => toast(e.message, 'error'));
 
         const openImportEleves = () => {
+            if (app?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas importer des élèves.', 'error');
+                return;
+            }
             const result = document.getElementById('importElevesResult');
             if (result) {
                 result.hidden = true;
                 result.textContent = '';
             }
+            const lien = document.getElementById('lienModeleImportEleves');
+            if (lien) {
+                const ecoleId = ecoleFigee && ecoleFigeeId
+                    ? ecoleFigeeId
+                    : (document.getElementById('selectEcoleImportEleves')?.value
+                        || document.getElementById('filtreEcoleEleves')?.value
+                        || app?.dataset.ecoleId
+                        || '');
+                lien.href = ecoleId
+                    ? `${API}/eleves/modele-import/?ecole=${encodeURIComponent(ecoleId)}`
+                    : `${API}/eleves/modele-import/`;
+            }
             openModal('modalImportEleves');
         };
+        document.getElementById('selectEcoleImportEleves')?.addEventListener('change', () => {
+            const lien = document.getElementById('lienModeleImportEleves');
+            if (!lien) return;
+            const ecoleId = ecoleFigee && ecoleFigeeId
+                ? ecoleFigeeId
+                : (document.getElementById('selectEcoleImportEleves')?.value || '');
+            lien.href = ecoleId
+                ? `${API}/eleves/modele-import/?ecole=${encodeURIComponent(ecoleId)}`
+                : `${API}/eleves/modele-import/`;
+        });
+        const ecoleEleveCourante = () => (
+            ecoleFigee && ecoleFigeeId
+                ? ecoleFigeeId
+                : document.getElementById('selectEcoleEleve')?.value
+        );
         document.getElementById('selectEcoleEleve')?.addEventListener('change', (e) => {
-            remplirSelectClasses(e.target.value, 'selectClasseEleve');
+            syncScolariteEleveCascade(e.target.value, { from: 'ecole' }).catch((err) => toast(err.message, 'error'));
             majNumeroIdentificationEleve();
+        });
+        document.getElementById('selectSectionEleve')?.addEventListener('change', () => {
+            syncScolariteEleveCascade(ecoleEleveCourante(), { from: 'section' })
+                .catch((err) => toast(err.message, 'error'));
+        });
+        document.getElementById('selectOptionEleve')?.addEventListener('change', () => {
+            syncScolariteEleveCascade(ecoleEleveCourante(), { from: 'option' })
+                .catch((err) => toast(err.message, 'error'));
         });
         document.getElementById('formEleve')?.querySelector('[name="matricule"]')
             ?.addEventListener('input', majNumeroIdentificationEleve);
         document.getElementById('filtreEcoleEleves')?.addEventListener('change', () => {
+            const ecoleId = document.getElementById('filtreEcoleEleves')?.value || '';
+            remplirFiltreClassesEleves(ecoleId)
+                .then(() => chargerEleves(1))
+                .catch((err) => toast(err.message, 'error'));
+        });
+        document.getElementById('filtreClasseEleves')?.addEventListener('change', () => {
             chargerEleves(1).catch((err) => toast(err.message, 'error'));
         });
+        function setEleveWizardStep(step) {
+            const form = document.getElementById('formEleve');
+            if (!form) return;
+            const panels = [...form.querySelectorAll('[data-step-panel]')];
+            const total = panels.length || 5;
+            const n = Math.min(Math.max(parseInt(step, 10) || 1, 1), total);
+            form.dataset.step = String(n);
+            form.setAttribute('data-step', String(n));
+            panels.forEach((panel) => {
+                const active = parseInt(panel.getAttribute('data-step-panel'), 10) === n;
+                panel.classList.toggle('is-active', active);
+                panel.toggleAttribute('hidden', !active);
+                panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+            });
+            form.querySelectorAll('[data-goto-step]').forEach((btn) => {
+                const s = parseInt(btn.getAttribute('data-goto-step'), 10);
+                btn.classList.toggle('is-active', s === n);
+                btn.classList.toggle('is-done', s < n);
+            });
+            const btnPrev = document.getElementById('btnElevePrev');
+            const btnNext = document.getElementById('btnEleveNext');
+            const btnSubmit = document.getElementById('btnEleveSubmit');
+            if (btnPrev) {
+                btnPrev.hidden = n <= 1;
+                btnPrev.classList.toggle('is-wizard-hidden', n <= 1);
+            }
+            // Dernière étape (Tuteur) : pas de Suivant, uniquement Enregistrer
+            const derniere = n >= total;
+            if (btnNext) {
+                btnNext.hidden = derniere;
+                btnNext.classList.toggle('is-wizard-hidden', derniere);
+                btnNext.setAttribute('aria-hidden', derniere ? 'true' : 'false');
+            }
+            if (btnSubmit) {
+                btnSubmit.hidden = !derniere;
+                btnSubmit.classList.toggle('is-wizard-hidden', !derniere);
+                btnSubmit.setAttribute('aria-hidden', derniere ? 'false' : 'true');
+            }
+        }
+
+        function validerEtapeEleveCourante() {
+            const form = document.getElementById('formEleve');
+            if (!form) return true;
+            const panel = form.querySelector('.wizard-panel.is-active')
+                || form.querySelector(`[data-step-panel="${form.dataset.step || 1}"]`);
+            if (!panel) return true;
+            const fields = panel.querySelectorAll('input[required], select[required], textarea[required]');
+            for (const field of fields) {
+                if (field.disabled || field.readOnly) continue;
+                if (field.type === 'file') continue;
+                if (!(field.value || '').toString().trim()) {
+                    try { field.focus(); } catch (_) { /* ignore */ }
+                    toast('Complétez les champs obligatoires (*) avant de continuer.', 'warning');
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function allerEtapeEleveSuivante(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            const form = document.getElementById('formEleve');
+            if (!form) return;
+            if (!validerEtapeEleveCourante()) return;
+            const current = parseInt(form.getAttribute('data-step') || '1', 10);
+            setEleveWizardStep(current + 1);
+        }
+
+        function allerEtapeElevePrecedente(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            const form = document.getElementById('formEleve');
+            if (!form) return;
+            const current = parseInt(form.getAttribute('data-step') || '1', 10);
+            setEleveWizardStep(current - 1);
+        }
+
+        // Délégation : fiable même si le modal est déplacé vers <body>
+        if (document.body.dataset.eleveWizardBound !== '1') {
+            document.body.dataset.eleveWizardBound = '1';
+            document.body.addEventListener('click', (e) => {
+                const nextBtn = e.target.closest('#btnEleveNext');
+                if (nextBtn) {
+                    allerEtapeEleveSuivante(e);
+                    return;
+                }
+                const prevBtn = e.target.closest('#btnElevePrev');
+                if (prevBtn) {
+                    allerEtapeElevePrecedente(e);
+                    return;
+                }
+                const stepBtn = e.target.closest('#formEleve [data-goto-step]');
+                if (stepBtn) {
+                    e.preventDefault();
+                    const form = document.getElementById('formEleve');
+                    if (!form) return;
+                    const target = parseInt(stepBtn.getAttribute('data-goto-step'), 10);
+                    const current = parseInt(form.getAttribute('data-step') || '1', 10);
+                    if (target === current) return;
+                    if (target > current) {
+                        if (!validerEtapeEleveCourante()) return;
+                        if (target > current + 1) {
+                            toast('Utilisez le bouton Suivant pour avancer étape par étape.', 'warning');
+                            return;
+                        }
+                    }
+                    setEleveWizardStep(target);
+                }
+            });
+        }
+
+        function resetEleveFileDrops() {
+            ['elevePhoto', 'elevePhotoPere', 'elevePhotoMere', 'elevePhotoTuteur'].forEach((id) => {
+                const input = document.getElementById(id);
+                if (typeof input?._resetFileDropPreview === 'function') {
+                    input._resetFileDropPreview();
+                }
+            });
+        }
+
         document.getElementById('btnNouvelEleve')?.addEventListener('click', () => {
+            if (app?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas créer d\'élève.', 'error');
+                return;
+            }
+            const form = document.getElementById('formEleve');
+            form?.reset();
+            resetEleveFileDrops();
             const ecoleId = ecoleFigee
                 ? ecoleFigeeId
                 : document.getElementById('selectEcoleEleve')?.value;
@@ -2800,14 +3196,20 @@ const EducRDC = (() => {
                     sel.disabled = true;
                 }
             }
-            if (ecoleId) remplirSelectClasses(ecoleId, 'selectClasseEleve');
-            else {
+            if (ecoleId) {
+                syncScolariteEleveCascade(ecoleId, { from: 'ecole' }).catch(() => {});
+            } else {
+                const selSec = document.getElementById('selectSectionEleve');
+                const selOpt = document.getElementById('selectOptionEleve');
                 const sel = document.getElementById('selectClasseEleve');
+                if (selSec) selSec.innerHTML = `<option value="">— Sélectionner une section —</option>`;
+                if (selOpt) selOpt.innerHTML = `<option value="">— Sélectionner une option —</option>`;
                 if (sel) sel.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
             }
             majNumeroIdentificationEleve();
             majMatriculeEleve().catch(() => {});
             openModal('modalEleve');
+            setEleveWizardStep(1);
         });
         document.getElementById('btnImporterEleves')?.addEventListener('click', openImportEleves);
         document.getElementById('btnImporterEleves2')?.addEventListener('click', openImportEleves);
@@ -2823,11 +3225,24 @@ const EducRDC = (() => {
 
         document.getElementById('formEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const form = e.target;
-            if (!form.checkValidity()) {
-                toast('Veuillez compléter les champs obligatoires.', 'warning');
-                form.reportValidity();
+            if (app?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas créer d\'élève.', 'error');
                 return;
+            }
+            const form = e.target;
+            // Valider toutes les étapes (les panels [hidden] sont exclus de checkValidity())
+            const panels = [...form.querySelectorAll('[data-step-panel]')];
+            for (const panel of panels) {
+                const fields = panel.querySelectorAll('input, select, textarea');
+                for (const field of fields) {
+                    if (field.disabled) continue;
+                    if (!field.checkValidity()) {
+                        setEleveWizardStep(Number(panel.dataset.stepPanel));
+                        field.reportValidity();
+                        toast('Veuillez compléter les champs obligatoires.', 'warning');
+                        return;
+                    }
+                }
             }
             const fd = new FormData(form);
             if (ecoleFigee && ecoleFigeeId) {
@@ -2842,11 +3257,8 @@ const EducRDC = (() => {
                 await api(`${API}/eleves/`, { method: 'POST', body: fd, headers: {} });
                 toast('Élève enregistré.', 'success');
                 form.reset();
-                form.querySelectorAll('.file-drop-title').forEach((title) => {
-                    title.textContent = title.closest('#elevePhoto')
-                        ? 'Déposer une photo ou cliquer pour parcourir'
-                        : 'Déposer une photo ou cliquer';
-                });
+                resetEleveFileDrops();
+                setEleveWizardStep(1);
                 closeModal('modalEleve');
                 await chargerSelectEcoles('selectEcoleEleve');
                 await chargerEleves(1);
@@ -2857,6 +3269,10 @@ const EducRDC = (() => {
 
         document.getElementById('formImportEleves')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (app?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas importer des élèves.', 'error');
+                return;
+            }
             const form = e.target;
             const fileInput = document.getElementById('importElevesFile');
             const fichier = fileInput?.files?.[0];
@@ -2962,6 +3378,117 @@ const EducRDC = (() => {
         }
     }
 
+    function libellePhotoParent(role) {
+        if (role === 'mere') return { de: 'de la mère', titre: 'Photo de la mère', cible: 'la mère' };
+        if (role === 'pere') return { de: 'du père', titre: 'Photo du père', cible: 'le père' };
+        return { de: 'du tuteur', titre: 'Photo du tuteur', cible: 'le tuteur' };
+    }
+
+    /**
+     * Affiche le modal d’aperçu / confirmation avant upload photo.
+     * @returns {Promise<boolean>}
+     */
+    function demanderConfirmationPhoto(file, input, texts = {}, opts = {}) {
+        const modalId = opts.modalId || 'modalConfirmPhotoEleve';
+        const previewId = opts.previewId || 'confirmPhotoElevePreview';
+        const nomId = opts.nomId || 'confirmPhotoEleveNom';
+        const btnOkId = opts.btnOkId || 'btnConfirmPhotoEleve';
+        const titleId = opts.titleId || 'confirmPhotoEleveTitle';
+        const subtitleId = opts.subtitleId || 'confirmPhotoEleveSubtitle';
+        const leadId = opts.leadId || 'confirmPhotoEleveLead';
+        const noticeId = opts.noticeId || 'confirmPhotoEleveNotice';
+
+        const modal = document.getElementById(modalId);
+        const preview = document.getElementById(previewId);
+        const img = preview?.querySelector('img');
+        const fallback = preview?.querySelector('.confirm-photo-fallback');
+        const nomEl = document.getElementById(nomId);
+        const btnOk = document.getElementById(btnOkId);
+        const titleEl = document.getElementById(titleId);
+        const subtitleEl = document.getElementById(subtitleId);
+        const leadEl = document.getElementById(leadId);
+        const noticeEl = document.getElementById(noticeId);
+        if (!modal || !btnOk || !file) {
+            if (input) input.value = '';
+            return Promise.resolve(false);
+        }
+
+        if (titleEl) titleEl.textContent = texts.titre || 'Changer la photo';
+        if (subtitleEl) {
+            subtitleEl.textContent = texts.sousTitre || 'Aperçu avant remplacement sur la fiche';
+        }
+        if (leadEl) {
+            leadEl.innerHTML = texts.question || 'Utiliser cette photo&nbsp;?';
+        }
+        if (noticeEl) {
+            noticeEl.textContent = texts.notice
+                || 'La photo actuelle sera remplacée. Cette action est immédiate.';
+        }
+
+        let objectUrl = URL.createObjectURL(file);
+        const nettoyerApercu = () => {
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+                objectUrl = null;
+            }
+            if (img) {
+                img.removeAttribute('src');
+                img.hidden = true;
+            }
+            if (fallback) fallback.hidden = false;
+            if (nomEl) {
+                nomEl.textContent = '';
+                nomEl.hidden = true;
+            }
+        };
+
+        if (img) {
+            img.src = objectUrl;
+            img.hidden = false;
+        }
+        if (fallback) fallback.hidden = true;
+        if (nomEl) {
+            nomEl.textContent = file.name || '';
+            nomEl.hidden = !file.name;
+        }
+
+        return new Promise((resolve) => {
+            let settled = false;
+            const cleanup = (ok) => {
+                if (settled) return;
+                settled = true;
+                btnOk.removeEventListener('click', onOk);
+                modal.querySelectorAll('[data-close]').forEach((el) => {
+                    el.removeEventListener('click', onCancel);
+                });
+                modal.removeEventListener('click', onBackdrop);
+                closeModal(modalId);
+                if (!ok) {
+                    nettoyerApercu();
+                    if (input) input.value = '';
+                } else {
+                    nettoyerApercu();
+                }
+                resolve(ok);
+            };
+            const onOk = (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                cleanup(true);
+            };
+            const onCancel = () => cleanup(false);
+            const onBackdrop = (ev) => {
+                if (ev.target === modal && !modal.dataset.justOpened) cleanup(false);
+            };
+            btnOk.addEventListener('click', onOk);
+            modal.querySelectorAll('[data-close]').forEach((el) => {
+                el.addEventListener('click', onCancel);
+            });
+            modal.addEventListener('click', onBackdrop);
+            openModal(modalId);
+        });
+    }
+
     function renderParentCards(eleve) {
         const wrap = document.getElementById('blocParents');
         if (!wrap) return;
@@ -3035,20 +3562,104 @@ const EducRDC = (() => {
                 const file = e.target.files && e.target.files[0];
                 const role = e.target.dataset.parentPhoto;
                 if (!file || !role) return;
+                const labels = libellePhotoParent(role);
+                const confirme = await demanderConfirmationPhoto(file, e.target, {
+                    titre: labels.titre,
+                    sousTitre: 'Aperçu avant remplacement sur la fiche',
+                    question: `Utiliser cette photo pour ${labels.cible}&nbsp;?`,
+                    notice: `La photo actuelle ${labels.de} sera remplacée. Cette action est immédiate.`,
+                });
+                if (!confirme) return;
+
                 const id = document.getElementById('eleveDetail')?.dataset.eleveId;
+                if (!id) {
+                    e.target.value = '';
+                    return;
+                }
                 const fd = new FormData();
                 fd.append('photo', file);
                 fd.append('role', role);
+                const btnOk = document.getElementById('btnConfirmPhotoEleve');
+                if (btnOk) btnOk.disabled = true;
                 try {
                     await api(`${API}/eleves/${id}/photo-parent/`, { method: 'POST', body: fd, headers: {} });
-                    toast(`Photo ${role === 'mere' ? 'de la mère' : role === 'pere' ? 'du père' : 'du tuteur'} mise à jour.`, 'success');
+                    toast(`Photo ${labels.de} mise à jour.`, 'success');
                     await chargerEleveDetail();
                 } catch (err) {
                     toast(err.message, 'error');
                 } finally {
                     e.target.value = '';
+                    if (btnOk) btnOk.disabled = false;
                 }
             });
+        });
+    }
+
+    function setEditEleveWizardStep(step) {
+        const form = document.getElementById('formEditEleve');
+        if (!form) return;
+        const panels = [...form.querySelectorAll('[data-step-panel]')];
+        const total = panels.length || 5;
+        const n = Math.min(Math.max(parseInt(step, 10) || 1, 1), total);
+        form.dataset.step = String(n);
+        form.setAttribute('data-step', String(n));
+        panels.forEach((panel) => {
+            const active = parseInt(panel.getAttribute('data-step-panel'), 10) === n;
+            panel.classList.toggle('is-active', active);
+            panel.toggleAttribute('hidden', !active);
+            panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+        });
+        form.querySelectorAll('[data-goto-step]').forEach((btn) => {
+            const s = parseInt(btn.getAttribute('data-goto-step'), 10);
+            btn.classList.toggle('is-active', s === n);
+            btn.classList.toggle('is-done', s < n);
+        });
+        const btnPrev = document.getElementById('btnEditElevePrev');
+        const btnNext = document.getElementById('btnEditEleveNext');
+        const btnSubmit = document.getElementById('btnEditEleveSubmit');
+        if (btnPrev) {
+            btnPrev.hidden = n <= 1;
+            btnPrev.classList.toggle('is-wizard-hidden', n <= 1);
+        }
+        const derniere = n >= total;
+        if (btnNext) {
+            btnNext.hidden = derniere;
+            btnNext.classList.toggle('is-wizard-hidden', derniere);
+            btnNext.setAttribute('aria-hidden', derniere ? 'true' : 'false');
+        }
+        if (btnSubmit) {
+            btnSubmit.hidden = !derniere;
+            btnSubmit.classList.toggle('is-wizard-hidden', !derniere);
+            btnSubmit.setAttribute('aria-hidden', derniere ? 'false' : 'true');
+        }
+    }
+
+    function validerEtapeEditEleveCourante() {
+        const form = document.getElementById('formEditEleve');
+        if (!form) return true;
+        const panel = form.querySelector('.wizard-panel.is-active')
+            || form.querySelector(`[data-step-panel="${form.dataset.step || 1}"]`);
+        if (!panel) return true;
+        const fields = panel.querySelectorAll('input[required], select[required], textarea[required]');
+        for (const field of fields) {
+            if (field.disabled || field.readOnly) continue;
+            if (field.type === 'file') continue;
+            if (!(field.value || '').toString().trim()) {
+                try { field.focus(); } catch (_) { /* ignore */ }
+                toast('Complétez les champs obligatoires (*) avant de continuer.', 'warning');
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function resetEditEleveFileDrops() {
+        ['editElevePhoto', 'editElevePhotoPere', 'editElevePhotoMere', 'editElevePhotoTuteur'].forEach((id) => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+            if (typeof input?._resetFileDropPreview === 'function') {
+                input._resetFileDropPreview();
+            }
         });
     }
 
@@ -3067,6 +3678,19 @@ const EducRDC = (() => {
         form.lieu_naissance.value = eleve.lieu_naissance || '';
         form.adresse.value = eleve.adresse || '';
         form.actif.value = eleve.actif ? 'true' : 'false';
+        form.nom_pere.value = eleve.nom_complet_pere || eleve.nom_pere || '';
+        form.telephone_pere.value = eleve.telephone_pere || '';
+        form.email_pere.value = eleve.email_pere || '';
+        form.profession_pere.value = eleve.profession_pere || '';
+        form.nom_mere.value = eleve.nom_complet_mere || eleve.nom_mere || '';
+        form.telephone_mere.value = eleve.telephone_mere || '';
+        form.email_mere.value = eleve.email_mere || '';
+        form.profession_mere.value = eleve.profession_mere || '';
+        form.lien_tuteur.value = eleve.lien_tuteur || '';
+        form.nom_tuteur.value = eleve.nom_tuteur || '';
+        form.telephone_tuteur.value = eleve.telephone_tuteur || '';
+        form.email_tuteur.value = eleve.email_tuteur || '';
+        resetEditEleveFileDrops();
     }
 
     function majNumeroIdentificationEditEleve() {
@@ -3081,21 +3705,70 @@ const EducRDC = (() => {
         }
     }
 
-    async function ouvrirModalEditEleve() {
+    function majPhotoHeaderEditEleve(eleve) {
+        const photo = document.getElementById('editEleveHeaderPhoto');
+        const sub = document.getElementById('editEleveHeaderSub');
+        const ecoleEl = document.getElementById('editEleveHeaderEcole');
+        if (sub) {
+            const nom = (eleve?.nom_complet || [eleve?.nom, eleve?.postnom, eleve?.prenom].filter(Boolean).join(' ') || 'Élève').trim();
+            const mat = eleve?.matricule ? ` · ${eleve.matricule}` : '';
+            sub.textContent = `${nom}${mat}`;
+        }
+        if (ecoleEl) {
+            const ecoleNom = (eleve?.ecole_nom || '').trim();
+            const ecoleCode = (eleve?.ecole_code || '').trim();
+            if (ecoleNom || ecoleCode) {
+                ecoleEl.hidden = false;
+                ecoleEl.textContent = ecoleCode
+                    ? `École : ${ecoleNom}${ecoleNom ? ' · ' : ''}${ecoleCode}`
+                    : `École : ${ecoleNom}`;
+            } else {
+                ecoleEl.hidden = true;
+                ecoleEl.textContent = '';
+            }
+        }
+        if (!photo) return;
+        if (eleve?.photo_url) {
+            photo.classList.add('has-photo');
+            photo.innerHTML = `<img src="${escapeHtml(eleve.photo_url)}" alt="">`;
+        } else {
+            const initials = [eleve?.prenom, eleve?.nom]
+                .map((p) => (p || '').trim().charAt(0).toUpperCase())
+                .filter(Boolean)
+                .join('')
+                .slice(0, 2) || '—';
+            photo.classList.remove('has-photo');
+            photo.textContent = initials;
+        }
+    }
+
+    async function ouvrirModalEditEleve(step = 1) {
         const eleve = cacheEleveDetail;
         if (!eleve) return;
         const root = document.getElementById('eleveDetail');
         remplirFormEditEleve(eleve);
+        majPhotoHeaderEditEleve(eleve);
         await chargerSelectEcoles('selectEcoleEditEleve');
         const selEcole = document.getElementById('selectEcoleEditEleve');
-        if (selEcole) {
+        const ecoleId = (() => {
+            if (!selEcole) return eleve.ecole || '';
             const ecoleFigee = root?.dataset.ecoleFigee === '1';
             const ecoleUser = root?.dataset.ecoleId || '';
             selEcole.value = String(ecoleFigee && ecoleUser ? ecoleUser : (eleve.ecole || ''));
             selEcole.disabled = ecoleFigee;
-        }
-        await remplirSelectClasses(selEcole?.value || eleve.ecole, 'selectClasseEditEleve', eleve.classe || '');
+            return selEcole.value || eleve.ecole || '';
+        })();
+        await syncScolariteCascade(ecoleId, {
+            sectionSelectId: 'selectSectionEditEleve',
+            optionSelectId: 'selectOptionEditEleve',
+            classeSelectId: 'selectClasseEditEleve',
+            sectionId: eleve.section || '',
+            optionId: eleve.option || '',
+            classeId: eleve.classe || '',
+            from: 'ecole',
+        });
         majNumeroIdentificationEditEleve();
+        setEditEleveWizardStep(step);
         openModal('modalEditEleve');
     }
 
@@ -3219,9 +3892,59 @@ const EducRDC = (() => {
 
     function initEleveDetail() {
         bindModalClosers();
+        bindFileDropPreview('editElevePhoto');
+        bindFileDropPreview('editElevePhotoPere');
+        bindFileDropPreview('editElevePhotoMere');
+        bindFileDropPreview('editElevePhotoTuteur');
         chargerEleveDetail().catch((e) => toast(e.message, 'error'));
 
+        if (document.body.dataset.editEleveWizardBound !== '1') {
+            document.body.dataset.editEleveWizardBound = '1';
+            document.body.addEventListener('click', (e) => {
+                const nextBtn = e.target.closest('#btnEditEleveNext');
+                if (nextBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!validerEtapeEditEleveCourante()) return;
+                    const form = document.getElementById('formEditEleve');
+                    const current = parseInt(form?.getAttribute('data-step') || '1', 10);
+                    setEditEleveWizardStep(current + 1);
+                    return;
+                }
+                const prevBtn = e.target.closest('#btnEditElevePrev');
+                if (prevBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const form = document.getElementById('formEditEleve');
+                    const current = parseInt(form?.getAttribute('data-step') || '1', 10);
+                    setEditEleveWizardStep(current - 1);
+                    return;
+                }
+                const stepBtn = e.target.closest('#formEditEleve [data-goto-step]');
+                if (stepBtn) {
+                    e.preventDefault();
+                    const form = document.getElementById('formEditEleve');
+                    if (!form) return;
+                    const target = parseInt(stepBtn.getAttribute('data-goto-step'), 10);
+                    const current = parseInt(form.getAttribute('data-step') || '1', 10);
+                    if (target === current) return;
+                    if (target > current) {
+                        if (!validerEtapeEditEleveCourante()) return;
+                        if (target > current + 1) {
+                            toast('Utilisez le bouton Suivant pour avancer étape par étape.', 'warning');
+                            return;
+                        }
+                    }
+                    setEditEleveWizardStep(target);
+                }
+            });
+        }
+
         document.getElementById('btnRegenererQrEleve')?.addEventListener('click', async () => {
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas régénérer le QR code.', 'error');
+                return;
+            }
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
             if (!id || !confirm('Régénérer le QR code de cet élève ?')) return;
             try {
@@ -3234,6 +3957,10 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnSupprimerEleve')?.addEventListener('click', async () => {
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas supprimer un élève.', 'error');
+                return;
+            }
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
             if (!id || !confirm('Supprimer définitivement cet élève ?')) return;
             try {
@@ -3244,45 +3971,94 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnModifierEleve')?.addEventListener('click', () => {
-            ouvrirModalEditEleve().catch((err) => toast(err.message, 'error'));
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas modifier un élève.', 'error');
+                return;
+            }
+            ouvrirModalEditEleve(1).catch((err) => toast(err.message, 'error'));
         });
 
         document.getElementById('selectEcoleEditEleve')?.addEventListener('change', (e) => {
-            remplirSelectClasses(e.target.value, 'selectClasseEditEleve');
+            syncScolariteCascade(e.target.value, {
+                sectionSelectId: 'selectSectionEditEleve',
+                optionSelectId: 'selectOptionEditEleve',
+                classeSelectId: 'selectClasseEditEleve',
+                from: 'ecole',
+            }).catch((err) => toast(err.message, 'error'));
             majNumeroIdentificationEditEleve();
+        });
+        document.getElementById('selectSectionEditEleve')?.addEventListener('change', () => {
+            const ecoleId = document.getElementById('selectEcoleEditEleve')?.value;
+            syncScolariteCascade(ecoleId, {
+                sectionSelectId: 'selectSectionEditEleve',
+                optionSelectId: 'selectOptionEditEleve',
+                classeSelectId: 'selectClasseEditEleve',
+                from: 'section',
+            }).catch((err) => toast(err.message, 'error'));
+        });
+        document.getElementById('selectOptionEditEleve')?.addEventListener('change', () => {
+            const ecoleId = document.getElementById('selectEcoleEditEleve')?.value;
+            syncScolariteCascade(ecoleId, {
+                sectionSelectId: 'selectSectionEditEleve',
+                optionSelectId: 'selectOptionEditEleve',
+                classeSelectId: 'selectClasseEditEleve',
+                from: 'option',
+            }).catch((err) => toast(err.message, 'error'));
         });
 
         document.getElementById('formEditEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const form = e.target;
-            if (!form.checkValidity()) {
-                toast('Veuillez compléter les champs obligatoires.', 'warning');
-                form.reportValidity();
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas modifier un élève.', 'error');
                 return;
+            }
+            const form = e.target;
+            const panels = [...form.querySelectorAll('[data-step-panel]')];
+            for (const panel of panels) {
+                const fields = panel.querySelectorAll('input, select, textarea');
+                for (const field of fields) {
+                    if (field.disabled) continue;
+                    if (!field.checkValidity()) {
+                        setEditEleveWizardStep(Number(panel.dataset.stepPanel));
+                        field.reportValidity();
+                        toast('Veuillez compléter les champs obligatoires.', 'warning');
+                        return;
+                    }
+                }
             }
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
             if (!id) return;
+            const root = document.getElementById('eleveDetail');
             const selEcole = document.getElementById('selectEcoleEditEleve');
-            const payload = {
-                numero_permanent: (form.numero_permanent.value || '').trim() || null,
-                numero_impot: (form.numero_impot.value || '').trim() || null,
-                sexe: form.sexe.value,
-                nom: form.nom.value.trim(),
-                postnom: (form.postnom.value || '').trim(),
-                prenom: form.prenom.value.trim(),
-                date_naissance: form.date_naissance.value,
-                lieu_naissance: (form.lieu_naissance.value || '').trim(),
-                adresse: (form.adresse.value || '').trim(),
-                ecole: Number(selEcole?.value || form.ecole?.value),
-                classe: Number(form.classe.value),
-                actif: form.actif.value === 'true',
-            };
-            const submitBtn = form.querySelector('button[type="submit"]');
+            const fd = new FormData(form);
+            if (root?.dataset.ecoleFigee === '1' && root.dataset.ecoleId) {
+                fd.set('ecole', root.dataset.ecoleId);
+            } else if (selEcole?.value) {
+                fd.set('ecole', selEcole.value);
+            }
+            fd.set('actif', form.actif.value === 'true' ? 'true' : 'false');
+            // Nom complet parents → un seul champ (comme à l’enregistrement)
+            fd.set('postnom_pere', '');
+            fd.set('prenom_pere', '');
+            fd.set('postnom_mere', '');
+            fd.set('prenom_mere', '');
+            ['photo', 'photo_pere', 'photo_mere', 'photo_tuteur'].forEach((key) => {
+                const file = fd.get(key);
+                if (file instanceof File && !file.size) fd.delete(key);
+            });
+            // Matricule / n° identification en lecture seule : ne pas les renvoyer
+            fd.delete('matricule');
+            fd.delete('numero_identification');
+
+            const submitBtn = document.getElementById('btnEditEleveSubmit')
+                || form.querySelector('button[type="submit"]');
             if (submitBtn) submitBtn.disabled = true;
             try {
-                await api(`${API}/eleves/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                await api(`${API}/eleves/${id}/`, { method: 'PATCH', body: fd, headers: {} });
                 toast('Élève mis à jour.', 'success');
                 closeModal('modalEditEleve');
+                resetEditEleveFileDrops();
+                setEditEleveWizardStep(1);
                 await chargerEleveDetail();
             } catch (err) {
                 toast(err.message, 'error');
@@ -3292,12 +4068,19 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnModifierParents')?.addEventListener('click', () => {
-            remplirFormParents(cacheEleveDetail);
-            openModal('modalParentsEleve');
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas modifier les parents.', 'error');
+                return;
+            }
+            ouvrirModalEditEleve(4).catch((err) => toast(err.message, 'error'));
         });
 
         document.getElementById('formParentsEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas modifier les parents.', 'error');
+                return;
+            }
             const form = e.target;
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
             if (!id) return;
@@ -3325,20 +4108,42 @@ const EducRDC = (() => {
         });
 
         document.getElementById('inputPhotoDetail')?.addEventListener('change', async (e) => {
+            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
+                toast('L\'agent antenne ne peut pas changer la photo d\'un élève.', 'error');
+                e.target.value = '';
+                return;
+            }
             const file = e.target.files && e.target.files[0];
             if (!file) return;
+            const input = e.target;
+            const confirme = await demanderConfirmationPhoto(file, input, {
+                titre: 'Changer la photo',
+                sousTitre: 'Aperçu avant remplacement sur la fiche',
+                question: 'Utiliser cette photo pour la fiche de l’élève&nbsp;?',
+                notice: 'La photo actuelle sera remplacée. Cette action est immédiate.',
+            });
+            if (!confirme) return;
+
             const root = document.getElementById('eleveDetail');
             const id = root?.dataset.eleveId;
+            if (!id) {
+                input.value = '';
+                return;
+            }
             const fd = new FormData();
             fd.append('photo', file);
+            const btnOk = document.getElementById('btnConfirmPhotoEleve');
+            if (btnOk) btnOk.disabled = true;
             try {
                 await api(`${API}/eleves/${id}/photo/`, { method: 'POST', body: fd, headers: {} });
                 toast('Photo mise à jour.', 'success');
+                input.value = '';
                 await chargerEleveDetail();
             } catch (err) {
                 toast(err.message, 'error');
+                input.value = '';
             } finally {
-                e.target.value = '';
+                if (btnOk) btnOk.disabled = false;
             }
         });
     }
@@ -4041,22 +4846,89 @@ const EducRDC = (() => {
 
     let cacheUserEcoles = [];
 
-    async function remplirSelectClasses(ecoleId, selectId, selectedId = '') {
+    async function remplirSelectClasses(ecoleId, selectId, selectedId = '', { sectionId = '', optionId = '' } = {}) {
         const sel = document.getElementById(selectId);
         if (!sel) return;
         const current = selectedId || sel.value || '';
         sel.innerHTML = `<option value="">— Sélectionner une classe —</option>`;
         if (!ecoleId) return;
         try {
-            const data = await api(`${API}/classes/?ecole=${ecoleId}&actif=1&page_size=200`);
+            let url = `${API}/classes/?ecole=${ecoleId}&actif=1&page_size=200&ordering=nom`;
+            if (sectionId) url += `&section=${sectionId}`;
+            if (optionId) url += `&option=${optionId}`;
+            const data = await api(url);
             const rows = data.results || data;
             sel.innerHTML = `<option value="">— Sélectionner une classe —</option>${
-                rows.map((c) => `<option value="${c.id}">${escapeHtml(c.nom)}${c.code ? ` (${escapeHtml(c.code)})` : ''}</option>`).join('')
+                rows.map((c) => {
+                    const label = sectionId
+                        ? `${escapeHtml(c.nom)}${c.code ? ` (${escapeHtml(c.code)})` : ''}`
+                        : `${escapeHtml([c.section_nom, c.option_nom, c.nom].filter(Boolean).join(' · '))}`;
+                    return `<option value="${c.id}">${label}</option>`;
+                }).join('')
             }`;
             if (current) sel.value = String(current);
         } catch (err) {
             toast(err.message || 'Impossible de charger les classes.', 'error');
         }
+    }
+
+    async function syncScolariteCascade(ecoleId, {
+        sectionSelectId = 'selectSectionEleve',
+        optionSelectId = 'selectOptionEleve',
+        classeSelectId = 'selectClasseEleve',
+        sectionId = '',
+        optionId = '',
+        classeId = '',
+        from = 'ecole',
+    } = {}) {
+        const selSec = document.getElementById(sectionSelectId);
+        const selOpt = document.getElementById(optionSelectId);
+        const selCla = document.getElementById(classeSelectId);
+        if (!ecoleId) {
+            if (selSec) selSec.innerHTML = '<option value="">— Choisir l’école —</option>';
+            if (selOpt) selOpt.innerHTML = '<option value="">— Choisir la section —</option>';
+            if (selCla) selCla.innerHTML = '<option value="">— Sélectionner une classe —</option>';
+            return;
+        }
+        // Écoles crèche / maternelle : garantir sections EPSP préscolaires
+        if (from === 'ecole') {
+            try {
+                const eco = await api(`${API}/ecoles/${ecoleId}/?leger=1`);
+                if (eco.niveau === 'creche' || eco.niveau === 'maternelle') {
+                    await api(`${API}/ecoles/${ecoleId}/assurer-structure-niveau/`, {
+                        method: 'POST',
+                        body: JSON.stringify({}),
+                    });
+                }
+            } catch (_) { /* non bloquant */ }
+            await chargerSectionsEcole(ecoleId, selSec, sectionId);
+        }
+        const secVal = from === 'ecole'
+            ? (sectionId || selSec?.value || '')
+            : (selSec?.value || sectionId || '');
+        if (from === 'ecole' || from === 'section') {
+            await chargerOptionsEcole(ecoleId, secVal, selOpt, from === 'section' ? '' : optionId);
+        }
+        const optVal = from === 'option'
+            ? (selOpt?.value || optionId || '')
+            : (from === 'section' ? (selOpt?.value || '') : (optionId || selOpt?.value || ''));
+        if (!secVal) {
+            if (selCla) selCla.innerHTML = '<option value="">— Sélectionner une classe —</option>';
+            return;
+        }
+        await remplirSelectClasses(ecoleId, classeSelectId, from === 'ecole' ? classeId : '', {
+            sectionId: secVal,
+            optionId: optVal,
+        });
+    }
+
+    async function syncScolariteEleveCascade(ecoleId, opts = {}) {
+        return syncScolariteCascade(ecoleId, {
+            sectionSelectId: 'selectSectionEleve',
+            optionSelectId: 'selectOptionEleve',
+            classeSelectId: 'selectClasseEleve',
+            ...opts,
+        });
     }
 
     async function chargerOptionsUtilisateur() {
@@ -4175,6 +5047,7 @@ const EducRDC = (() => {
                 </td>
                 <td data-label="Statut"><span class="badge ${u.is_active ? 'badge-success' : 'badge-danger'}">${u.is_active ? 'Actif' : 'Inactif'}</span></td>
                 <td data-label="Actions"><div class="actions-inline">
+                    <a class="btn btn-secondary btn-sm" href="/utilisateurs/${u.id}/">${ico('eye')}Détail</a>
                     <button type="button" class="btn btn-ghost btn-sm" data-edit-user="${u.id}">${ico('edit')}Modifier</button>
                 </div></td>
             </tr>`;
@@ -4215,7 +5088,11 @@ const EducRDC = (() => {
         document.getElementById('utilisateurId').value = user?.id || '';
         setModePasswordUtilisateur(Boolean(user));
         const btnDel = document.getElementById('btnSupprimerUtilisateur');
-        if (btnDel) btnDel.hidden = !user?.id;
+        if (btnDel) {
+            // Pas de suppression depuis la fiche détail (uniquement via le modal liste si besoin)
+            const surDetail = Boolean(document.getElementById('utilisateurDetail'));
+            btnDel.hidden = surDetail || !user?.id;
+        }
         if (user) {
             titre.textContent = "Modifier l'utilisateur";
             form.username.value = user.username || '';
@@ -4752,11 +5629,249 @@ const EducRDC = (() => {
                 }
                 closeModal('modalUtilisateur');
                 form.reset();
-                await chargerUtilisateurs(1);
+                if (document.getElementById('utilisateurDetail')) {
+                    await chargerUtilisateurDetail();
+                } else {
+                    await chargerUtilisateurs(1);
+                }
             } catch (err) {
                 toast(err.message, 'error');
             } finally {
                 if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    }
+
+    let cacheUtilisateurDetail = null;
+
+    function perimetreLibelle(u) {
+        if (!u) return '—';
+        if (u.role === 'admin' || u.role === 'agent_national') {
+            return 'Accès national / plateforme';
+        }
+        if (u.role === 'agent_provincial') {
+            return u.province_educationnelle_nom
+                ? `Province éducationnelle : ${u.province_educationnelle_nom}`
+                : 'Périmètre provincial';
+        }
+        if (u.role === 'agent_antenne') {
+            return u.antenne_nom ? `Antenne : ${u.antenne_nom}` : 'Périmètre antenne';
+        }
+        if (u.role === 'admin_ecole') {
+            return u.ecole_nom
+                ? `École : ${u.ecole_nom}${u.ecole_code ? ` (${u.ecole_code})` : ''}`
+                : 'Administratif école';
+        }
+        if (u.role === 'enseignant') {
+            const parts = [u.ecole_nom, u.classe_nom].filter(Boolean);
+            return parts.length ? parts.join(' · ') : 'Enseignant';
+        }
+        return rattachementLabel(u);
+    }
+
+    async function chargerUtilisateurDetail() {
+        const root = document.getElementById('utilisateurDetail');
+        const id = root?.dataset.utilisateurId;
+        if (!id) return null;
+        const u = await api(`${API}/utilisateurs/${id}/`);
+        cacheUtilisateurDetail = u;
+
+        const nom = [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.username;
+        const photoEl = document.getElementById('detailUserPhoto');
+        const fallback = document.getElementById('detailUserPhotoFallback');
+        const badgePhoto = document.getElementById('detailUserBadgePhoto');
+        if (photoEl && fallback) {
+            if (u.photo_url) {
+                photoEl.src = u.photo_url;
+                photoEl.hidden = false;
+                fallback.hidden = true;
+                if (badgePhoto) {
+                    badgePhoto.textContent = 'Photo';
+                    badgePhoto.className = 'badge badge-success';
+                }
+            } else {
+                photoEl.hidden = true;
+                photoEl.removeAttribute('src');
+                fallback.hidden = false;
+                fallback.textContent = initials(nom);
+                if (badgePhoto) {
+                    badgePhoto.textContent = 'Sans photo';
+                    badgePhoto.className = 'badge';
+                }
+            }
+        }
+
+        const setText = (idEl, value) => {
+            const el = document.getElementById(idEl);
+            if (el) el.textContent = value || '—';
+        };
+        setText('detailUserUsername', `@${u.username}`);
+        setText('detailUserNom', nom);
+        setText('detailUserSousTitre', u.email || u.telephone || 'Contact non renseigné');
+        setText('detailUserRole', u.role_display || u.role);
+
+        const statut = document.getElementById('detailUserStatut');
+        if (statut) {
+            statut.textContent = u.is_active ? 'Actif' : 'Inactif';
+            statut.className = `badge ${u.is_active ? 'badge-success' : 'badge-danger'}`;
+        }
+
+        fillDetailList('blocUserIdentite', [
+            ['Identifiant', u.username],
+            ['Prénom', u.first_name || '—'],
+            ['Nom', u.last_name || '—'],
+            ['E-mail', u.email || '—'],
+            ['Téléphone', u.telephone || '—'],
+        ]);
+        fillDetailList('blocUserCompte', [
+            ['Rôle', u.role_display || u.role],
+            ['Statut', u.is_active ? 'Actif' : 'Inactif'],
+            ['Créé le', formatDateFr(u.date_creation) || '—'],
+        ]);
+        fillDetailList('blocUserRattachement', [
+            ['Province administrative', u.province_administrative_nom || '—'],
+            ['Province éducationnelle', u.province_educationnelle_nom || '—'],
+            ['Antenne', u.antenne_nom || '—'],
+            ['École', u.ecole_nom
+                ? `${u.ecole_nom}${u.ecole_code ? ` · ${u.ecole_code}` : ''}`
+                : '—'],
+            ['Classe', u.classe_nom || '—'],
+        ]);
+        fillDetailList('blocUserPerimetre', [
+            ['Couverture', perimetreLibelle(u)],
+            ['Section', u.section_nom || '—'],
+            ['Option', u.option_nom || '—'],
+        ]);
+
+        const sectionLiens = document.getElementById('sectionUserLiens');
+        const blocLiens = document.getElementById('blocUserLiens');
+        if (sectionLiens && blocLiens) {
+            const liens = [];
+            if (u.ecole) {
+                liens.push(`<a class="btn btn-secondary btn-sm" href="/ecoles/${u.ecole}/">${ico('school')}Fiche école</a>`);
+            }
+            if (liens.length) {
+                sectionLiens.hidden = false;
+                blocLiens.innerHTML = liens.join('');
+            } else {
+                sectionLiens.hidden = true;
+                blocLiens.innerHTML = '';
+            }
+        }
+        return u;
+    }
+
+    function initUtilisateurDetail() {
+        bindModalClosers();
+        chargerOptionsUtilisateur().catch((e) => toast(e.message, 'error'));
+        chargerUtilisateurDetail().catch((e) => toast(e.message, 'error'));
+
+        document.getElementById('btnModifierUtilisateurDetail')?.addEventListener('click', () => {
+            if (!cacheUtilisateurDetail) return;
+            ouvrirModalUtilisateur(cacheUtilisateurDetail);
+        });
+
+        // Réutilise le handler de formulaire liste (même modal)
+        document.getElementById('selectUserPA')?.addEventListener('change', () => syncSelectsUtilisateur());
+        document.getElementById('selectUserPE')?.addEventListener('change', () => syncSelectsUtilisateur());
+        document.getElementById('selectRoleUtilisateur')?.addEventListener('change', () => syncRoleUtilisateurUI());
+        document.getElementById('selectUserEcole')?.addEventListener('change', () => syncRoleUtilisateurUI());
+        document.getElementById('btnSupprimerUtilisateur')?.addEventListener('click', async () => {
+            const id = document.getElementById('utilisateurId')?.value;
+            if (!id || !confirm('Supprimer cet utilisateur ?')) return;
+            try {
+                await api(`${API}/utilisateurs/${id}/`, { method: 'DELETE' });
+                toast('Utilisateur supprimé.', 'success');
+                window.location.href = '/utilisateurs/';
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+        document.getElementById('formUtilisateur')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const id = document.getElementById('utilisateurId').value;
+            const role = form.role.value;
+            if (role === 'enseignant') {
+                toast('Les enseignants se créent depuis la fiche de l’école.', 'warning');
+                return;
+            }
+            if (role === 'admin_ecole' && !form.ecole?.value) {
+                toast("Sélectionnez l'école pour un administratif école.", 'warning');
+                return;
+            }
+            if (!form.checkValidity()) {
+                toast('Veuillez compléter les champs obligatoires.', 'warning');
+                form.reportValidity();
+                return;
+            }
+            const password = (form.password.value || '').trim();
+            const payload = {
+                username: form.username.value.trim(),
+                email: form.email.value.trim(),
+                first_name: form.first_name.value.trim(),
+                last_name: form.last_name.value.trim(),
+                telephone: form.telephone.value.trim(),
+                role,
+                is_active: document.getElementById('utilisateurActif')?.checked !== false,
+                province_administrative: form.province_administrative.value || null,
+                province_educationnelle: form.province_educationnelle.value || null,
+                antenne: form.antenne.value || null,
+                ecole: role === 'admin_ecole' ? Number(form.ecole.value) : null,
+                classe: null,
+            };
+            if (password) payload.password = password;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                await api(`${API}/utilisateurs/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+                toast('Utilisateur mis à jour.', 'success');
+                closeModal('modalUtilisateur');
+                await chargerUtilisateurDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+
+        document.getElementById('inputPhotoUserDetail')?.addEventListener('change', async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const input = e.target;
+            const confirme = await demanderConfirmationPhoto(file, input, {
+                titre: 'Changer la photo',
+                sousTitre: 'Aperçu avant remplacement du profil',
+                question: 'Utiliser cette photo pour le profil utilisateur&nbsp;?',
+            }, {
+                modalId: 'modalConfirmPhotoUser',
+                previewId: 'confirmPhotoUserPreview',
+                nomId: 'confirmPhotoUserNom',
+                btnOkId: 'btnConfirmPhotoUser',
+                titleId: 'confirmPhotoUserTitle',
+                subtitleId: 'confirmPhotoUserSubtitle',
+                leadId: 'confirmPhotoUserLead',
+            });
+            if (!confirme) return;
+            const id = document.getElementById('utilisateurDetail')?.dataset.utilisateurId;
+            if (!id) {
+                input.value = '';
+                return;
+            }
+            const fd = new FormData();
+            fd.append('photo', file);
+            const btnOk = document.getElementById('btnConfirmPhotoUser');
+            if (btnOk) btnOk.disabled = true;
+            try {
+                await api(`${API}/utilisateurs/${id}/`, { method: 'PATCH', body: fd, headers: {} });
+                toast('Photo mise à jour.', 'success');
+                input.value = '';
+                await chargerUtilisateurDetail();
+            } catch (err) {
+                toast(err.message, 'error');
+                input.value = '';
+            } finally {
+                if (btnOk) btnOk.disabled = false;
             }
         });
     }
@@ -4882,24 +5997,15 @@ const EducRDC = (() => {
             const data = await api(`${API}/annees-scolaires/?page_size=50`);
             const rows = data.results || data;
             const sel = document.getElementById('selectAnneeEval');
-            const badge = document.getElementById('badgeAnneeEvalFigee');
             const active = rows.find((a) => a.active) || rows[0] || null;
             if (!sel) return;
             if (active) {
                 sel.innerHTML = `<option value="${active.id}" selected>${escapeHtml(active.libelle)}${active.active ? ' (active)' : ''}</option>`;
                 sel.value = String(active.id);
                 sel.disabled = true;
-                if (badge) {
-                    badge.hidden = false;
-                    badge.textContent = active.active ? 'Figée — nationale' : 'Figée';
-                }
             } else {
-                sel.innerHTML = '<option value="">— Aucune année nationale —</option>';
+                sel.innerHTML = '<option value="">— Aucune année scolaire —</option>';
                 sel.disabled = true;
-                if (badge) {
-                    badge.hidden = false;
-                    badge.textContent = 'Non définie';
-                }
             }
             majResumeSession();
         }
@@ -6615,6 +7721,22 @@ const EducRDC = (() => {
         }
 
         let cacheReferentielAffect = { sections: [] };
+        let niveauAffectation = 'prescolaire';
+
+        function niveauCatalogueDepuisEcole(niveauEcole) {
+            const n = String(niveauEcole || '').toLowerCase();
+            if (n === 'creche' || n === 'crèche') return 'creche';
+            if (n === 'maternelle') return 'prescolaire';
+            if (n === 'primaire') return 'primaire';
+            if (n === 'secondaire') return 'secondaire';
+            return 'tous';
+        }
+
+        function majBoutonsNiveauAffectation(niveau) {
+            document.querySelectorAll('#filtreNiveauAffectation [data-niveau-aff]').forEach((btn) => {
+                btn.classList.toggle('is-active', btn.getAttribute('data-niveau-aff') === niveau);
+            });
+        }
 
         async function chargerAffectation() {
             const dispo = document.getElementById('affectationDispo');
@@ -6630,14 +7752,27 @@ const EducRDC = (() => {
             dispo.innerHTML = '<p class="empty-state">Chargement…</p>';
             affecte.innerHTML = '<p class="empty-state">Chargement…</p>';
             try {
-                const data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?auto_niveau=1`);
+                // Niveau explicite (évite un auto_niveau vide / serveur non rechargé)
+                let url = `${API}/ecoles/${ecoleId}/referentiel-rdc/?niveau_programme=${encodeURIComponent(niveauAffectation)}`;
+                let data = await api(url);
+                if (!(data.sections || []).length && niveauAffectation !== 'tous') {
+                    data = await api(`${API}/ecoles/${ecoleId}/referentiel-rdc/?niveau_programme=tous`);
+                    if ((data.sections || []).length) {
+                        niveauAffectation = 'tous';
+                        majBoutonsNiveauAffectation('tous');
+                    }
+                }
                 cacheReferentielAffect = data;
                 const sections = data.sections || [];
                 const nAff = sections.reduce(
                     (n, s) => n + (s.options || []).filter((o) => o.deja_present && o.active).length,
                     0,
                 );
-                if (countEl) countEl.textContent = `${nAff} option(s) affectée(s)`;
+                if (countEl) {
+                    countEl.textContent = sections.length
+                        ? `${nAff} option(s) affectée(s) · ${sections.length} section(s)`
+                        : 'Référentiel vide';
+                }
                 renderArbreAffectation(dispo, sections, {
                     mode: 'dispo',
                     filter: document.getElementById('searchAffectDispo')?.value || '',
@@ -6730,11 +7865,29 @@ const EducRDC = (() => {
                 await actualiserResume();
                 return;
             }
+            try {
+                const eco = await api(`${API}/ecoles/${ecoleId}/?leger=1`);
+                niveauAffectation = niveauCatalogueDepuisEcole(eco.niveau);
+                majBoutonsNiveauAffectation(niveauAffectation);
+            } catch (_) {
+                niveauAffectation = 'prescolaire';
+                majBoutonsNiveauAffectation(niveauAffectation);
+            }
             // Conserver l'onglet courant (ex. Classes depuis le menu Référentiel)
             const tabCourant = document.querySelector('#paramScolaireApp .tab-btn.active')?.dataset.tab
                 || 'affectation';
             activerOngletStructure(tabCourant);
             await rechargerOngletCourant();
+        });
+
+        document.getElementById('filtreNiveauAffectation')?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-niveau-aff]');
+            if (!btn) return;
+            niveauAffectation = btn.getAttribute('data-niveau-aff') || 'tous';
+            majBoutonsNiveauAffectation(niveauAffectation);
+            if (ecoleId) {
+                chargerAffectation().catch((err) => toast(err.message, 'error'));
+            }
         });
 
         let searchEcoleTimer;
@@ -6797,7 +7950,10 @@ const EducRDC = (() => {
             try {
                 const data = await api(`${API}/ecoles/${ecoleId}/affecter-structure/`, {
                     method: 'POST',
-                    body: JSON.stringify({ auto_niveau: true, options: codes }),
+                    body: JSON.stringify({
+                        niveau: niveauAffectation || 'tous',
+                        options: codes,
+                    }),
                 });
                 toast(data.detail || 'Structure affectée.', 'success');
                 await Promise.all([chargerAffectation(), actualiserResume()]);
@@ -6806,6 +7962,48 @@ const EducRDC = (() => {
             }
         });
 
+        function demanderConfirmationRetirerOptions(nb) {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('modalConfirmRetirerOptions');
+                const msg = document.getElementById('confirmRetirerOptionsMsg');
+                const btnOk = document.getElementById('btnConfirmRetirerOptions');
+                if (!modal || !btnOk) {
+                    resolve(false);
+                    return;
+                }
+                if (msg) {
+                    msg.textContent = `Retirer ${nb} option(s) de cette école ?`;
+                }
+                let settled = false;
+                const cleanup = (ok) => {
+                    if (settled) return;
+                    settled = true;
+                    btnOk.removeEventListener('click', onOk);
+                    modal.querySelectorAll('[data-close]').forEach((el) => {
+                        el.removeEventListener('click', onCancel);
+                    });
+                    modal.removeEventListener('click', onBackdrop);
+                    closeModal('modalConfirmRetirerOptions');
+                    resolve(ok);
+                };
+                const onOk = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cleanup(true);
+                };
+                const onCancel = () => cleanup(false);
+                const onBackdrop = (e) => {
+                    if (e.target === modal && !modal.dataset.justOpened) cleanup(false);
+                };
+                btnOk.addEventListener('click', onOk);
+                modal.querySelectorAll('[data-close]').forEach((el) => {
+                    el.addEventListener('click', onCancel);
+                });
+                modal.addEventListener('click', onBackdrop);
+                openModal('modalConfirmRetirerOptions');
+            });
+        }
+
         document.getElementById('btnRetirerOptions')?.addEventListener('click', async () => {
             if (!requireEcole()) return;
             const codes = lireCodesOpt('aff');
@@ -6813,9 +8011,8 @@ const EducRDC = (() => {
                 toast('Cochez au moins une option dans la colonne « Affecté à cette école » (à droite).', 'warning');
                 return;
             }
-            if (!confirm(`Retirer ${codes.length} option(s) de cette école ?\nLes classes associées seront désactivées (pas supprimées).`)) {
-                return;
-            }
+            const ok = await demanderConfirmationRetirerOptions(codes.length);
+            if (!ok) return;
             try {
                 const data = await api(`${API}/ecoles/${ecoleId}/retirer-structure/`, {
                     method: 'POST',
@@ -7074,8 +8271,16 @@ const EducRDC = (() => {
             window.history.replaceState({}, '', url);
 
             if (ecoleId) {
+                try {
+                    const eco = await api(`${API}/ecoles/${ecoleId}/?leger=1`);
+                    niveauAffectation = niveauCatalogueDepuisEcole(eco.niveau);
+                } catch (_) {
+                    niveauAffectation = 'prescolaire';
+                }
+                majBoutonsNiveauAffectation(niveauAffectation);
                 await rechargerOngletCourant();
             } else {
+                majBoutonsNiveauAffectation(niveauAffectation);
                 await actualiserResume();
                 if (onglet !== 'affectation') {
                     toast('Sélectionnez d\'abord une école pour voir ses classes.', 'info');
@@ -7242,6 +8447,7 @@ const EducRDC = (() => {
         initParametresAnnees,
         initParametresArretes,
         initUtilisateurs,
+        initUtilisateurDetail,
         initMonitoringUtilisateurs,
         initMonitoringCarte,
         initEvaluations,

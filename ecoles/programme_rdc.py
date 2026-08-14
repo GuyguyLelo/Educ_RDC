@@ -1,5 +1,11 @@
 """
-Référentiel des sections, options et classes conforme au programme EPSP / MEPST RDC.
+Référentiel des sections, options et classes conforme au programme EPSP / MEPST RDC
+(Ministère de l'Éducation nationale — structure officielle des niveaux).
+
+Sources (préscolaire) :
+- MINEDU-NC : enseignement préscolaire en 3 années (1ère, 2ème, 3ème)
+- Structures de préscolarisation : école maternelle, espace communautaire
+  d'éveil (ECE), classe pré-primaire ; crèche pour la petite enfance (< 3 ans)
 
 Chaque école n'organise qu'un sous-ensemble : le chargement est sélectif
 (options choisies), jamais l'intégralité du catalogue par défaut.
@@ -7,6 +13,68 @@ Chaque école n'organise qu'un sous-ensemble : le chargement est sélectif
 from __future__ import annotations
 
 from .models import Classe, OptionScolaire, SectionScolaire
+
+
+# ---------------------------------------------------------------------------
+# CRÈCHE (petite enfance, typiquement 0–3 ans)
+# ---------------------------------------------------------------------------
+PROGRAMME_CRECHE = {
+    'sections': [
+        {
+            'nom': 'Crèche',
+            'code': 'CRECHE',
+            'options': [
+                {
+                    'nom': 'Tronc commun crèche',
+                    'code': 'TC-CRECHE',
+                    'classes': [
+                        ('Petite crèche (0–1 an)', 'PC'),
+                        ('Moyenne crèche (1–2 ans)', 'MC'),
+                        ('Grande crèche (2–3 ans)', 'GC'),
+                    ],
+                },
+            ],
+        },
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
+# MATERNELLE / PRÉSCOLAIRE (3–5 ans — 3 années)
+# ---------------------------------------------------------------------------
+CLASSES_MATERNELLE_3 = [
+    ('1ère année maternelle (G1)', '1M'),
+    ('2ème année maternelle (G2)', '2M'),
+    ('3ème année maternelle (G3)', '3M'),
+]
+
+PROGRAMME_MATERNELLE = {
+    'sections': [
+        {
+            'nom': 'Enseignement maternel',
+            'code': 'MAT',
+            'options': [
+                {
+                    'nom': 'École maternelle',
+                    'code': 'TC-MAT',
+                    'classes': CLASSES_MATERNELLE_3,
+                },
+                {
+                    'nom': 'Espace communautaire d\'éveil (ECE)',
+                    'code': 'ECE',
+                    'classes': CLASSES_MATERNELLE_3,
+                },
+                {
+                    'nom': 'Classe pré-primaire',
+                    'code': 'PREPRIM',
+                    'classes': [
+                        ('Classe pré-primaire', 'PREP'),
+                    ],
+                },
+            ],
+        },
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +268,19 @@ PROGRAMME_SECONDAIRE = {
 
 
 def _blocs_pour_niveau(niveau: str) -> list[dict]:
-    niveau = (niveau or 'tous').lower()
+    """
+    Filtre le catalogue EPSP par niveau d'enseignement.
+    - creche / crèche
+    - maternelle
+    - prescolaire = crèche + maternelle
+    - primaire | secondaire | tous
+    """
+    niveau = (niveau or 'tous').lower().replace('è', 'e').replace('é', 'e').replace('ê', 'e')
     blocs = []
+    if niveau in ('creche', 'prescolaire', 'tous', 'all'):
+        blocs.append(PROGRAMME_CRECHE)
+    if niveau in ('maternelle', 'prescolaire', 'tous', 'all'):
+        blocs.append(PROGRAMME_MATERNELLE)
     if niveau in ('primaire', 'tous', 'all'):
         blocs.append(PROGRAMME_PRIMAIRE)
     if niveau in ('secondaire', 'tous', 'all'):
@@ -330,13 +409,15 @@ def _charger_bloc(ecole_id: int, programme: dict) -> dict:
                     options_u += 1
 
             for nom_classe, code_classe in opt_spec.get('classes', []):
-                if opt_spec.get('code', '').startswith('TC-PRIM'):
+                code_opt = (opt_spec.get('code') or '')
+                # Tronc commun / structures unitaires : nom de classe court
+                if code_opt.startswith(('TC-PRIM', 'TC-CRECHE', 'TC-MAT', 'ECE', 'PREPRIM')):
                     nom_complet = nom_classe
                     code_complet = code_classe
                 else:
                     nom_complet = f'{nom_classe} — {opt_spec["nom"]}'
-                    code_opt = (opt_spec.get('code') or '')[:12]
-                    code_complet = f'{code_classe}-{code_opt}' if code_opt else code_classe
+                    code_opt_short = code_opt[:12]
+                    code_complet = f'{code_classe}-{code_opt_short}' if code_opt_short else code_classe
                 if len(nom_complet) > 100:
                     nom_complet = nom_complet[:100]
                 classe, created = Classe.objects.get_or_create(
@@ -393,7 +474,7 @@ def charger_programme_rdc(
     Par défaut exige option_codes ou section_codes (sélection école).
     tout=True charge l'intégralité du niveau (réservé CLI / migration).
     """
-    niveau = (niveau or 'tous').lower()
+    niveau = (niveau or 'tous').lower().replace('è', 'e').replace('é', 'e').replace('ê', 'e')
     opt_set = {c.strip().upper() for c in (option_codes or []) if c and str(c).strip()}
     sec_set = {c.strip().upper() for c in (section_codes or []) if c and str(c).strip()}
 
@@ -449,6 +530,58 @@ def assurer_option_referentiel(
     if not option:
         return None, None
     return option.section, option
+
+
+def assurer_structure_selon_niveau(ecole) -> dict:
+    """
+    Pour une école crèche / maternelle : garantit les options préscolaires EPSP
+    (TC-CRECHE, TC-MAT, ECE, PREPRIM) si elles manquent encore.
+    N'écrase pas les structures déjà présentes (primaire, etc.).
+    """
+    from .models import Ecole
+
+    niveau = getattr(ecole, 'niveau', None)
+    if niveau == Ecole.Niveau.CRECHE:
+        codes = ['TC-CRECHE']
+        niv_catalogue = 'creche'
+    elif niveau == Ecole.Niveau.MATERNELLE:
+        codes = ['TC-CRECHE', 'TC-MAT', 'ECE', 'PREPRIM']
+        niv_catalogue = 'prescolaire'
+    else:
+        return {
+            'skipped': True,
+            'reason': 'niveau_non_prescolaire',
+            'niveau': niveau,
+            'option_codes': [],
+        }
+
+    existing = {
+        (c or '').upper()
+        for c in OptionScolaire.objects.filter(
+            section__ecole_id=ecole.id,
+            code__in=codes,
+            active=True,
+        ).values_list('code', flat=True)
+    }
+    missing = [c for c in codes if c not in existing]
+    if not missing:
+        return {
+            'skipped': True,
+            'reason': 'deja_present',
+            'niveau': niveau,
+            'option_codes': codes,
+        }
+
+    result = charger_programme_rdc(
+        ecole.id,
+        niveau=niv_catalogue,
+        option_codes=missing,
+        tout=False,
+    )
+    result['skipped'] = False
+    result['niveau'] = niveau
+    result['option_codes_ajoutees'] = missing
+    return result
 
 
 def affecter_structure_ecole(

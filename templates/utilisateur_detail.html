@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% load ui_icons %}
+{% load static %}
+
+{% block title %}Détail de l'utilisateur{% endblock %}
+{% block page_title %}Détail de l'utilisateur{% endblock %}
+{% block page_subtitle %}Identité, rôle, rattachement et accès plateforme{% endblock %}
+
+{% block content %}
+<div class="detail-shell" id="utilisateurDetail" data-utilisateur-id="{{ utilisateur_id }}">
+    <section class="detail-hero">
+        <div class="detail-photo-wrap">
+            <img id="detailUserPhoto" class="detail-photo" alt="Photo de l'utilisateur" hidden>
+            <div id="detailUserPhotoFallback" class="detail-photo-fallback">—</div>
+        </div>
+
+        <div class="detail-hero-info">
+            <div class="detail-hero-top">
+                <div>
+                    <p class="detail-kicker" id="detailUserUsername">—</p>
+                    <h2 id="detailUserNom">Chargement…</h2>
+                    <p class="detail-sub" id="detailUserSousTitre">—</p>
+                </div>
+                <div class="detail-hero-actions">
+                    <a href="{% url 'utilisateurs' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
+                    <label class="btn btn-secondary btn-sm" for="inputPhotoUserDetail">{% ico 'photo' %}Changer photo</label>
+                    <input type="file" id="inputPhotoUserDetail" accept="image/*" hidden>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnModifierUtilisateurDetail">{% ico 'edit' %}Modifier</button>
+                </div>
+            </div>
+            <div class="detail-chips">
+                <span class="badge badge-info" id="detailUserRole">—</span>
+                <span class="badge" id="detailUserStatut">—</span>
+                <span class="badge" id="detailUserBadgePhoto">Sans photo</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="detail-card">
+        <div class="detail-card-grid">
+            <div>
+                <h3 class="detail-card-title">Identité</h3>
+                <dl class="detail-list compact" id="blocUserIdentite"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Compte</h3>
+                <dl class="detail-list compact" id="blocUserCompte"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Rattachement</h3>
+                <dl class="detail-list compact" id="blocUserRattachement"></dl>
+            </div>
+            <div>
+                <h3 class="detail-card-title">Périmètre</h3>
+                <dl class="detail-list compact" id="blocUserPerimetre"></dl>
+            </div>
+        </div>
+    </section>
+
+    <section class="detail-card" id="sectionUserLiens" hidden>
+        <div class="detail-card-head">
+            <h3 class="detail-card-title" style="margin:0;border:0;padding:0">Liens utiles</h3>
+        </div>
+        <div class="actions-inline" id="blocUserLiens" style="padding:0.25rem 0 0.5rem"></div>
+    </section>
+</div>
+
+{% include 'partials/modal_utilisateur.html' %}
+
+<div class="modal" id="modalConfirmPhotoUser" hidden>
+    <div class="modal-dialog modal-dialog-sm modal-confirm-photo">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="confirmPhotoUserTitle">Changer la photo</h3>
+                <p id="confirmPhotoUserSubtitle">Aperçu avant remplacement du profil</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="confirm-modal-body confirm-photo-body">
+            <div class="confirm-photo-stage">
+                <div class="confirm-photo-preview" id="confirmPhotoUserPreview">
+                    <img alt="Aperçu" hidden>
+                    <span class="confirm-photo-fallback">Aperçu</span>
+                </div>
+            </div>
+            <div class="confirm-photo-copy">
+                <p class="confirm-modal-lead" id="confirmPhotoUserLead">Utiliser cette photo pour le profil&nbsp;?</p>
+                <p class="confirm-photo-filename" id="confirmPhotoUserNom" hidden></p>
+            </div>
+            <div class="confirm-modal-notice">
+                <strong>Remplacement</strong>
+                <span>La photo actuelle sera remplacée. Cette action est immédiate.</span>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+            <button type="button" class="btn btn-primary" id="btnConfirmPhotoUser">{% ico 'check' %}Confirmer</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => EducRDC.initUtilisateurDetail());
+</script>
+{% endblock %}

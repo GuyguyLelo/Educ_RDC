@@ -1,0 +1,112 @@
+{% load ui_icons %}
+<div class="modal" id="modalUtilisateur" hidden>
+    <div class="modal-dialog modal-dialog-wide">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="titreModalUtilisateur">Nouvel utilisateur</h3>
+                <p>Compte d'accès à la plateforme Educ_RDC</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <form id="formUtilisateur" novalidate>
+            <input type="hidden" id="utilisateurId">
+            <div class="form-sections">
+                <section class="form-section">
+                    <h4 class="form-section-title">Identité</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Identifiant <span class="req">*</span></label>
+                            <input name="username" required autocomplete="username" placeholder="ex: agent.kin">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email" type="email" autocomplete="email" placeholder="nom@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom</label>
+                            <input name="first_name" autocomplete="given-name" placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Nom</label>
+                            <input name="last_name" autocomplete="family-name" placeholder="Nom">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>Rôle <span class="req">*</span></label>
+                            <select name="role" id="selectRoleUtilisateur" required>
+                                <option value="admin">Administrateur</option>
+                                <option value="agent_national">Agent National</option>
+                                <option value="agent_provincial">Agent Provincial</option>
+                                <option value="agent_antenne" selected>Agent Antenne</option>
+                                <option value="admin_ecole">Administratif école</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h4 class="form-section-title">Mot de passe</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label id="labelPasswordUtilisateur">Mot de passe <span class="req">*</span></label>
+                            <input name="password" id="inputPasswordUtilisateur" type="password" autocomplete="new-password" placeholder="••••••••">
+                            <span class="form-hint" id="hintPasswordUtilisateur">Obligatoire à la création.</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="checkbox-inline" for="utilisateurActif" style="margin-top:1.65rem">
+                                <input type="checkbox" name="is_active" id="utilisateurActif" value="1" checked>
+                                <span>Compte actif</span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" id="sectionRattachementEcole">
+                    <h4 class="form-section-title">École (administratif)</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>École <span class="req" id="reqEcoleUtilisateur" hidden>*</span></label>
+                            <select name="ecole" id="selectUserEcole">
+                                <option value="">— Aucune —</option>
+                            </select>
+                            <span class="form-hint">Obligatoire pour Administratif école. Les enseignants se créent depuis la fiche de l’école.</span>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section" id="sectionRattachementTerritorial">
+                    <h4 class="form-section-title">Rattachement territorial</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Province administrative</label>
+                            <select name="province_administrative" id="selectUserPA">
+                                <option value="">— Aucune —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Province éducationnelle</label>
+                            <select name="province_educationnelle" id="selectUserPE">
+                                <option value="">— Aucune —</option>
+                            </select>
+                        </div>
+                        <div class="form-group full">
+                            <label>Antenne</label>
+                            <select name="antenne" id="selectUserAntenne">
+                                <option value="">— Aucune —</option>
+                            </select>
+                            <span class="form-hint">Agents : PE / antenne. Comptes scolaires : rempli automatiquement via l'école.</span>
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnSupprimerUtilisateur" hidden>{% ico 'trash' %}Supprimer</button>
+                <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
+                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+            </div>
+        </form>
+    </div>
+</div>

@@ -6,6 +6,7 @@ from django.db.models import Prefetch
 from django.http import HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -134,7 +135,14 @@ class EleveViewSet(viewsets.ModelViewSet):
             )
         return qs
 
+    def _interdit_ecriture_agent_antenne(self, message=None):
+        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+            raise PermissionDenied(
+                message or "L'agent antenne ne peut pas modifier un élève."
+            )
+
     def perform_create(self, serializer):
+        self._interdit_ecriture_agent_antenne("L'agent antenne ne peut pas créer d'élève.")
         from django.db import transaction
         with transaction.atomic():
             # Matricule toujours attribué côté serveur (AAAA-0001)
@@ -155,9 +163,14 @@ class EleveViewSet(viewsets.ModelViewSet):
         })
 
     def perform_update(self, serializer):
+        self._interdit_ecriture_agent_antenne()
         eleve = serializer.save()
         synchroniser_biometrie_photo(eleve)
         assurer_qr_eleve(eleve)
+
+    def perform_destroy(self, instance):
+        self._interdit_ecriture_agent_antenne("L'agent antenne ne peut pas supprimer un élève.")
+        instance.delete()
 
     def retrieve(self, request, *args, **kwargs):
         eleve = self.get_object()
@@ -247,9 +260,9 @@ class EleveViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='regenerer-qr')
     def regenerer_qr(self, request, pk=None):
         """Régénère le QR code unique de l'élève."""
-        if getattr(request.user, 'est_enseignant', False):
+        if getattr(request.user, 'est_enseignant', False) or getattr(request.user, 'role', None) == 'agent_antenne':
             return Response(
-                {'detail': "Les enseignants n'ont pas accès au QR code."},
+                {'detail': "Vous n'avez pas accès à la régénération du QR code."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         eleve = self.get_object()
@@ -261,6 +274,9 @@ class EleveViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def photo(self, request, pk=None):
         """Upload / remplacement de la photo d'un élève."""
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas changer la photo d'un élève."
+        )
         eleve = self.get_object()
         fichier = request.FILES.get('photo')
         if not fichier:
@@ -283,6 +299,9 @@ class EleveViewSet(viewsets.ModelViewSet):
     )
     def photo_parent(self, request, pk=None):
         """Upload / remplacement de la photo du père, de la mère ou du tuteur."""
+        self._interdit_ecriture_agent_antenne(
+            "L'agent antenne ne peut pas modifier les photos des parents."
+        )
         eleve = self.get_object()
         role = (request.data.get('role') or '').strip().lower()
         field_map = {
@@ -310,9 +329,25 @@ class EleveViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='modele-import')
     def modele_import(self, request):
-        """Télécharge le modèle Excel d'import des élèves."""
-        return reponse_modele_xlsx()
-
+        """Télécharge le modèle Excel d'import des élèves (listes déroulantes)."""
+        ecole_id = None
+        user = request.user
+        if getattr(user, 'role', None) == 'admin_ecole' and user.ecole_id:
+            ecole_id = user.ecole_id
+        else:
+            raw = request.query_params.get('ecole') or request.query_params.get('ecole_id')
+            if raw not in (None, ''):
+                try:
+                    ecole_id = int(raw)
+                except (TypeError, ValueError):
+                    return Response(
+                        {'detail': 'Identifiant école invalide.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            # Compte rattaché à une école : modèle prérempli avec ses classes
+            elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
+                ecole_id = user.ecole_id
+        return reponse_modele_xlsx(ecole_id=ecole_id)
     @action(
         detail=False,
         methods=['post'],
@@ -321,6 +356,8 @@ class EleveViewSet(viewsets.ModelViewSet):
     )
     def import_fichier(self, request):
         """Importe des élèves depuis un Excel (.xlsx) ou CSV."""
+        if getattr(request.user, 'role', None) == 'agent_antenne':
+            raise PermissionDenied("L'agent antenne ne peut pas importer des élèves.")
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(

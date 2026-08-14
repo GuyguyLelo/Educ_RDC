@@ -86,7 +86,7 @@
             <div class="list-panel-header">
                 <div>
                     <h2>Affecter sections, options et classes</h2>
-                    <p id="titreAffectationEcole">Cochez les options du référentiel, puis affectez-les à l’école</p>
+                    <p id="titreAffectationEcole">Référentiel EPSP (crèche, maternelle, primaire, secondaire) — cochez puis affectez à l’école</p>
                 </div>
                 <span class="list-count" id="countAffectation">—</span>
             </div>
@@ -95,6 +95,14 @@
                     <div class="affectation-col-head">
                         <h3>Référentiel EPSP</h3>
                         <span class="form-hint">Disponible à affecter</span>
+                    </div>
+                    <div class="prog-rdc-toolbar prog-rdc-niveaux" id="filtreNiveauAffectation" role="group" aria-label="Niveau du référentiel">
+                        <button type="button" class="btn btn-ghost btn-sm is-active" data-niveau-aff="prescolaire">Préscolaire</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-niveau-aff="creche">Crèche</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-niveau-aff="maternelle">Maternelle</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-niveau-aff="primaire">Primaire</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-niveau-aff="secondaire">Secondaire</button>
+                        <button type="button" class="btn btn-ghost btn-sm" data-niveau-aff="tous">Tous</button>
                     </div>
                     <div class="prog-rdc-toolbar">
                         <button type="button" class="btn btn-ghost btn-sm" id="btnAffToutDispo">Tout</button>
@@ -525,7 +533,32 @@
     </div>
 </div>
 {% include 'partials/modal_programme_rdc.html' %}
+
+<!-- Modal confirmation — retirer options -->
+<div class="modal" id="modalConfirmRetirerOptions" hidden>
+    <div class="modal-dialog modal-dialog-sm">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3>Retirer les options</h3>
+                <p>Confirmation avant désaffectation</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="confirm-modal-body">
+            <p class="confirm-modal-lead" id="confirmRetirerOptionsMsg">Retirer ces options de l’école ?</p>
+            <div class="confirm-modal-notice">
+                <strong>Attention</strong>
+                <span>Les classes associées seront désactivées (pas supprimées).</span>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close id="btnCancelRetirerOptions">{% ico 'cancel' %}Annuler</button>
+            <button type="button" class="btn btn-danger" id="btnConfirmRetirerOptions">{% ico 'trash' %}Retirer de l’école</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
+
 
 {% block extra_js %}
 <script>

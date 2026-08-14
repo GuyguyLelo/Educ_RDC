@@ -19,11 +19,16 @@ from ecoles.import_classes import generer_modele_xlsx as generer_modele_classes
 
 
 def _xlsx_response(content: bytes, filename: str) -> HttpResponse:
+    from urllib.parse import quote
     response = HttpResponse(
         content,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    safe_ascii = filename.encode('ascii', 'replace').decode('ascii').replace('?', '_')
+    response['Content-Disposition'] = (
+        f'attachment; filename="{safe_ascii}"; '
+        f"filename*=UTF-8''{quote(filename)}"
+    )
     return response
 
 
@@ -177,8 +182,9 @@ MODELES: dict[str, dict] = {
         'generer': generer_modele_eleves,
         'categorie': 'opérationnel',
         'notes': (
-            'sexe: M|F — classe = nom exact d\'une classe déjà créée pour l\'école '
-            '(importer d\'abord le modèle Classes). '
+            'Listes déroulantes Excel (protégées) pour sexe, classe, ecole_code, lien_tuteur. '
+            'classe = nom exact d\'une classe déjà créée pour l\'école '
+            '(admin école : classes de son établissement préchargées). '
             'Parents optionnels (père / mère / tuteur + contacts).'
         ),
     },
@@ -278,8 +284,12 @@ def reponse_modele(cle: str) -> HttpResponse | None:
     meta = MODELES.get(cle)
     if not meta:
         return None
-    generer: Callable[[], bytes] = meta['generer']
-    return _xlsx_response(generer(), meta['fichier'])
+    generer = meta['generer']
+    result = generer()
+    if isinstance(result, tuple) and len(result) == 2:
+        contenu, nom_fichier = result
+        return _xlsx_response(contenu, nom_fichier)
+    return _xlsx_response(result, meta['fichier'])
 
 
 @api_view(['GET'])

@@ -2,12 +2,13 @@
 {% load ui_icons %}
 {% load static %}
 
-{% block title %}Détail élève{% endblock %}
-{% block page_title %}Fiche élève{% endblock %}
+{% block title %}Détail de l'élève{% endblock %}
+{% block page_title %}Détail de l'élève{% endblock %}
 {% block page_subtitle %}Identité, parents, photo et dossiers associés{% endblock %}
 
 {% block content %}
 <div class="detail-shell" id="eleveDetail" data-eleve-id="{{ eleve_id }}"
+     data-role="{{ request.user.role }}"
      data-ecole-figee="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}1{% else %}0{% endif %}"
      data-ecole-id="{% if request.user.est_utilisateur_ecole and request.user.ecole_id %}{{ request.user.ecole_id }}{% endif %}">
     <section class="detail-hero">
@@ -26,11 +27,13 @@
                 <div class="detail-hero-actions">
                     <a href="{% url 'eleves' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
                     <a href="/api/eleves/{{ eleve_id }}/pdf/" class="btn btn-primary btn-sm" id="btnPdfFicheEleve" target="_blank" rel="noopener">
-                        {% ico 'pdf' %}Imprimer PDF
+                        {% ico 'pdf' %}Fiche PDF
                     </a>
+                    {% if request.user.role != 'agent_antenne' %}
                     <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">{% ico 'photo' %}Changer photo</label>
                     <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
-                    {% if not request.user.est_enseignant %}
+                    {% endif %}
+                    {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEleve">{% ico 'edit' %}Modifier</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierParents">{% ico 'edit' %}Parents</button>
                     <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEleve">{% ico 'trash' %}Supprimer</button>
@@ -60,14 +63,16 @@
                 <h3 class="detail-card-title">Adresse</h3>
                 <dl class="detail-list compact" id="blocAdresse"></dl>
             </div>
+            {% if request.user.role != 'admin_ecole' %}
             <div>
                 <h3 class="detail-card-title">Biométrie</h3>
                 <dl class="detail-list compact" id="blocBiometrie"></dl>
             </div>
+            {% endif %}
         </div>
     </section>
 
-    {% if not request.user.est_enseignant %}
+    {% if not request.user.est_enseignant and request.user.role != 'admin_ecole' and request.user.role != 'agent_antenne' %}
     <section class="detail-card" id="sectionQrEleve">
         <div class="detail-card-head">
             <h3 class="detail-card-title" style="margin:0;border:0;padding:0">QR code unique</h3>
@@ -99,7 +104,7 @@
         <div class="parent-cards" id="blocParents"></div>
     </section>
 
-    {% if not request.user.est_enseignant %}
+    {% if not request.user.est_enseignant and request.user.role != 'admin_ecole' %}
     <section class="detail-card">
         <h3 class="detail-card-title">Cartes scolaires</h3>
         <div class="table-responsive">
@@ -121,17 +126,27 @@
 
 {% if not request.user.est_enseignant %}
 <div class="modal" id="modalEditEleve" hidden>
-    <div class="modal-dialog modal-lg">
-        <div class="modal-header">
+    <div class="modal-dialog modal-dialog-wide modal-edit-eleve">
+        <div class="modal-header modal-header-with-photo">
+            <div class="modal-header-photo" id="editEleveHeaderPhoto" aria-hidden="true">—</div>
             <div class="modal-header-text">
                 <h3>Modifier l’élève</h3>
-                <p>Identité, scolarité et statut</p>
+                <p id="editEleveHeaderSub">Identité, scolarité, parents et tuteur</p>
+                <p class="modal-header-ecole" id="editEleveHeaderEcole" hidden></p>
             </div>
             <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
         </div>
-        <form id="formEditEleve" novalidate>
-            <div class="form-sections">
-                <section class="form-section">
+        <form id="formEditEleve" class="form-wizard form-compact" novalidate data-step="1">
+            <nav class="wizard-steps" aria-label="Étapes de modification">
+                <button type="button" class="wizard-step is-active" data-goto-step="1"><span>1</span>Identité</button>
+                <button type="button" class="wizard-step" data-goto-step="2"><span>2</span>Photo</button>
+                <button type="button" class="wizard-step" data-goto-step="3"><span>3</span>Scolarité</button>
+                <button type="button" class="wizard-step" data-goto-step="4"><span>4</span>Parents</button>
+                <button type="button" class="wizard-step" data-goto-step="5"><span>5</span>Tuteur</button>
+            </nav>
+
+            <div class="form-sections wizard-panels">
+                <section class="form-section wizard-panel is-active" data-step-panel="1">
                     <h4 class="form-section-title">Identité</h4>
                     <div class="form-grid">
                         <div class="form-group">
@@ -152,6 +167,22 @@
                             <input name="numero_impot" placeholder="Ex: NIF-…">
                         </div>
                         <div class="form-group">
+                            <label>Nom <span class="req">*</span></label>
+                            <input name="nom" required placeholder="Nom de famille">
+                        </div>
+                        <div class="form-group">
+                            <label>Postnom</label>
+                            <input name="postnom" placeholder="Postnom">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom <span class="req">*</span></label>
+                            <input name="prenom" required placeholder="Prénom">
+                        </div>
+                        <div class="form-group">
+                            <label>Date de naissance <span class="req">*</span></label>
+                            <input type="date" name="date_naissance" required>
+                        </div>
+                        <div class="form-group">
                             <label>Sexe <span class="req">*</span></label>
                             <select name="sexe" required>
                                 <option value="M">Masculin</option>
@@ -159,39 +190,50 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Nom <span class="req">*</span></label>
-                            <input name="nom" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Postnom</label>
-                            <input name="postnom">
-                        </div>
-                        <div class="form-group">
-                            <label>Prénom <span class="req">*</span></label>
-                            <input name="prenom" required>
-                        </div>
-                        <div class="form-group">
-                            <label>Date de naissance <span class="req">*</span></label>
-                            <input type="date" name="date_naissance" required>
-                        </div>
-                        <div class="form-group full">
                             <label>Lieu de naissance</label>
-                            <input name="lieu_naissance">
+                            <input name="lieu_naissance" placeholder="Ville / territoire">
                         </div>
                     </div>
                 </section>
-                <section class="form-section">
-                    <h4 class="form-section-title">Scolarité</h4>
+
+                <section class="form-section wizard-panel" data-step-panel="2" hidden>
+                    <h4 class="form-section-title">Photo</h4>
+                    <div class="form-grid">
+                        <div class="form-group full">
+                            <label>Photo de l'élève</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo" id="editElevePhoto" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer pour parcourir</span>
+                                <span class="file-drop-sub">Laissez vide pour conserver la photo actuelle</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section wizard-panel" data-step-panel="3" hidden>
+                    <h4 class="form-section-title">Scolarité &amp; adresse</h4>
                     <div class="form-grid">
                         <div class="form-group">
-                            <label>École <span class="req">*</span></label>
-                            <select name="ecole" id="selectEcoleEditEleve" required></select>
+                            <label>Section <span class="req">*</span></label>
+                            <select id="selectSectionEditEleve" required>
+                                <option value="">— Sélectionner une section —</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Option <span class="req">*</span></label>
+                            <select id="selectOptionEditEleve" required>
+                                <option value="">— Sélectionner une option —</option>
+                            </select>
                         </div>
                         <div class="form-group">
                             <label>Classe <span class="req">*</span></label>
                             <select name="classe" id="selectClasseEditEleve" required>
                                 <option value="">— Sélectionner une classe —</option>
                             </select>
+                        </div>
+                        <div class="form-group">
+                            <label>École <span class="req">*</span></label>
+                            <select name="ecole" id="selectEcoleEditEleve" required></select>
                         </div>
                         <div class="form-group">
                             <label>Statut</label>
@@ -206,10 +248,108 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="form-section wizard-panel" data-step-panel="4" hidden>
+                    <h4 class="form-section-title">Père &amp; mère</h4>
+                    <div class="form-grid">
+                        <div class="form-group full"><strong class="wizard-subhead">Père</strong></div>
+                        <div class="form-group">
+                            <label>Nom complet</label>
+                            <input name="nom_pere" placeholder="Nom complet du père">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_pere" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_pere" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Profession</label>
+                            <input name="profession_pere" placeholder="Profession">
+                        </div>
+                        <div class="form-group full">
+                            <label>Photo du père</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_pere" id="editElevePhotoPere" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">Laissez vide pour conserver la photo actuelle</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group full"><strong class="wizard-subhead">Mère</strong></div>
+                        <div class="form-group">
+                            <label>Nom complet</label>
+                            <input name="nom_mere" placeholder="Nom complet de la mère">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_mere" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_mere" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group">
+                            <label>Profession</label>
+                            <input name="profession_mere" placeholder="Profession">
+                        </div>
+                        <div class="form-group full">
+                            <label>Photo de la mère</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_mere" id="editElevePhotoMere" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">Laissez vide pour conserver la photo actuelle</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section wizard-panel" data-step-panel="5" hidden>
+                    <h4 class="form-section-title">Tuteur / responsable</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Lien de parenté</label>
+                            <select name="lien_tuteur">
+                                <option value="">— Sélectionner —</option>
+                                <option value="pere">Père</option>
+                                <option value="mere">Mère</option>
+                                <option value="tuteur">Tuteur légal</option>
+                                <option value="oncle_tante">Oncle / Tante</option>
+                                <option value="grand_parent">Grand-parent</option>
+                                <option value="autre">Autre</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nom complet</label>
+                            <input name="nom_tuteur" placeholder="Nom complet du responsable">
+                        </div>
+                        <div class="form-group">
+                            <label>Téléphone</label>
+                            <input name="telephone_tuteur" type="tel" placeholder="+243 …">
+                        </div>
+                        <div class="form-group">
+                            <label>E-mail</label>
+                            <input name="email_tuteur" type="email" placeholder="email@exemple.cd">
+                        </div>
+                        <div class="form-group full">
+                            <label>Photo du tuteur</label>
+                            <div class="file-drop">
+                                <input type="file" name="photo_tuteur" id="editElevePhotoTuteur" accept="image/*">
+                                <span class="file-drop-title">Déposer une photo ou cliquer</span>
+                                <span class="file-drop-sub">Laissez vide pour conserver la photo actuelle</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
             </div>
-            <div class="modal-actions">
+
+            <div class="modal-actions wizard-actions">
                 <button type="button" class="btn btn-ghost" data-close>{% ico 'cancel' %}Annuler</button>
-                <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer</button>
+                <button type="button" class="btn btn-secondary is-wizard-hidden" id="btnEditElevePrev" hidden>{% ico 'back' %}Précédent</button>
+                <button type="button" class="btn btn-primary" id="btnEditEleveNext">Suivant</button>
+                <button type="submit" class="btn btn-primary is-wizard-hidden" id="btnEditEleveSubmit" hidden>{% ico 'save' %}Enregistrer</button>
             </div>
         </form>
     </div>
@@ -286,6 +426,38 @@
     </div>
 </div>
 {% endif %}
+
+<div class="modal" id="modalConfirmPhotoEleve" hidden>
+    <div class="modal-dialog modal-dialog-sm modal-confirm-photo">
+        <div class="modal-header">
+            <div class="modal-header-text">
+                <h3 id="confirmPhotoEleveTitle">Changer la photo</h3>
+                <p id="confirmPhotoEleveSubtitle">Aperçu avant remplacement sur la fiche</p>
+            </div>
+            <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
+        </div>
+        <div class="confirm-modal-body confirm-photo-body">
+            <div class="confirm-photo-stage">
+                <div class="confirm-photo-preview" id="confirmPhotoElevePreview">
+                    <img alt="Aperçu de la nouvelle photo" hidden>
+                    <span class="confirm-photo-fallback">Aperçu</span>
+                </div>
+            </div>
+            <div class="confirm-photo-copy">
+                <p class="confirm-modal-lead" id="confirmPhotoEleveLead">Utiliser cette photo pour la fiche de l’élève&nbsp;?</p>
+                <p class="confirm-photo-filename" id="confirmPhotoEleveNom" hidden></p>
+            </div>
+            <div class="confirm-modal-notice">
+                <strong>Remplacement</strong>
+                <span id="confirmPhotoEleveNotice">La photo actuelle sera remplacée. Cette action est immédiate.</span>
+            </div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-ghost" data-close id="btnCancelPhotoEleve">{% ico 'cancel' %}Annuler</button>
+            <button type="button" class="btn btn-primary" id="btnConfirmPhotoEleve">{% ico 'check' %}Confirmer</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
