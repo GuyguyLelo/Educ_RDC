@@ -95,6 +95,12 @@ class EleveViewSet(viewsets.ModelViewSet):
             qs = qs.filter(classe_id=user.classe_id)
             if user.ecole_id:
                 qs = qs.filter(ecole_id=user.ecole_id)
+        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+            qs = qs.filter(
+                ecole__province_educationnelle__province_administrative_id=(
+                    user.province_administrative_id
+                ),
+            )
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:

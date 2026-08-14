@@ -121,6 +121,10 @@
             <tbody></tbody>
         </table>
     </div>
+    <div class="list-footer" id="footerEffectifsEcoles" hidden>
+        <span class="list-footer-info" id="infoEffectifsEcoles"></span>
+        <div class="pagination" id="paginationEffectifsEcoles"></div>
+    </div>
 </section>
 
 <section class="panel panel-span" id="panelEffectifsAntennes" hidden>
@@ -153,13 +157,13 @@
     </div>
 </section>
 
-<section class="panel panel-span" id="panelEffectifsAntennes" hidden>
+<section class="panel panel-span" id="panelEffectifsPE" hidden>
     <div class="panel-header">
-        <h2>Effectif élèves par antenne</h2>
-        <p id="effectifsAntennesSubtitle">Élèves actifs des antennes rattachées</p>
+        <h2>Effectif élèves par province éducationnelle</h2>
+        <p id="effectifsPESubtitle">Vue d’ensemble des PE de la province administrative</p>
     </div>
     <div class="table-responsive table-effectifs-wrap">
-        <table class="data-table compact table-effectifs-ecoles" id="tableEffectifsAntennes">
+        <table class="data-table compact table-effectifs-ecoles" id="tableEffectifsPE">
             <colgroup>
                 <col class="col-ecole">
                 <col class="col-code">
@@ -167,11 +171,13 @@
                 <col class="col-num">
                 <col class="col-num">
                 <col class="col-num">
+                <col class="col-num">
             </colgroup>
             <thead>
                 <tr>
-                    <th>Antenne</th>
+                    <th>Province éduc.</th>
                     <th>Code</th>
+                    <th>Antennes</th>
                     <th>Écoles</th>
                     <th>Élèves</th>
                     <th>Garçons</th>

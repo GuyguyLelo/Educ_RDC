@@ -132,7 +132,10 @@ def vue_eleves(request):
 def vue_evaluations(request):
     """Saisie des notes et impression des bulletins (modèle RDC)."""
     user = request.user
-    if getattr(user, 'est_agent_territorial', False):
+    if (
+        getattr(user, 'est_agent_territorial', False)
+        or getattr(user, 'est_national', False)
+    ):
         messages.warning(request, "Votre rôle n'a pas accès au module Évaluation.")
         return redirect('dashboard')
     classe = None
@@ -143,7 +146,7 @@ def vue_evaluations(request):
             .filter(pk=user.classe_id)
             .first()
         )
-    # Module école : enseignant, admin_ecole, admin / agents
+    # Module école : enseignant, administratif école
     return render(request, 'evaluations.html', {
         'page': 'evaluations',
         'est_enseignant': getattr(user, 'est_enseignant', False),
@@ -154,10 +157,7 @@ def vue_evaluations(request):
         'option_id': (classe.option_id if classe else '') or '',
         'option_nom': (classe.option.nom if classe and classe.option_id else '') or '',
         'ecole_id': getattr(user, 'ecole_id', None) or '',
-        'peut_configurer': bool(
-            getattr(user, 'est_admin', False)
-            or user.role == 'admin_ecole'
-        ),
+        'peut_configurer': user.role == 'admin_ecole',
     })
 
 
@@ -182,6 +182,12 @@ def vue_eleve_detail(request, eleve_id):
             qs = qs.filter(ecole_id=user.ecole_id)
     elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
         qs = qs.filter(ecole_id=user.ecole_id)
+    elif user.role == 'agent_province_admin' and user.province_administrative_id:
+        qs = qs.filter(
+            ecole__province_educationnelle__province_administrative_id=(
+                user.province_administrative_id
+            ),
+        )
     elif user.role == 'agent_provincial' and user.province_educationnelle_id:
         qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
     elif user.role == 'agent_antenne' and user.antenne_id:
@@ -282,7 +288,10 @@ def vue_gestion_permissions(request):
     if not getattr(request.user, 'est_admin', False):
         messages.warning(request, 'Accès réservé à l\'administrateur national.')
         return redirect('dashboard')
-    return render(request, 'gestion_permissions.html', {'page': 'utilisateurs'})
+    from utilisateurs.matrice_permissions import get_contexte_permissions
+    contexte = {'page': 'utilisateurs'}
+    contexte.update(get_contexte_permissions())
+    return render(request, 'gestion_permissions.html', contexte)
 
 
 @login_required

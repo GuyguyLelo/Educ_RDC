@@ -73,8 +73,8 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
-    overscroll-behavior: none;
-    touch-action: none;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     z-index: 50;
     border-right: 1px solid rgba(255, 255, 255, 0.06);
     transition: transform 0.35s var(--ease);
@@ -149,12 +149,28 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    padding: 0.5rem 0.85rem;
+    padding: 0.5rem 0.85rem 0.75rem;
     flex: 1 1 auto;
     min-height: 0;
-    overflow: hidden;
-    overscroll-behavior: none;
-    touch-action: manipulation;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 999px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 .nav-section {
@@ -4872,3 +4888,131 @@ body.nav-open {
         overflow: hidden;
     }
 }
+
+/* ---- Gestion de permissions ---- */
+.permissions-shell .permissions-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.permissions-matrix-wrap {
+    max-height: min(70vh, 42rem);
+    overflow: auto;
+}
+
+.permissions-matrix th.col-role,
+.permissions-matrix td.col-role {
+    text-align: center;
+    white-space: nowrap;
+    min-width: 6.5rem;
+}
+
+.permissions-matrix thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f1f5f9;
+}
+
+.permissions-matrix th.col-domaine,
+.permissions-matrix td.col-domaine {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+    min-width: 7.5rem;
+    white-space: nowrap;
+    color: var(--muted);
+    vertical-align: top;
+}
+
+.permissions-matrix th.col-capa,
+.permissions-matrix td.col-capa {
+    position: sticky;
+    left: 7.5rem;
+    z-index: 1;
+    background: #fff;
+    min-width: 14rem;
+    text-align: left;
+    box-shadow: 4px 0 8px -6px rgba(15, 23, 42, 0.25);
+}
+
+.permissions-matrix thead th.col-domaine,
+.permissions-matrix thead th.col-capa {
+    z-index: 3;
+    background: #f1f5f9;
+}
+
+.permissions-matrix tbody tr:nth-child(even) td.col-domaine,
+.permissions-matrix tbody tr:nth-child(even) td.col-capa {
+    background: #f8fafc;
+}
+
+.permissions-roles-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.permissions-role-card .detail-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.permissions-role-scope {
+    margin: 0 0 0.35rem;
+    font-size: 0.9rem;
+}
+
+.permissions-role-domaine {
+    margin-top: 0.85rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+}
+
+.permissions-role-domaine h4 {
+    margin: 0 0 0.45rem;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+}
+
+.permissions-role-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+}
+
+.permissions-role-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+.permissions-role-item-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.88rem;
+    line-height: 1.35;
+}
+
+.permissions-role-item-text small {
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+@media (max-width: 1100px) {
+    .permissions-roles-grid {
+        grid-template-columns: 1fr;
+    }
+}
+

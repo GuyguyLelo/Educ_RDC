@@ -544,6 +544,50 @@ const EducRDC = (() => {
     }
 
     let dashChargementEnCours = false;
+    let cacheEffectifsEcoles = [];
+    let pageEffectifsEcoles = 1;
+    const PAGE_SIZE_EFFECTIFS_ECOLES = 20;
+
+    function renderEffectifsEcolesPage(rows, page = 1) {
+        cacheEffectifsEcoles = Array.isArray(rows) ? rows : cacheEffectifsEcoles;
+        const tbody = document.querySelector('#tableEffectifsEcoles tbody');
+        const footer = document.getElementById('footerEffectifsEcoles');
+        const info = document.getElementById('infoEffectifsEcoles');
+        if (!tbody) return;
+
+        const total = cacheEffectifsEcoles.length;
+        const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE_EFFECTIFS_ECOLES));
+        pageEffectifsEcoles = Math.min(Math.max(1, page), totalPages);
+        const start = (pageEffectifsEcoles - 1) * PAGE_SIZE_EFFECTIFS_ECOLES;
+        const slice = cacheEffectifsEcoles.slice(start, start + PAGE_SIZE_EFFECTIFS_ECOLES);
+
+        tbody.innerHTML = slice.length ? slice.map((e) => `
+            <tr>
+                <td data-label="École">
+                    <a class="entity-link" href="/ecoles/${e.id}/">${escapeHtml(e.nom || '—')}</a>
+                </td>
+                <td data-label="Code"><span class="code-chip">${escapeHtml(e.code || '—')}</span></td>
+                <td data-label="Élèves"><strong>${e.nb_eleves ?? 0}</strong></td>
+                <td data-label="Garçons">${e.nb_garcons ?? 0}</td>
+                <td data-label="Filles">${e.nb_filles ?? 0}</td>
+            </tr>
+        `).join('') : '';
+
+        if (footer) footer.hidden = total === 0;
+        if (info) {
+            const from = total ? start + 1 : 0;
+            const to = Math.min(start + PAGE_SIZE_EFFECTIFS_ECOLES, total);
+            info.textContent = total
+                ? `${from}–${to} sur ${total} école(s)`
+                : 'Aucune école';
+        }
+        renderPagination(
+            'paginationEffectifsEcoles',
+            pageEffectifsEcoles,
+            totalPages,
+            (p) => renderEffectifsEcolesPage(cacheEffectifsEcoles, p),
+        );
+    }
 
     async function chargerDashboard({ fromUser = false } = {}) {
         if (dashChargementEnCours) return;
@@ -590,7 +634,7 @@ const EducRDC = (() => {
             const barPanel = document.getElementById('panelBarChart')
                 || document.getElementById('chartProvinces')?.closest('.panel');
             const isClasse = stats.scope === 'classe';
-            const hideBar = isClasse || stats.scope === 'antenne' || stats.scope === 'province';
+            const hideBar = isClasse || stats.scope === 'antenne' || stats.scope === 'province' || stats.scope === 'province_admin';
             if (barPanel) barPanel.hidden = hideBar;
             if (!hideBar) {
                 setText('chartTitle', chart.title || 'Répartition');
@@ -648,6 +692,7 @@ const EducRDC = (() => {
             const panelEff = document.getElementById('panelEffectifsEcoles');
             const tbodyEff = document.querySelector('#tableEffectifsEcoles tbody');
             const rowsEff = stats.effectifs_par_ecole || [];
+            const footerEff = document.getElementById('footerEffectifsEcoles');
             if (panelEff && tbodyEff) {
                 const showTable = stats.scope === 'antenne' && rowsEff.length;
                 panelEff.hidden = !showTable;
@@ -656,19 +701,14 @@ const EducRDC = (() => {
                         'effectifsEcolesSubtitle',
                         `${rowsEff.length} établissement(s) — ${stats.nb_eleves ?? 0} élève(s) actif(s)`,
                     );
-                    tbodyEff.innerHTML = rowsEff.map((e) => `
-                        <tr>
-                            <td data-label="École">
-                                <a class="entity-link" href="/ecoles/${e.id}/">${escapeHtml(e.nom || '—')}</a>
-                            </td>
-                            <td data-label="Code"><span class="code-chip">${escapeHtml(e.code || '—')}</span></td>
-                            <td data-label="Élèves"><strong>${e.nb_eleves ?? 0}</strong></td>
-                            <td data-label="Garçons">${e.nb_garcons ?? 0}</td>
-                            <td data-label="Filles">${e.nb_filles ?? 0}</td>
-                        </tr>
-                    `).join('');
+                    renderEffectifsEcolesPage(rowsEff, 1);
                 } else {
+                    cacheEffectifsEcoles = [];
+                    pageEffectifsEcoles = 1;
                     tbodyEff.innerHTML = '';
+                    if (footerEff) footerEff.hidden = true;
+                    const pag = document.getElementById('paginationEffectifsEcoles');
+                    if (pag) pag.innerHTML = '';
                 }
             }
 
@@ -698,10 +738,37 @@ const EducRDC = (() => {
                 }
             }
 
+            const panelPE = document.getElementById('panelEffectifsPE');
+            const tbodyPE = document.querySelector('#tableEffectifsPE tbody');
+            const rowsPE = stats.effectifs_par_pe || [];
+            if (panelPE && tbodyPE) {
+                const showPE = stats.scope === 'province_admin' && rowsPE.length;
+                panelPE.hidden = !showPE;
+                if (showPE) {
+                    setText(
+                        'effectifsPESubtitle',
+                        `${rowsPE.length} province(s) éduc. — ${stats.nb_eleves ?? 0} élève(s) actif(s)`,
+                    );
+                    tbodyPE.innerHTML = rowsPE.map((p) => `
+                        <tr>
+                            <td data-label="Province éduc."><strong>${escapeHtml(p.nom || '—')}</strong></td>
+                            <td data-label="Code"><span class="code-chip">${escapeHtml(p.code || '—')}</span></td>
+                            <td data-label="Antennes">${p.nb_antennes ?? 0}</td>
+                            <td data-label="Écoles">${p.nb_ecoles ?? 0}</td>
+                            <td data-label="Élèves"><strong>${p.nb_eleves ?? 0}</strong></td>
+                            <td data-label="Garçons">${p.nb_garcons ?? 0}</td>
+                            <td data-label="Filles">${p.nb_filles ?? 0}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbodyPE.innerHTML = '';
+                }
+            }
+
             renderDashActions(stats.actions || []);
             const wfPanel = document.getElementById('panelWorkflow')
                 || document.getElementById('dashWorkflow')?.closest('.panel');
-            if (stats.hide_workflow || stats.scope === 'ecole' || stats.scope === 'antenne' || stats.scope === 'province') {
+            if (stats.hide_workflow || stats.scope === 'ecole' || stats.scope === 'antenne' || stats.scope === 'province' || stats.scope === 'province_admin') {
                 if (wfPanel) wfPanel.hidden = true;
             } else {
                 if (wfPanel) wfPanel.hidden = false;
@@ -1804,7 +1871,7 @@ const EducRDC = (() => {
             || document.getElementById('eleveDetail')?.dataset.role
             || document.getElementById('elevesApp')?.dataset.role
             || '';
-        return r === 'agent_antenne' || r === 'agent_provincial';
+        return r === 'agent_antenne' || r === 'agent_provincial' || r === 'agent_province_admin';
     }
 
     function peutModifierEcole() {
@@ -4251,6 +4318,7 @@ const EducRDC = (() => {
             setText('rEleves', stats.nb_eleves);
             setText('rEcoles', stats.nb_ecoles);
             setText('rAntennes', stats.nb_antennes);
+            setText('rProvincesEduc', stats.nb_provinces_educ);
             setText('rCartes', stats.nb_cartes);
             setText('rBiometries', stats.biometries_validees);
 
@@ -5685,6 +5753,11 @@ const EducRDC = (() => {
         if (u.role === 'admin' || u.role === 'agent_national') {
             return 'Accès national / plateforme';
         }
+        if (u.role === 'agent_province_admin') {
+            return u.province_administrative_nom
+                ? `Province administrative : ${u.province_administrative_nom}`
+                : 'Périmètre province administrative';
+        }
         if (u.role === 'agent_provincial') {
             return u.province_educationnelle_nom
                 ? `Province éducationnelle : ${u.province_educationnelle_nom}`
@@ -6272,7 +6345,7 @@ const EducRDC = (() => {
                     <td data-label="Ordre">${escapeHtml(String(m.ordre))}</td>
                     <td data-label="Statut"><span class="badge ${m.active ? 'badge-success' : 'badge-danger'}">${m.active ? 'Active' : 'Inactive'}</span></td>
                 </tr>
-            `).join('') : emptyRow(8, 'Aucune matière', 'Cliquez sur « Catalogue option » pour charger les branches de cette section / option.');
+            `).join('') : emptyRow(8, 'Aucune matière', 'Aucune matière pour cette section / option. Catalogue géré par l’administration nationale.');
         }
 
         async function regimeAnneeCourante() {

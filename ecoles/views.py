@@ -197,7 +197,11 @@ class EcoleViewSet(viewsets.ModelViewSet):
                 from django.db.models import Exists, OuterRef
                 qs = qs.filter(Exists(SectionScolaire.objects.filter(ecole_id=OuterRef('pk'))))
         # Portée utilisateur (toujours)
-        if user.role == 'agent_provincial' and user.province_educationnelle_id:
+        if user.role == 'agent_province_admin' and user.province_administrative_id:
+            qs = qs.filter(
+                province_educationnelle__province_administrative_id=user.province_administrative_id,
+            )
+        elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:
             qs = qs.filter(antenne_id=user.antenne_id)
@@ -208,9 +212,8 @@ class EcoleViewSet(viewsets.ModelViewSet):
     def _interdit_ecriture_agent_territorial(self, message=None):
         user = self.request.user
         if getattr(user, 'est_agent_territorial', False):
-            role = 'agent province éducationnelle' if user.role == 'agent_provincial' else 'agent antenne'
             raise PermissionDenied(
-                message or f"L'{role} ne peut pas modifier une école."
+                message or "L'agent territorial ne peut pas modifier une école."
             )
 
     def perform_create(self, serializer):
@@ -591,6 +594,10 @@ def _scope_classes_ecole(qs, user, request):
         qs = qs.filter(ecole__antenne_id=user.antenne_id)
     elif user.role == 'agent_provincial' and user.province_educationnelle_id:
         qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+    elif user.role == 'agent_province_admin' and user.province_administrative_id:
+        qs = qs.filter(
+            ecole__province_educationnelle__province_administrative_id=user.province_administrative_id,
+        )
     return qs
 
 
@@ -636,6 +643,12 @@ class OptionScolaireViewSet(viewsets.ModelViewSet):
             qs = qs.filter(section__ecole__antenne_id=user.antenne_id)
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(section__ecole__province_educationnelle_id=user.province_educationnelle_id)
+        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+            qs = qs.filter(
+                section__ecole__province_educationnelle__province_administrative_id=(
+                    user.province_administrative_id
+                ),
+            )
         return qs
 
 
@@ -785,6 +798,12 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(ecole__antenne_id=user.antenne_id)
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
+        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+            qs = qs.filter(
+                ecole__province_educationnelle__province_administrative_id=(
+                    user.province_administrative_id
+                ),
+            )
         return qs
 
     def _interdit_ecriture_agent_territorial(self, message=None):

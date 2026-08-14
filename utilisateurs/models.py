@@ -11,6 +11,7 @@ class Utilisateur(AbstractUser):
     class Role(models.TextChoices):
         ADMIN = 'admin', 'Administrateur'
         AGENT_NATIONAL = 'agent_national', 'Agent National'
+        AGENT_PROVINCE_ADMIN = 'agent_province_admin', 'Agent Province administrative'
         AGENT_PROVINCIAL = 'agent_provincial', 'Agent Province éducationnelle'
         AGENT_ANTENNE = 'agent_antenne', 'Agent Antenne'
         ADMIN_ECOLE = 'admin_ecole', 'Administratif école'
@@ -96,6 +97,11 @@ class Utilisateur(AbstractUser):
             # Les agents ministériels ne sont pas rattachés à une école
             self.ecole = None
 
+        # Agent PA : chef des PE — rattachement PA uniquement
+        if self.role == self.Role.AGENT_PROVINCE_ADMIN:
+            self.province_educationnelle = None
+            self.antenne = None
+
         if self.role != self.Role.ENSEIGNANT:
             self.classe = None
         elif self.classe_id and self.ecole_id and self.classe.ecole_id != self.ecole_id:
@@ -121,6 +127,7 @@ class Utilisateur(AbstractUser):
         return self.role in (
             self.Role.ADMIN,
             self.Role.AGENT_NATIONAL,
+            self.Role.AGENT_PROVINCE_ADMIN,
             self.Role.AGENT_PROVINCIAL,
         ) or self.is_superuser
 
@@ -142,5 +149,9 @@ class Utilisateur(AbstractUser):
 
     @property
     def est_agent_territorial(self):
-        """Agent antenne ou province éduc. — consultation territoriale restreinte."""
-        return self.role in (self.Role.AGENT_ANTENNE, self.Role.AGENT_PROVINCIAL)
+        """Agents PA / PE / antenne — consultation territoriale restreinte (sans écriture)."""
+        return self.role in (
+            self.Role.AGENT_PROVINCE_ADMIN,
+            self.Role.AGENT_PROVINCIAL,
+            self.Role.AGENT_ANTENNE,
+        )

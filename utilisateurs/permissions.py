@@ -43,6 +43,7 @@ class LecturePourTousEcritureAdmin(BasePermission):
             return True
         # Enseignant : lecture seule (élèves de sa classe ; pas de cartes)
         return request.user.est_national or request.user.role in (
+            'agent_province_admin',
             'agent_provincial',
             'agent_antenne',
             'admin',
@@ -66,6 +67,7 @@ class EcriturePhotoEleve(BasePermission):
             getattr(user, 'est_enseignant', False)
             or getattr(user, 'est_national', False)
             or user.role in (
+                'agent_province_admin',
                 'agent_provincial',
                 'admin',
                 'admin_ecole',

@@ -29,6 +29,12 @@ class BiometrieViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(eleve__ecole_id=user.ecole_id)
         elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(eleve__ecole_id=user.ecole_id)
+        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+            qs = qs.filter(
+                eleve__ecole__province_educationnelle__province_administrative_id=(
+                    user.province_administrative_id
+                ),
+            )
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(eleve__ecole__province_educationnelle_id=user.province_educationnelle_id)
         elif user.role == 'agent_antenne' and user.antenne_id:

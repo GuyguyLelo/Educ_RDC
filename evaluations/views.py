@@ -47,20 +47,21 @@ from .services import (
 
 class GestionEvaluation(BasePermission):
     """
-    Lecture : authentifiés (filtrés dans get_queryset).
-    Écriture notes : enseignant titulaire, admin_ecole, admin.
-    Config matières / années : admin_ecole ou admin.
+    Module Évaluation réservé à l'école (admin_ecole, enseignant).
+    National et agents territoriaux : aucun accès.
     """
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
-        if request.method in SAFE_METHODS:
-            return not getattr(request.user, 'est_agent_territorial', False)
         user = request.user
         if getattr(user, 'est_agent_territorial', False):
             return False
-        if user.est_admin or user.role == 'admin_ecole':
+        if getattr(user, 'est_national', False):
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        if user.role == 'admin_ecole':
             return True
         if getattr(user, 'est_enseignant', False):
             # Notes et décisions de sa classe uniquement (vérifié dans perform_*)
@@ -68,11 +69,32 @@ class GestionEvaluation(BasePermission):
                 'create', 'update', 'partial_update', 'saisie_bulk',
                 'destroy', 'classer', 'decision', 'ouvrir',
             )
-        return user.role in ('agent_national',)
+        return False
+
+
+class GestionMatieres(BasePermission):
+    """
+    Catalogue des matières : écriture réservée à l'administration nationale.
+    Lecture : national + rôles école (pour programme / notes).
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        user = request.user
+        if getattr(user, 'est_agent_territorial', False):
+            return False
+        if request.method in SAFE_METHODS:
+            return bool(
+                getattr(user, 'est_national', False)
+                or user.role == 'admin_ecole'
+                or getattr(user, 'est_enseignant', False)
+            )
+        return bool(getattr(user, 'est_national', False))
 
 
 def _scope_ecole_ids(user):
-    if user.est_admin or user.est_national:
+    if getattr(user, 'est_national', False):
         return None
     if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
         return [user.ecole_id]
@@ -86,12 +108,18 @@ def _scope_ecole_ids(user):
                 ecole__province_educationnelle_id=user.province_educationnelle_id,
             ).values_list('ecole_id', flat=True).distinct()
         )
+    if user.role == 'agent_province_admin' and user.province_administrative_id:
+        return list(
+            Classe.objects.filter(
+                ecole__province_educationnelle__province_administrative_id=(
+                    user.province_administrative_id
+                ),
+            ).values_list('ecole_id', flat=True).distinct()
+        )
     return []
 
 
 def _peut_saisir_classe(user, classe: Classe) -> bool:
-    if user.est_admin:
-        return True
     if user.role == 'admin_ecole' and user.ecole_id == classe.ecole_id:
         return True
     if getattr(user, 'est_enseignant', False) and user.classe_id == classe.id:
@@ -113,9 +141,10 @@ class AnneeScolaireViewSet(viewsets.ModelViewSet):
     """
     Référentiel national des années scolaires.
     Lecture : tous les authentifiés. Écriture : national / admin.
+    (Hors module Évaluation école — accessible depuis Paramètres.)
     """
     serializer_class = AnneeScolaireSerializer
-    permission_classes = [IsAuthenticated, GestionEvaluation]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         from django.db.models import Count
@@ -135,7 +164,7 @@ class AnneeScolaireViewSet(viewsets.ModelViewSet):
             'init_periodes',
         ):
             return [IsAuthenticated(), PermissionAnneesScolaires()]
-        return super().get_permissions()
+        return [IsAuthenticated()]
 
     def perform_create(self, serializer):
         annee = serializer.save()
@@ -233,9 +262,9 @@ class PeriodeEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
     def deverrouiller(self, request, pk=None):
         """Déverrouille une période (admin école / admin uniquement)."""
         user = request.user
-        if not (user.est_admin or user.role == 'admin_ecole'):
+        if not (user.role == 'admin_ecole'):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('Seul l\'administratif peut déverrouiller.')
+            raise PermissionDenied('Seul l\'administratif d\'école peut déverrouiller.')
         periode = self.get_object()
         classe_id = request.data.get('classe')
         if not classe_id:
@@ -251,7 +280,7 @@ class PeriodeEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
 
 class MatiereViewSet(viewsets.ModelViewSet):
     serializer_class = MatiereSerializer
-    permission_classes = [IsAuthenticated, GestionEvaluation]
+    permission_classes = [IsAuthenticated, GestionMatieres]
     search_fields = ['nom', 'code', 'section__nom', 'option__nom', 'classe__nom']
 
     def get_queryset(self):
@@ -299,27 +328,42 @@ class MatiereViewSet(viewsets.ModelViewSet):
         return qs.order_by('ordre', 'nom')
 
     def perform_create(self, serializer):
-        user = self.request.user
-        ecole = serializer.validated_data.get('ecole')
-        if user.role == 'admin_ecole' and user.ecole_id:
-            if ecole and ecole.id != user.ecole_id:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied('Vous ne pouvez créer des matières que pour votre école.')
-            serializer.save(ecole_id=user.ecole_id)
-        else:
-            serializer.save()
+        if not getattr(self.request.user, 'est_national', False):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                "Seul l'administration nationale peut créer des matières."
+            )
+        serializer.save()
+
+    def perform_update(self, serializer):
+        if not getattr(self.request.user, 'est_national', False):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                "Seul l'administration nationale peut modifier des matières."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not getattr(self.request.user, 'est_national', False):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                "Seul l'administration nationale peut supprimer des matières."
+            )
+        instance.delete()
 
     @action(detail=False, methods=['post'], url_path='charger-catalogue')
     def charger_catalogue(self, request):
-        """Charge les matières types pour une section / option / classe."""
+        """Charge les matières types pour une section / option / classe (national)."""
+        if not getattr(request.user, 'est_national', False):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                "Seul l'administration nationale peut charger le catalogue de matières."
+            )
         ecole_id = request.data.get('ecole')
         regime = request.data.get('regime') or AnneeScolaire.Regime.SECONDAIRE
         classe_id = request.data.get('classe')
         section_id = request.data.get('section')
         option_id = request.data.get('option')
-        user = request.user
-        if user.role == 'admin_ecole' and user.ecole_id:
-            ecole_id = user.ecole_id
 
         # Résoudre école / section / option depuis la classe si fournie
         classe = None
@@ -388,10 +432,9 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         classe = serializer.validated_data['classe']
-        if not _peut_saisir_classe(self.request.user, classe) and not self.request.user.est_admin:
-            if self.request.user.role != 'admin_ecole' or self.request.user.ecole_id != classe.ecole_id:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied('Accès refusé pour cette classe.')
+        if not _peut_saisir_classe(self.request.user, classe):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Accès refusé pour cette classe.')
         serializer.save()
 
     @action(detail=False, methods=['get'], url_path='liste-pdf')
@@ -461,32 +504,25 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
             pk=classe_id,
         )
         if not (
-            request.user.est_admin
-            or getattr(request.user, 'est_national', False)
-            or (request.user.role == 'admin_ecole' and request.user.ecole_id == classe.ecole_id)
+            request.user.role == 'admin_ecole' and request.user.ecole_id == classe.ecole_id
         ):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Réservé à l\'administratif de l\'école.')
 
-        # Si aucune matière pour cette option/classe → charger le catalogue d'abord
+        # Si aucune matière pour cette option/classe → l'admin école ne peut pas en créer
         matieres = matieres_queryset_pour_classe(
             Matiere.objects.filter(ecole_id=classe.ecole_id, active=True),
             classe,
         )
-        sync_info = None
         if not matieres.exists():
-            annee = AnneeScolaire.objects.filter(pk=annee_id).first()
-            regime = annee.regime if annee else AnneeScolaire.Regime.SECONDAIRE
-            sync_info = synchroniser_matieres_ecole(
-                classe.ecole_id,
-                regime,
-                classe_id=classe.id,
-                section_id=classe.section_id,
-                option_id=classe.option_id,
-            )
-            matieres = matieres_queryset_pour_classe(
-                Matiere.objects.filter(ecole_id=classe.ecole_id, active=True),
-                classe,
+            return Response(
+                {
+                    'detail': (
+                        "Aucune matière n'est définie pour cette section / option. "
+                        "Demandez à l'administration nationale de configurer le catalogue."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         created = 0
@@ -503,13 +539,10 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
         sec = classe.section.nom if classe.section_id else ''
         scope = ' · '.join(p for p in (sec, opt, classe.nom) if p)
         detail = f'{created} matière(s) programmée(s) pour {scope or "la classe"}.'
-        if sync_info and sync_info.get('created'):
-            detail += f" Catalogue : {sync_info['created']} créée(s)."
         return Response({
             'detail': detail,
             'created': created,
             'matieres': matieres.count(),
-            'sync': sync_info,
         })
 
 

@@ -3,30 +3,110 @@
 {% load ui_icons %}
 {% block title %}Gestion de permissions{% endblock %}
 {% block page_title %}Gestion de permissions{% endblock %}
-{% block page_subtitle %}Habilitations par rôle — administrateur national uniquement{% endblock %}
+{% block page_subtitle %}Permissions réellement implémentées par rôle — consultation administrateur{% endblock %}
 
 {% block content %}
-<div class="list-shell">
+<div class="list-shell permissions-shell">
     <section class="toolbar">
         <div class="search-box">
             <a href="{% url 'utilisateurs' %}" class="btn btn-ghost">{% ico 'back' %}Retour aux utilisateurs</a>
+        </div>
+        <div class="toolbar-actions">
+            <span class="badge badge-info">Lecture seule</span>
+            <span class="badge badge-neutral">Source : code applicatif</span>
         </div>
     </section>
 
     <section class="panel">
         <div class="panel-header">
-            <h2>Permissions par rôle</h2>
-            <p>Espace réservé à la configuration des habilitations territoriales et métier</p>
+            <h2>Légende</h2>
+            <p>Niveaux d’habilitation tels qu’appliqués aujourd’hui dans l’interface et l’API</p>
         </div>
-        <div class="detail-card" style="border:none;box-shadow:none;padding:1rem 0 0">
-            <p class="form-hint" style="margin:0 0 1rem">
-                Cette page permettra bientôt de consulter et d’ajuster les droits de chaque rôle
-                (agent antenne, agent province éducationnelle, administratif école, enseignant, etc.).
-            </p>
-            <div class="export-actions">
-                <span class="badge badge-info">Administrateur national</span>
-                <span class="badge badge-neutral">Module en préparation</span>
+        <div class="permissions-legend">
+            {% for niveau in niveaux_legende %}
+            <span class="badge {{ niveau.badge }}">{{ niveau.label }}</span>
+            {% endfor %}
+        </div>
+        <p class="form-hint" style="margin:0.85rem 0 0">
+            Cette page décrit l’existant. Elle ne permet pas encore de modifier les droits.
+            Les agents province administrative, province éducationnelle et antenne partagent
+            les mêmes restrictions d’écriture (<code>est_agent_territorial</code>),
+            avec un périmètre géographique différent (PA → PE → antenne).
+        </p>
+    </section>
+
+    <section class="list-panel">
+        <div class="list-panel-header">
+            <div>
+                <h2>Matrice par capacité</h2>
+                <p>Vue synthétique — rôles en colonnes</p>
             </div>
+        </div>
+        <div class="table-responsive permissions-matrix-wrap">
+            <table class="data-table compact permissions-matrix">
+                <thead>
+                    <tr>
+                        <th class="col-domaine">Domaine</th>
+                        <th class="col-capa">Capacité</th>
+                        {% for role in roles_permissions %}
+                        <th class="col-role" title="{{ role.scope }}">{{ role.label }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ligne in lignes_matrice %}
+                    <tr>
+                        <td class="col-domaine">
+                            {% if ligne.show_domaine %}<strong>{{ ligne.domaine }}</strong>{% endif %}
+                        </td>
+                        <td class="col-capa">{{ ligne.libelle }}</td>
+                        {% for cell in ligne.cellules %}
+                        <td class="col-role" {% if cell.note %}title="{{ cell.note }}"{% endif %}>
+                            <span class="badge {{ cell.niveau_meta.badge }}">{{ cell.niveau_meta.court }}</span>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="list-footer">
+            <span class="list-footer-info">Survolez une cellule pour voir le détail lorsqu’une note existe</span>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Détail par rôle</h2>
+            <p>Périmètre, résumé et habilitations groupées</p>
+        </div>
+        <div class="permissions-roles-grid">
+            {% for role in roles_details %}
+            <article class="detail-card permissions-role-card" id="role-{{ role.code }}">
+                <div class="detail-card-head">
+                    <h3 class="detail-card-title">{{ role.label }}</h3>
+                    <span class="badge badge-neutral">{{ role.code }}</span>
+                </div>
+                <p class="permissions-role-scope"><strong>Périmètre :</strong> {{ role.scope }}</p>
+                <p class="form-hint" style="margin:0 0 0.85rem">{{ role.resume }}</p>
+                {% for bloc in role.domaines %}
+                <div class="permissions-role-domaine">
+                    <h4>{{ bloc.domaine }}</h4>
+                    <ul class="permissions-role-list">
+                        {% for item in bloc.items %}
+                        <li>
+                            <span class="badge {{ item.niveau_meta.badge }}">{{ item.niveau_meta.court }}</span>
+                            <span class="permissions-role-item-text">
+                                {{ item.libelle }}
+                                {% if item.note %}<small>{{ item.note }}</small>{% endif %}
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endfor %}
+            </article>
+            {% endfor %}
         </div>
     </section>
 </div>

@@ -32,6 +32,12 @@ Statistiques et impressions PDF
         <strong class="stat-value" id="rAntennes">—</strong>
     </article>
     {% endif %}
+    {% if request.user.role == 'agent_province_admin' %}
+    <article class="stat-card accent">
+        <span class="stat-label">Provinces éduc.</span>
+        <strong class="stat-value" id="rProvincesEduc">—</strong>
+    </article>
+    {% endif %}
     {% if not request.user.est_agent_territorial %}
     <article class="stat-card accent">
         <span class="stat-label">Cartes</span>
@@ -56,7 +62,7 @@ Statistiques et impressions PDF
         <a href="/api/programmes-classe/liste-pdf/" class="btn btn-secondary" target="_blank" rel="noopener">{% ico 'pdf' %}Liste de cours</a>
         {% else %}
         <a href="{% url 'eleves' %}" class="btn btn-secondary">{% ico 'users' %}Liste des élèves</a>
-        {% if not request.user.est_agent_territorial %}
+        {% if request.user.role == 'admin_ecole' %}
         <a href="{% url 'evaluations' %}" class="btn btn-secondary">{% ico 'class' %}Liste de cours</a>
         {% endif %}
         {% endif %}
