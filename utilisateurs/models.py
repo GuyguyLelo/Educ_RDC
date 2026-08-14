@@ -11,7 +11,7 @@ class Utilisateur(AbstractUser):
     class Role(models.TextChoices):
         ADMIN = 'admin', 'Administrateur'
         AGENT_NATIONAL = 'agent_national', 'Agent National'
-        AGENT_PROVINCIAL = 'agent_provincial', 'Agent Provincial'
+        AGENT_PROVINCIAL = 'agent_provincial', 'Agent Province éducationnelle'
         AGENT_ANTENNE = 'agent_antenne', 'Agent Antenne'
         ADMIN_ECOLE = 'admin_ecole', 'Administratif école'
         ENSEIGNANT = 'enseignant', 'Enseignant'
@@ -139,3 +139,8 @@ class Utilisateur(AbstractUser):
     @property
     def est_admin_ecole(self):
         return self.role == self.Role.ADMIN_ECOLE or self.est_admin
+
+    @property
+    def est_agent_territorial(self):
+        """Agent antenne ou province éduc. — consultation territoriale restreinte."""
+        return self.role in (self.Role.AGENT_ANTENNE, self.Role.AGENT_PROVINCIAL)

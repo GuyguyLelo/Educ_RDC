@@ -39,7 +39,7 @@
             <button class="btn btn-ghost btn-sm" id="btnSearchEcoles" type="button">{% ico 'filter' %}Filtrer</button>
             <button class="btn btn-ghost btn-sm" id="btnResetFiltresEcoles" type="button">{% ico 'reset' %}Réinitialiser</button>
         </div>
-        {% if request.user.role != 'agent_antenne' %}
+        {% if not request.user.est_agent_territorial %}
         <div class="toolbar-actions">
             <button class="btn btn-primary" id="btnNouvelleEcole" type="button">{% ico 'plus' %}Nouvelle école</button>
         </div>

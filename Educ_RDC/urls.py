@@ -110,6 +110,11 @@ urlpatterns = [
     ),
     path('utilisateurs/', admin_views.vue_utilisateurs, name='utilisateurs'),
     path(
+        'utilisateurs/permissions/',
+        admin_views.vue_gestion_permissions,
+        name='gestion_permissions',
+    ),
+    path(
         'utilisateurs/<int:utilisateur_id>/',
         admin_views.vue_utilisateur_detail,
         name='utilisateur_detail',

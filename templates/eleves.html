@@ -41,7 +41,7 @@ Enregistrement et recherche des élèves
             </select>
             {% endif %}
         </div>
-        {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
+        {% if not request.user.est_enseignant and not request.user.est_agent_territorial %}
         <div class="toolbar-actions">
             <button class="btn btn-secondary" id="btnImporterEleves" type="button">{% ico 'import' %}Importer Excel</button>
             <button class="btn btn-primary" id="btnNouvelEleve" type="button">{% ico 'plus' %}Nouvel élève</button>
@@ -57,7 +57,7 @@ Enregistrement et recherche des élèves
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEleves">— résultats</span>
-                {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
+                {% if not request.user.est_enseignant and not request.user.est_agent_territorial %}
                 <button class="btn btn-secondary btn-sm" id="btnImporterEleves2" type="button">{% ico 'import' %}Importer Excel</button>
                 {% endif %}
             </div>

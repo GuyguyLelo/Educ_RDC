@@ -590,7 +590,7 @@ const EducRDC = (() => {
             const barPanel = document.getElementById('panelBarChart')
                 || document.getElementById('chartProvinces')?.closest('.panel');
             const isClasse = stats.scope === 'classe';
-            const hideBar = isClasse || stats.scope === 'antenne';
+            const hideBar = isClasse || stats.scope === 'antenne' || stats.scope === 'province';
             if (barPanel) barPanel.hidden = hideBar;
             if (!hideBar) {
                 setText('chartTitle', chart.title || 'Répartition');
@@ -672,10 +672,36 @@ const EducRDC = (() => {
                 }
             }
 
+            const panelAnt = document.getElementById('panelEffectifsAntennes');
+            const tbodyAnt = document.querySelector('#tableEffectifsAntennes tbody');
+            const rowsAnt = stats.effectifs_par_antenne || [];
+            if (panelAnt && tbodyAnt) {
+                const showAnt = stats.scope === 'province' && rowsAnt.length;
+                panelAnt.hidden = !showAnt;
+                if (showAnt) {
+                    setText(
+                        'effectifsAntennesSubtitle',
+                        `${rowsAnt.length} antenne(s) — ${stats.nb_eleves ?? 0} élève(s) actif(s)`,
+                    );
+                    tbodyAnt.innerHTML = rowsAnt.map((a) => `
+                        <tr>
+                            <td data-label="Antenne"><strong>${escapeHtml(a.nom || '—')}</strong></td>
+                            <td data-label="Code"><span class="code-chip">${escapeHtml(a.code || '—')}</span></td>
+                            <td data-label="Écoles">${a.nb_ecoles ?? 0}</td>
+                            <td data-label="Élèves"><strong>${a.nb_eleves ?? 0}</strong></td>
+                            <td data-label="Garçons">${a.nb_garcons ?? 0}</td>
+                            <td data-label="Filles">${a.nb_filles ?? 0}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbodyAnt.innerHTML = '';
+                }
+            }
+
             renderDashActions(stats.actions || []);
             const wfPanel = document.getElementById('panelWorkflow')
                 || document.getElementById('dashWorkflow')?.closest('.panel');
-            if (stats.hide_workflow || stats.scope === 'ecole' || stats.scope === 'antenne') {
+            if (stats.hide_workflow || stats.scope === 'ecole' || stats.scope === 'antenne' || stats.scope === 'province') {
                 if (wfPanel) wfPanel.hidden = true;
             } else {
                 if (wfPanel) wfPanel.hidden = false;
@@ -1743,7 +1769,7 @@ const EducRDC = (() => {
 
     function ouvrirModalPersonnel(personnel = null) {
         if (!peutModifierEcole()) {
-            toast('L\'agent antenne ne peut pas gérer le personnel d\'une école.', 'error');
+            toast('Votre rôle ne permet pas cette action.', 'error');
             return;
         }
         const form = document.getElementById('formPersonnel');
@@ -1772,8 +1798,17 @@ const EducRDC = (() => {
         openModal('modalPersonnel');
     }
 
+    function estAgentTerritorial(role) {
+        const r = role
+            || document.getElementById('ecoleDetail')?.dataset.role
+            || document.getElementById('eleveDetail')?.dataset.role
+            || document.getElementById('elevesApp')?.dataset.role
+            || '';
+        return r === 'agent_antenne' || r === 'agent_provincial';
+    }
+
     function peutModifierEcole() {
-        return document.getElementById('ecoleDetail')?.dataset.role !== 'agent_antenne';
+        return !estAgentTerritorial(document.getElementById('ecoleDetail')?.dataset.role);
     }
 
     function renderPhotosEcole(ecole) {
@@ -1994,8 +2029,8 @@ const EducRDC = (() => {
     }
 
     async function ouvrirModalEditEcole() {
-        if (document.getElementById('ecoleDetail')?.dataset.role === 'agent_antenne') {
-            toast('L\'agent antenne ne peut pas modifier une école.', 'error');
+        if (estAgentTerritorial(document.getElementById('ecoleDetail')?.dataset.role)) {
+            toast('Votre rôle ne permet pas cette action.', 'error');
             return;
         }
         const root = document.getElementById('ecoleDetail');
@@ -2487,7 +2522,7 @@ const EducRDC = (() => {
             e.preventDefault();
             e.stopPropagation();
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas ajouter de photo d\'école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -2540,7 +2575,7 @@ const EducRDC = (() => {
             const btn = e.target.closest('[data-photo-delete]');
             if (!btn) return;
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas modifier les photos d\'école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const photoId = btn.getAttribute('data-photo-delete');
@@ -2567,7 +2602,7 @@ const EducRDC = (() => {
         document.getElementById('formDocumentEcole')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas ajouter de document d\'école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -2615,7 +2650,7 @@ const EducRDC = (() => {
             const btn = e.target.closest('[data-document-delete]');
             if (!btn) return;
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas supprimer un document d\'école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const documentId = btn.getAttribute('data-document-delete');
@@ -2633,7 +2668,7 @@ const EducRDC = (() => {
         document.getElementById('formPersonnel')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas gérer le personnel d\'une école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -2679,7 +2714,7 @@ const EducRDC = (() => {
         document.getElementById('formImportPersonnel')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!peutModifierEcole()) {
-                toast('L\'agent antenne ne peut pas importer le personnel d\'une école.', 'error');
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -2992,8 +3027,8 @@ const EducRDC = (() => {
         boot().catch((e) => toast(e.message, 'error'));
 
         const openImportEleves = () => {
-            if (app?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas importer des élèves.', 'error');
+            if (estAgentTerritorial(app?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const result = document.getElementById('importElevesResult');
@@ -3179,8 +3214,8 @@ const EducRDC = (() => {
         }
 
         document.getElementById('btnNouvelEleve')?.addEventListener('click', () => {
-            if (app?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas créer d\'élève.', 'error');
+            if (estAgentTerritorial(app?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = document.getElementById('formEleve');
@@ -3225,8 +3260,8 @@ const EducRDC = (() => {
 
         document.getElementById('formEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (app?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas créer d\'élève.', 'error');
+            if (estAgentTerritorial(app?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -3269,8 +3304,8 @@ const EducRDC = (() => {
 
         document.getElementById('formImportEleves')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (app?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas importer des élèves.', 'error');
+            if (estAgentTerritorial(app?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -3941,8 +3976,8 @@ const EducRDC = (() => {
         }
 
         document.getElementById('btnRegenererQrEleve')?.addEventListener('click', async () => {
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas régénérer le QR code.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
@@ -3957,8 +3992,8 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnSupprimerEleve')?.addEventListener('click', async () => {
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas supprimer un élève.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const id = document.getElementById('eleveDetail')?.dataset.eleveId;
@@ -3971,8 +4006,8 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnModifierEleve')?.addEventListener('click', () => {
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas modifier un élève.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             ouvrirModalEditEleve(1).catch((err) => toast(err.message, 'error'));
@@ -4008,8 +4043,8 @@ const EducRDC = (() => {
 
         document.getElementById('formEditEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas modifier un élève.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -4068,8 +4103,8 @@ const EducRDC = (() => {
         });
 
         document.getElementById('btnModifierParents')?.addEventListener('click', () => {
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas modifier les parents.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             ouvrirModalEditEleve(4).catch((err) => toast(err.message, 'error'));
@@ -4077,8 +4112,8 @@ const EducRDC = (() => {
 
         document.getElementById('formParentsEleve')?.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas modifier les parents.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 return;
             }
             const form = e.target;
@@ -4108,8 +4143,8 @@ const EducRDC = (() => {
         });
 
         document.getElementById('inputPhotoDetail')?.addEventListener('change', async (e) => {
-            if (document.getElementById('eleveDetail')?.dataset.role === 'agent_antenne') {
-                toast('L\'agent antenne ne peut pas changer la photo d\'un élève.', 'error');
+            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
+                toast('Votre rôle ne permet pas cette action.', 'error');
                 e.target.value = '';
                 return;
             }
@@ -4215,6 +4250,7 @@ const EducRDC = (() => {
             const stats = await api(`${API}/stats/`);
             setText('rEleves', stats.nb_eleves);
             setText('rEcoles', stats.nb_ecoles);
+            setText('rAntennes', stats.nb_antennes);
             setText('rCartes', stats.nb_cartes);
             setText('rBiometries', stats.biometries_validees);
 

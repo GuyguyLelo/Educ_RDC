@@ -29,11 +29,11 @@
                     <a href="/api/eleves/{{ eleve_id }}/pdf/" class="btn btn-primary btn-sm" id="btnPdfFicheEleve" target="_blank" rel="noopener">
                         {% ico 'pdf' %}Fiche PDF
                     </a>
-                    {% if request.user.role != 'agent_antenne' %}
+                    {% if not request.user.est_agent_territorial %}
                     <label class="btn btn-secondary btn-sm" for="inputPhotoDetail">{% ico 'photo' %}Changer photo</label>
                     <input type="file" id="inputPhotoDetail" accept="image/*" hidden>
                     {% endif %}
-                    {% if not request.user.est_enseignant and request.user.role != 'agent_antenne' %}
+                    {% if not request.user.est_enseignant and not request.user.est_agent_territorial %}
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEleve">{% ico 'edit' %}Modifier</button>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierParents">{% ico 'edit' %}Parents</button>
                     <button type="button" class="btn btn-danger btn-sm" id="btnSupprimerEleve">{% ico 'trash' %}Supprimer</button>
@@ -72,7 +72,7 @@
         </div>
     </section>
 
-    {% if not request.user.est_enseignant and request.user.role != 'admin_ecole' and request.user.role != 'agent_antenne' %}
+    {% if not request.user.est_enseignant and request.user.role != 'admin_ecole' and not request.user.est_agent_territorial %}
     <section class="detail-card" id="sectionQrEleve">
         <div class="detail-card-head">
             <h3 class="detail-card-title" style="margin:0;border:0;padding:0">QR code unique</h3>

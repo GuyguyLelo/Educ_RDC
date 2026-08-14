@@ -25,7 +25,7 @@
                 </div>
                 <div class="detail-hero-actions">
                     <a href="{% url 'ecoles' %}" class="btn btn-ghost btn-sm">{% ico 'back' %}Liste</a>
-                    {% if request.user.role != 'agent_antenne' %}
+                    {% if not request.user.est_agent_territorial %}
                     <button type="button" class="btn btn-secondary btn-sm" id="btnModifierEcole">{% ico 'edit' %}Modifier</button>
                     {% endif %}
                     <button type="button" class="btn btn-ghost btn-sm" id="btnPersonnelEcole">{% ico 'users' %}Personnel</button>
@@ -74,7 +74,7 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcolePhotos">—</span>
-                {% if request.user.role != 'agent_antenne' %}
+                {% if not request.user.est_agent_territorial %}
                 <button type="button" class="btn btn-primary btn-sm" id="btnAjouterPhotoEcole">{% ico 'photo' %}Ajouter des photos</button>
                 {% endif %}
             </div>
@@ -90,7 +90,7 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcoleDocuments">—</span>
-                {% if request.user.role != 'agent_antenne' %}
+                {% if not request.user.est_agent_territorial %}
                 <button type="button" class="btn btn-primary btn-sm" id="btnAjouterDocumentEcole">{% ico 'plus' %}Ajouter un document</button>
                 {% endif %}
             </div>
@@ -120,7 +120,7 @@
             <div>
                 <h3 class="detail-card-title" style="margin:0">1. Personnel de l'école</h3>
                 <p class="form-hint" style="margin:0.25rem 0 0">
-                    {% if request.user.role != 'agent_antenne' %}
+                    {% if not request.user.est_agent_territorial %}
                     Identifier d’abord l’agent (fiche RH) — ensuite seulement lui ouvrir un compte
                     {% else %}
                     Consultation du personnel de l’établissement
@@ -129,7 +129,7 @@
             </div>
             <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap">
                 <span class="list-count" id="countEcolePersonnels">—</span>
-                {% if request.user.role != 'agent_antenne' %}
+                {% if not request.user.est_agent_territorial %}
                 <button type="button" class="btn btn-secondary btn-sm" id="btnImporterPersonnel">{% ico 'import' %}Importer Excel</button>
                 <button type="button" class="btn btn-primary btn-sm" id="btnNouveauPersonnel2">{% ico 'user' %}Identifier un agent</button>
                 {% endif %}

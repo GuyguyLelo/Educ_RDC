@@ -146,23 +146,10 @@ def _chart_for_scope(scope, eleves_qs, ecoles_qs, user):
         }
 
     if scope == 'province':
-        pe_id = user.province_educationnelle_id
-        rows = list(
-            Antenne.objects.filter(province_educationnelle_id=pe_id)
-            .annotate(
-                valeur=Count('ecoles__eleves', filter=Q(ecoles__eleves__actif=True)),
-                nb_ecoles=Count('ecoles', filter=Q(ecoles__active=True)),
-            )
-            .order_by('-valeur')
-            .values('nom', 'valeur', 'nb_ecoles')[:10]
-        )
         return {
-            'title': 'Répartition par antenne',
-            'subtitle': 'Élèves actifs',
-            'series': [
-                {'nom': r['nom'], 'valeur': r['valeur'], 'nb_ecoles': r['nb_ecoles']}
-                for r in rows
-            ],
+            'title': 'Effectif élèves par antenne',
+            'subtitle': '',
+            'series': [],
             'valeur_key': 'eleves',
         }
 
@@ -186,7 +173,7 @@ def _chart_for_scope(scope, eleves_qs, ecoles_qs, user):
     }
 
 
-def _chart_ecoles_par_niveau(ecoles_qs):
+def _chart_ecoles_par_niveau(ecoles_qs, subtitle='Établissements actifs'):
     """Répartition des écoles par niveau d’enseignement."""
     rows = list(
         ecoles_qs.values('niveau')
@@ -196,7 +183,7 @@ def _chart_ecoles_par_niveau(ecoles_qs):
     labels = dict(Ecole.Niveau.choices)
     return {
         'title': 'Écoles par niveau',
-        'subtitle': 'Établissements actifs de l’antenne',
+        'subtitle': subtitle,
         'series': [
             {
                 'nom': labels.get(r['niveau'], r['niveau'] or '—'),
@@ -208,7 +195,7 @@ def _chart_ecoles_par_niveau(ecoles_qs):
     }
 
 
-def _chart_eleves_par_niveau(eleves_qs):
+def _chart_eleves_par_niveau(eleves_qs, subtitle='Élèves actifs'):
     """Répartition des élèves par niveau d’école."""
     rows = list(
         eleves_qs.values('ecole__niveau')
@@ -218,7 +205,7 @@ def _chart_eleves_par_niveau(eleves_qs):
     labels = dict(Ecole.Niveau.choices)
     return {
         'title': 'Élèves par niveau',
-        'subtitle': 'Effectifs actifs selon le niveau de l’école',
+        'subtitle': subtitle,
         'series': [
             {
                 'nom': labels.get(r['ecole__niveau'], r['ecole__niveau'] or '—'),
@@ -245,10 +232,10 @@ def _workflow_for_role(role):
             'Exporter les rapports nationaux',
         ],
         'agent_provincial': [
-            'Piloter les antennes de la province',
-            'Valider les écoles du territoire',
-            'Suivre les élèves et biométries',
-            'Suivre la production des cartes',
+            'Piloter les antennes de la province éducationnelle',
+            'Suivre les écoles des antennes rattachées',
+            'Consulter les effectifs élèves',
+            'Exploiter les rapports de la province',
         ],
         'agent_antenne': [
             'Gérer les écoles de l\'antenne',
@@ -304,6 +291,13 @@ def statistiques_dashboard(request):
     nb_personnel = personnel_qs.count()
     nb_garcons = eleves_qs.filter(sexe=Eleve.Sexe.MASCULIN).count()
     nb_filles = eleves_qs.filter(sexe=Eleve.Sexe.FEMININ).count()
+    nb_antennes = 0
+    if scope == 'province' and user.province_educationnelle_id:
+        nb_antennes = Antenne.objects.filter(
+            province_educationnelle_id=user.province_educationnelle_id,
+        ).count()
+    elif scope == 'antenne' and user.antenne_id:
+        nb_antennes = 1
 
     cards = [
         {
@@ -368,6 +362,38 @@ def statistiques_dashboard(request):
                 'hint': f'{nb_garcons} garçons · {nb_filles} filles',
             },
         ]
+    elif scope == 'province':
+        pe_id = user.province_educationnelle_id
+        antennes_qs = Antenne.objects.filter(province_educationnelle_id=pe_id)
+        nb_antennes = antennes_qs.count()
+        ecoles_avec_eleves = (
+            ecoles_qs.annotate(
+                n=Count('eleves', filter=Q(eleves__actif=True)),
+            )
+            .filter(n__gt=0)
+            .count()
+        )
+        cards = [
+            {
+                'key': 'antennes',
+                'label': 'Antennes',
+                'value': nb_antennes,
+                'hint': 'Antennes de la province éducationnelle',
+                'accent': True,
+            },
+            {
+                'key': 'ecoles',
+                'label': 'Écoles',
+                'value': nb_ecoles,
+                'hint': f'{ecoles_avec_eleves} avec élèves actifs',
+            },
+            {
+                'key': 'eleves_actifs',
+                'label': 'Élèves actifs',
+                'value': nb_eleves,
+                'hint': f'{nb_garcons} garçons · {nb_filles} filles',
+            },
+        ]
     else:
         cards.extend([
             {
@@ -394,9 +420,14 @@ def statistiques_dashboard(request):
     secondary_chart = None
     tertiary_chart = None
     effectifs_par_ecole = []
+    effectifs_par_antenne = []
     if scope == 'antenne':
-        secondary_chart = _chart_ecoles_par_niveau(ecoles_qs)
-        tertiary_chart = _chart_eleves_par_niveau(eleves_qs)
+        secondary_chart = _chart_ecoles_par_niveau(
+            ecoles_qs, subtitle='Établissements actifs de l’antenne',
+        )
+        tertiary_chart = _chart_eleves_par_niveau(
+            eleves_qs, subtitle='Effectifs actifs de l’antenne',
+        )
         effectifs_par_ecole = list(
             ecoles_qs.annotate(
                 nb_eleves=Count('eleves', filter=Q(eleves__actif=True)),
@@ -411,6 +442,40 @@ def statistiques_dashboard(request):
             )
             .order_by('-nb_eleves', 'nom')
             .values('id', 'nom', 'code', 'nb_eleves', 'nb_garcons', 'nb_filles')
+        )
+    elif scope == 'province':
+        pe_id = user.province_educationnelle_id
+        secondary_chart = _chart_ecoles_par_niveau(
+            ecoles_qs, subtitle='Établissements actifs de la province',
+        )
+        tertiary_chart = _chart_eleves_par_niveau(
+            eleves_qs, subtitle='Effectifs actifs de la province',
+        )
+        effectifs_par_antenne = list(
+            Antenne.objects.filter(province_educationnelle_id=pe_id)
+            .annotate(
+                nb_ecoles=Count('ecoles', filter=Q(ecoles__active=True)),
+                nb_eleves=Count(
+                    'ecoles__eleves',
+                    filter=Q(ecoles__eleves__actif=True),
+                ),
+                nb_garcons=Count(
+                    'ecoles__eleves',
+                    filter=Q(
+                        ecoles__eleves__actif=True,
+                        ecoles__eleves__sexe=Eleve.Sexe.MASCULIN,
+                    ),
+                ),
+                nb_filles=Count(
+                    'ecoles__eleves',
+                    filter=Q(
+                        ecoles__eleves__actif=True,
+                        ecoles__eleves__sexe=Eleve.Sexe.FEMININ,
+                    ),
+                ),
+            )
+            .order_by('-nb_eleves', 'nom')
+            .values('id', 'nom', 'code', 'nb_ecoles', 'nb_eleves', 'nb_garcons', 'nb_filles')
         )
 
     actions = []
@@ -445,10 +510,10 @@ def statistiques_dashboard(request):
         if user.role == 'admin' or user.is_superuser:
             actions.append({'label': 'Utilisateurs', 'url': '/utilisateurs/', 'style': 'ghost'})
 
-    # Antenne : pas de camembert sexe ni processus métier
+    # Antenne / PE : pas de camembert sexe ni processus métier
     pie_chart = None
     workflow = []
-    if scope != 'antenne':
+    if scope not in ('antenne', 'province'):
         pie_chart = {
             'title': 'Répartition par sexe',
             'subtitle': (
@@ -473,6 +538,7 @@ def statistiques_dashboard(request):
         'classe': ctx.get('classe'),
         'nb_eleves': nb_eleves,
         'nb_ecoles': nb_ecoles,
+        'nb_antennes': nb_antennes,
         'nb_cartes': 0 if getattr(user, 'est_enseignant', False) else nb_cartes,
         'biometries_validees': nb_biometries,
         'nb_personnel': nb_personnel,
@@ -486,9 +552,10 @@ def statistiques_dashboard(request):
         'par_province': par_province,
         'actions': actions,
         'workflow': workflow,
-        'hide_workflow': scope in ('antenne', 'classe', 'ecole'),
-        'hide_pie': scope == 'antenne' or not pie_chart,
+        'hide_workflow': scope in ('antenne', 'province', 'classe', 'ecole'),
+        'hide_pie': scope in ('antenne', 'province') or not pie_chart,
         'effectifs_par_ecole': effectifs_par_ecole,
+        'effectifs_par_antenne': effectifs_par_antenne,
     })
 
 

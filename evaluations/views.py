@@ -56,9 +56,9 @@ class GestionEvaluation(BasePermission):
         if not (request.user and request.user.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
-            return getattr(request.user, 'role', None) != 'agent_antenne'
+            return not getattr(request.user, 'est_agent_territorial', False)
         user = request.user
-        if getattr(user, 'role', None) == 'agent_antenne':
+        if getattr(user, 'est_agent_territorial', False):
             return False
         if user.est_admin or user.role == 'admin_ecole':
             return True
@@ -68,7 +68,7 @@ class GestionEvaluation(BasePermission):
                 'create', 'update', 'partial_update', 'saisie_bulk',
                 'destroy', 'classer', 'decision', 'ouvrir',
             )
-        return user.role in ('agent_provincial', 'agent_national')
+        return user.role in ('agent_national',)
 
 
 def _scope_ecole_ids(user):

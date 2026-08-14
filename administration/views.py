@@ -132,8 +132,8 @@ def vue_eleves(request):
 def vue_evaluations(request):
     """Saisie des notes et impression des bulletins (modèle RDC)."""
     user = request.user
-    if getattr(user, 'role', None) == 'agent_antenne':
-        messages.warning(request, "L'agent antenne n'a pas accès au module Évaluation.")
+    if getattr(user, 'est_agent_territorial', False):
+        messages.warning(request, "Votre rôle n'a pas accès au module Évaluation.")
         return redirect('dashboard')
     classe = None
     if getattr(user, 'est_enseignant', False) and user.classe_id:
@@ -273,6 +273,16 @@ def vue_utilisateurs(request):
         messages.warning(request, 'Accès réservé aux administrateurs.')
         return redirect('dashboard')
     return render(request, 'utilisateurs.html', {'page': 'utilisateurs'})
+
+
+@login_required
+@ensure_csrf_cookie
+def vue_gestion_permissions(request):
+    """Gestion des permissions par rôle — admin national uniquement."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé à l\'administrateur national.')
+        return redirect('dashboard')
+    return render(request, 'gestion_permissions.html', {'page': 'utilisateurs'})
 
 
 @login_required

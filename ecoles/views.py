@@ -205,25 +205,27 @@ class EcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(id=user.ecole_id)
         return qs
 
-    def _interdit_ecriture_agent_antenne(self, message=None):
-        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+    def _interdit_ecriture_agent_territorial(self, message=None):
+        user = self.request.user
+        if getattr(user, 'est_agent_territorial', False):
+            role = 'agent province éducationnelle' if user.role == 'agent_provincial' else 'agent antenne'
             raise PermissionDenied(
-                message or "L'agent antenne ne peut pas modifier une école."
+                message or f"L'{role} ne peut pas modifier une école."
             )
 
     def perform_create(self, serializer):
-        self._interdit_ecriture_agent_antenne(
-            "L'agent antenne ne peut pas créer d'école."
+        self._interdit_ecriture_agent_territorial(
+            "L'agent territorial ne peut pas créer d'école."
         )
         serializer.save()
 
     def perform_update(self, serializer):
-        self._interdit_ecriture_agent_antenne()
+        self._interdit_ecriture_agent_territorial()
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._interdit_ecriture_agent_antenne(
-            "L'agent antenne ne peut pas supprimer une école."
+        self._interdit_ecriture_agent_territorial(
+            "L'agent territorial ne peut pas supprimer une école."
         )
         instance.delete()
 
@@ -405,7 +407,7 @@ class EcoleViewSet(viewsets.ModelViewSet):
             )
             return Response(ser.data)
 
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas ajouter de photo d'école."
         )
 
@@ -487,7 +489,7 @@ class EcoleViewSet(viewsets.ModelViewSet):
     )
     def supprimer_photo(self, request, pk=None, photo_id=None):
         """Supprime une photo d'école."""
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas supprimer une photo d'école."
         )
         ecole = self.get_object()
@@ -514,7 +516,7 @@ class EcoleViewSet(viewsets.ModelViewSet):
             )
             return Response(ser.data)
 
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas ajouter de document d'école."
         )
 
@@ -557,7 +559,7 @@ class EcoleViewSet(viewsets.ModelViewSet):
     )
     def supprimer_document(self, request, pk=None, document_id=None):
         """Supprime un document d'école."""
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas supprimer un document d'école."
         )
         ecole = self.get_object()
@@ -785,26 +787,26 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(ecole__province_educationnelle_id=user.province_educationnelle_id)
         return qs
 
-    def _interdit_ecriture_agent_antenne(self, message=None):
-        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+    def _interdit_ecriture_agent_territorial(self, message=None):
+        if getattr(self.request.user, 'est_agent_territorial', False):
             raise PermissionDenied(
-                message or "L'agent antenne ne peut pas gérer le personnel d'une école."
+                message or "L'agent territorial ne peut pas gérer le personnel d'une école."
             )
 
     def perform_create(self, serializer):
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas identifier un agent."
         )
         serializer.save()
 
     def perform_update(self, serializer):
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas modifier un personnel d'école."
         )
         serializer.save()
 
     def perform_destroy(self, instance):
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas supprimer un personnel d'école."
         )
         instance.delete()
@@ -822,8 +824,8 @@ class PersonnelEcoleViewSet(viewsets.ModelViewSet):
     )
     def import_fichier(self, request):
         """Importe le personnel depuis un fichier Excel (.xlsx) ou CSV."""
-        if getattr(request.user, 'role', None) == 'agent_antenne':
-            raise PermissionDenied("L'agent antenne ne peut pas importer le personnel d'une école.")
+        if getattr(request.user, 'est_agent_territorial', False):
+            raise PermissionDenied("L'agent territorial ne peut pas importer le personnel d'une école.")
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(

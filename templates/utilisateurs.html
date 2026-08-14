@@ -19,7 +19,7 @@
                     <option value="">Tous les rôles</option>
                     <option value="admin">Administrateur</option>
                     <option value="agent_national">Agent National</option>
-                    <option value="agent_provincial">Agent Provincial</option>
+                    <option value="agent_provincial">Agent Province éducationnelle</option>
                     <option value="agent_antenne">Agent Antenne</option>
                     <option value="admin_ecole">Administratif école</option>
                 </select>
@@ -27,6 +27,9 @@
             <button class="btn btn-ghost" id="btnSearchUtilisateurs" type="button">{% ico 'search' %}Rechercher</button>
         </div>
         <div class="toolbar-actions">
+            {% if request.user.est_admin %}
+            <a class="btn btn-secondary" href="{% url 'gestion_permissions' %}">{% ico 'lock' %}Gestion de permissions</a>
+            {% endif %}
             <button class="btn btn-primary" id="btnNouvelUtilisateur" type="button">{% ico 'plus' %}Nouvel utilisateur</button>
         </div>
     </section>

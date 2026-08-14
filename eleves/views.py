@@ -135,14 +135,14 @@ class EleveViewSet(viewsets.ModelViewSet):
             )
         return qs
 
-    def _interdit_ecriture_agent_antenne(self, message=None):
-        if getattr(self.request.user, 'role', None) == 'agent_antenne':
+    def _interdit_ecriture_agent_territorial(self, message=None):
+        if getattr(self.request.user, 'est_agent_territorial', False):
             raise PermissionDenied(
-                message or "L'agent antenne ne peut pas modifier un élève."
+                message or "L'agent territorial ne peut pas modifier un élève."
             )
 
     def perform_create(self, serializer):
-        self._interdit_ecriture_agent_antenne("L'agent antenne ne peut pas créer d'élève.")
+        self._interdit_ecriture_agent_territorial("L'agent territorial ne peut pas créer d'élève.")
         from django.db import transaction
         with transaction.atomic():
             # Matricule toujours attribué côté serveur (AAAA-0001)
@@ -163,13 +163,13 @@ class EleveViewSet(viewsets.ModelViewSet):
         })
 
     def perform_update(self, serializer):
-        self._interdit_ecriture_agent_antenne()
+        self._interdit_ecriture_agent_territorial()
         eleve = serializer.save()
         synchroniser_biometrie_photo(eleve)
         assurer_qr_eleve(eleve)
 
     def perform_destroy(self, instance):
-        self._interdit_ecriture_agent_antenne("L'agent antenne ne peut pas supprimer un élève.")
+        self._interdit_ecriture_agent_territorial("L'agent territorial ne peut pas supprimer un élève.")
         instance.delete()
 
     def retrieve(self, request, *args, **kwargs):
@@ -260,7 +260,7 @@ class EleveViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='regenerer-qr')
     def regenerer_qr(self, request, pk=None):
         """Régénère le QR code unique de l'élève."""
-        if getattr(request.user, 'est_enseignant', False) or getattr(request.user, 'role', None) == 'agent_antenne':
+        if getattr(request.user, 'est_enseignant', False) or getattr(request.user, 'est_agent_territorial', False):
             return Response(
                 {'detail': "Vous n'avez pas accès à la régénération du QR code."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -274,7 +274,7 @@ class EleveViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def photo(self, request, pk=None):
         """Upload / remplacement de la photo d'un élève."""
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas changer la photo d'un élève."
         )
         eleve = self.get_object()
@@ -299,7 +299,7 @@ class EleveViewSet(viewsets.ModelViewSet):
     )
     def photo_parent(self, request, pk=None):
         """Upload / remplacement de la photo du père, de la mère ou du tuteur."""
-        self._interdit_ecriture_agent_antenne(
+        self._interdit_ecriture_agent_territorial(
             "L'agent antenne ne peut pas modifier les photos des parents."
         )
         eleve = self.get_object()
@@ -356,8 +356,8 @@ class EleveViewSet(viewsets.ModelViewSet):
     )
     def import_fichier(self, request):
         """Importe des élèves depuis un Excel (.xlsx) ou CSV."""
-        if getattr(request.user, 'role', None) == 'agent_antenne':
-            raise PermissionDenied("L'agent antenne ne peut pas importer des élèves.")
+        if getattr(request.user, 'est_agent_territorial', False):
+            raise PermissionDenied("L'agent territorial ne peut pas importer des élèves.")
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(

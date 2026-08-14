@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+
+{% load ui_icons %}
+{% block title %}Gestion de permissions{% endblock %}
+{% block page_title %}Gestion de permissions{% endblock %}
+{% block page_subtitle %}Habilitations par rôle — administrateur national uniquement{% endblock %}
+
+{% block content %}
+<div class="list-shell">
+    <section class="toolbar">
+        <div class="search-box">
+            <a href="{% url 'utilisateurs' %}" class="btn btn-ghost">{% ico 'back' %}Retour aux utilisateurs</a>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Permissions par rôle</h2>
+            <p>Espace réservé à la configuration des habilitations territoriales et métier</p>
+        </div>
+        <div class="detail-card" style="border:none;box-shadow:none;padding:1rem 0 0">
+            <p class="form-hint" style="margin:0 0 1rem">
+                Cette page permettra bientôt de consulter et d’ajuster les droits de chaque rôle
+                (agent antenne, agent province éducationnelle, administratif école, enseignant, etc.).
+            </p>
+            <div class="export-actions">
+                <span class="badge badge-info">Administrateur national</span>
+                <span class="badge badge-neutral">Module en préparation</span>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}
