@@ -65,8 +65,8 @@ ROLES = [
         'label': 'Administratif école',
         'scope': 'École rattachée',
         'resume': (
-            'Gère sa fiche école, ses élèves, ses notes et les comptes '
-            'admin_ecole / enseignant de son établissement.'
+            'Gère sa fiche école, ses élèves, le programme d’évaluation et les comptes '
+            'admin_ecole / enseignant de son établissement (sans saisie des notes).'
         ),
     },
     {
@@ -331,15 +331,19 @@ CAPACITES = [
     {
         'id': 'eleve_qr',
         'domaine': 'Élèves',
-        'libelle': 'QR unique / régénération',
+        'libelle': 'QR unique (immuable)',
         'niveaux': {
-            'admin': 'write',
-            'agent_national': 'write',
+            'admin': 'read',
+            'agent_national': 'read',
             'agent_province_admin': 'denied',
             'agent_provincial': 'denied',
             'agent_antenne': 'denied',
             'admin_ecole': 'denied',
             'enseignant': 'denied',
+        },
+        'notes': {
+            'admin': 'Généré une fois à la création — pas de régénération (documents imprimés)',
+            'agent_national': 'Généré une fois à la création — pas de régénération',
         },
     },
     {
@@ -376,7 +380,7 @@ CAPACITES = [
         'notes': {
             'admin': 'Catalogue matières via Structure scolaire',
             'agent_national': 'Catalogue matières via Structure scolaire',
-            'admin_ecole': 'Programme / déverrouillage — sans création de matières',
+            'admin_ecole': 'Programme / clôture / déverrouillage / classement — sans saisie ni création de matières',
         },
     },
     {
@@ -389,12 +393,12 @@ CAPACITES = [
             'agent_province_admin': 'denied',
             'agent_provincial': 'denied',
             'agent_antenne': 'denied',
-            'admin_ecole': 'write',
+            'admin_ecole': 'denied',
             'enseignant': 'write',
         },
         'notes': {
-            'admin_ecole': 'Classes de son école',
-            'enseignant': 'Sa classe titulaire',
+            'admin_ecole': 'Consultation / programme — sans saisie',
+            'enseignant': 'Sa classe — clôture = tous les cours de la période',
         },
     },
     {

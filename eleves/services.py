@@ -84,7 +84,8 @@ def contenu_qr_eleve(eleve) -> str:
 
 def generer_qr_eleve(eleve, *, force: bool = False) -> bool:
     """
-    Génère (ou régénère) l'image QR de l'élève.
+    Génère l'image QR de l'élève (une seule fois).
+    force=True réservé aux migrations / maintenance — le QR métier est immuable.
     Retourne True si le fichier a été (re)créé.
     """
     if not eleve.pk or not eleve.code_unique:

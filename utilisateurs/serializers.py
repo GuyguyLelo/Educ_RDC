@@ -67,7 +67,8 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             'classe', 'classe_nom',
             'section', 'section_nom', 'option', 'option_nom',
             'photo', 'photo_url',
-            'is_active', 'date_creation', 'password',
+            'is_active', 'connexion_biometrique',
+            'date_creation', 'password',
         ]
         read_only_fields = [
             'date_creation', 'classe_nom',
@@ -133,11 +134,12 @@ class ProfilSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'telephone',
             'role', 'role_display', 'ecole_nom', 'classe_nom',
-            'photo_url',
+            'photo_url', 'connexion_biometrique',
         ]
         read_only_fields = [
             'id', 'username', 'first_name', 'last_name',
             'role', 'role_display', 'ecole_nom', 'classe_nom', 'photo_url',
+            'connexion_biometrique',
         ]
 
     def get_photo_url(self, obj):
@@ -186,7 +188,7 @@ class UtilisateurCreateSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'password', 'first_name', 'last_name',
             'role', 'telephone',
             'province_administrative', 'province_educationnelle', 'antenne',
-            'ecole', 'classe', 'personnel', 'is_active',
+            'ecole', 'classe', 'personnel', 'is_active', 'connexion_biometrique',
         ]
 
     def validate(self, attrs):

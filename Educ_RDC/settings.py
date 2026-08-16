@@ -150,3 +150,8 @@ CSRF_TRUSTED_ORIGINS = [
     'http://localhost:8002',
     'http://127.0.0.1:8002',
 ]
+
+# WebAuthn / connexion biométrique (empreinte, Face ID, Windows Hello)
+WEBAUTHN_RP_ID = config('WEBAUTHN_RP_ID', default='')
+WEBAUTHN_RP_NAME = config('WEBAUTHN_RP_NAME', default='Educ_RDC')
+WEBAUTHN_ORIGIN = config('WEBAUTHN_ORIGIN', default='')

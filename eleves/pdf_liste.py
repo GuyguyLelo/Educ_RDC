@@ -104,8 +104,8 @@ def generer_pdf_liste_eleves(eleves, *, contexte=None) -> bytes:
         c.drawCentredString(largeur / 2, hauteur - 11 * mm, 'RÉPUBLIQUE DÉMOCRATIQUE DU CONGO')
         c.setFont('Helvetica-Bold', 12)
         c.drawCentredString(largeur / 2, hauteur - 16 * mm, 'Ministère de l’Éducation Nationale et de Nouvelle Citoyenneté')
-        c.setFont('Helvetica', 9)
-        c.drawCentredString(largeur / 2, hauteur - 24.5 * mm, 'Liste des élèves — Educ_RDC')
+        c.setFont('Helvetica-Bold', 14)
+        c.drawCentredString(largeur / 2, hauteur - 24.5 * mm, 'Liste des élèves')
 
         y = hauteur - 40 * mm
         c.setFillColorRGB(0.02, 0.16, 0.29)

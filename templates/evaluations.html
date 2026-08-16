@@ -30,6 +30,7 @@ Notes, programme de classe et bulletins officiels IGE/EPSP
     data-option-nom="{{ option_nom }}"
     data-ecole-id="{{ ecole_id }}"
     data-peut-configurer="{{ peut_configurer|yesno:'1,0' }}"
+    data-peut-saisir="{{ peut_saisir|yesno:'1,0' }}"
 >
     <section class="eval-banner">
         <div class="eval-banner-main">
@@ -58,7 +59,7 @@ Notes, programme de classe et bulletins officiels IGE/EPSP
         <div class="eval-session-head">
             <div>
                 <h2>Session de travail</h2>
-                <p>{% if est_enseignant %}Votre section, option et classe sont figées — seuls les cours de votre classe sont proposés{% else %}Année nationale figée — choisissez la classe et la matière avant de saisir ou d’imprimer{% endif %}</p>
+                <p>{% if est_enseignant %}Votre section, option et classe sont figées — seuls les cours de votre classe sont proposés{% elif peut_configurer %}Année nationale figée — programme et consultation des notes (saisie réservée aux enseignants){% else %}Année nationale figée — choisissez la classe et la matière{% endif %}</p>
             </div>
             <div class="eval-session-summary" id="evalSessionSummary">
                 <span class="eval-chip" id="chipAnneeEval">Année —</span>
@@ -99,44 +100,25 @@ Notes, programme de classe et bulletins officiels IGE/EPSP
                 <label for="selectPeriodeEval">Période de saisie</label>
                 <select id="selectPeriodeEval"></select>
             </div>
+            {% if peut_saisir or peut_configurer %}
+            <div class="eval-filter-actions eval-filter-actions-periode">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnCloturerPeriode" hidden title="Fige les notes de tous les cours pour cette période">{% ico 'lock' %}Clôturer la période</button>
+            </div>
+            {% endif %}
             <div class="eval-filter eval-filter-grow">
                 <label for="selectProgrammeEval">Matière (cours de la classe)</label>
                 <select id="selectProgrammeEval"></select>
             </div>
-            {% if peut_configurer %}
             <div class="eval-filter-actions">
+                {% if peut_configurer %}
                 <button type="button" class="btn btn-ghost btn-sm" id="btnAppliquerProgramme">{% ico 'save' %}Programme</button>
-                <button type="button" class="btn btn-ghost btn-sm" id="btnDeverrouillerPeriode" hidden>{% ico 'reset' %}Déverrouiller</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnDeverrouillerPeriode" hidden title="Rouvre la saisie de tous les cours de la période">{% ico 'reset' %}Rouvrir la période</button>
+                {% endif %}
             </div>
-            {% endif %}
         </div>
         <div class="eval-periode-banner" id="bannerPeriodeEval" hidden>
             <span id="txtPeriodeEval"></span>
         </div>
-
-        <ol class="eval-steps" aria-label="Parcours d'évaluation">
-            <li class="eval-step is-active" data-eval-step="1">
-                <span class="eval-step-num">1</span>
-                <div>
-                    <strong>Configurer</strong>
-                    <small>Classe · période</small>
-                </div>
-            </li>
-            <li class="eval-step" data-eval-step="2">
-                <span class="eval-step-num">2</span>
-                <div>
-                    <strong>Saisir</strong>
-                    <small>Une période à la fois</small>
-                </div>
-            </li>
-            <li class="eval-step" data-eval-step="3">
-                <span class="eval-step-num">3</span>
-                <div>
-                    <strong>Publier</strong>
-                    <small>Classement · bulletin PDF</small>
-                </div>
-            </li>
-        </ol>
     </section>
 
     <nav class="eval-tabs tabs-bar" role="tablist" aria-label="Sections évaluation">
@@ -160,9 +142,13 @@ Notes, programme de classe et bulletins officiels IGE/EPSP
                 <p id="hintGrilleEval">Sélectionnez une année, une classe, une période puis une matière</p>
             </div>
             <div class="panel-actions">
+                {% if peut_saisir %}
                 <button type="button" class="btn btn-primary" id="btnEnregistrerNotes" disabled>
                     {% ico 'save' %}Enregistrer les notes
                 </button>
+                {% else %}
+                <span class="badge badge-info">Consultation — saisie réservée au titulaire</span>
+                {% endif %}
             </div>
         </div>
         <div class="eval-table-wrap table-responsive">

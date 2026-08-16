@@ -158,6 +158,7 @@ def vue_evaluations(request):
         'option_nom': (classe.option.nom if classe and classe.option_id else '') or '',
         'ecole_id': getattr(user, 'ecole_id', None) or '',
         'peut_configurer': user.role == 'admin_ecole',
+        'peut_saisir': getattr(user, 'est_enseignant', False),
     })
 
 
@@ -292,6 +293,22 @@ def vue_gestion_permissions(request):
     contexte = {'page': 'utilisateurs'}
     contexte.update(get_contexte_permissions())
     return render(request, 'gestion_permissions.html', contexte)
+
+
+@login_required
+def vue_gestion_permissions_pdf(request):
+    """Export PDF de la matrice des permissions — admin national uniquement."""
+    if not getattr(request.user, 'est_admin', False):
+        messages.warning(request, 'Accès réservé à l\'administrateur national.')
+        return redirect('dashboard')
+    from django.http import HttpResponse
+    from utilisateurs.pdf_permissions import generer_pdf_matrice_permissions
+
+    genere_par = request.user.get_full_name() or request.user.username
+    pdf = generer_pdf_matrice_permissions(genere_par=genere_par)
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'inline; filename="matrice_permissions_educ_rdc.pdf"'
+    return response
 
 
 @login_required

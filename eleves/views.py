@@ -19,7 +19,7 @@ from .import_utils import importer_eleves, reponse_modele_xlsx
 from .pdf_fiche import generer_pdf_fiche_eleve
 from .pdf_liste import generer_pdf_liste_eleves
 from .serializers import EleveSerializer, EleveDetailSerializer
-from .services import assurer_qr_eleve, generer_prochain_matricule, generer_qr_eleve
+from .services import assurer_qr_eleve, generer_prochain_matricule
 
 
 def synchroniser_biometrie_photo(eleve):
@@ -262,20 +262,6 @@ class EleveViewSet(viewsets.ModelViewSet):
         response = HttpResponse(pdf, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="liste_eleves_{safe_classe}.pdf"'
         return response
-
-    @action(detail=True, methods=['post'], url_path='regenerer-qr')
-    def regenerer_qr(self, request, pk=None):
-        """Régénère le QR code unique de l'élève."""
-        if getattr(request.user, 'est_enseignant', False) or getattr(request.user, 'est_agent_territorial', False):
-            return Response(
-                {'detail': "Vous n'avez pas accès à la régénération du QR code."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        eleve = self.get_object()
-        assurer_qr_eleve(eleve)
-        generer_qr_eleve(eleve, force=True)
-        eleve.refresh_from_db()
-        return Response(EleveDetailSerializer(eleve, context={'request': request}).data)
 
     @action(detail=True, methods=['post'], parser_classes=[MultiPartParser, FormParser])
     def photo(self, request, pk=None):

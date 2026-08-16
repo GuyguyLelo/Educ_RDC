@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260814v">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260816e">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -182,94 +182,109 @@
     <form id="csrfForm" class="csrf-form" aria-hidden="true">{% csrf_token %}</form>
 
     <div class="modal" id="modalProfil" hidden>
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-profil">
             <div class="modal-header">
                 <div class="modal-header-text">
                     <h3>Mon profil</h3>
-                    <p>Identité, photo et mot de passe</p>
+                    <p>Identité, sécurité et biométrie</p>
                 </div>
                 <button type="button" class="modal-close" data-close aria-label="Fermer">&times;</button>
             </div>
             <div class="profil-modal-body">
-                <section class="profil-photo-block">
-                    <div class="profil-photo-preview" id="profilPhotoPreview">
-                        <img id="profilPhotoImg" alt="Photo de profil" hidden>
-                        <span id="profilPhotoFallback">—</span>
-                    </div>
-                    <div class="profil-photo-actions">
-                        <label class="btn btn-secondary btn-sm" for="inputProfilPhoto">{% ico 'photo' %}Changer la photo</label>
-                        <input type="file" id="inputProfilPhoto" accept="image/*" hidden>
-                        <p class="form-hint">JPG ou PNG, visage bien visible.</p>
-                    </div>
-                </section>
+                <div class="profil-col profil-col-identite">
+                    <section class="profil-photo-block">
+                        <div class="profil-photo-preview" id="profilPhotoPreview">
+                            <img id="profilPhotoImg" alt="Photo de profil" hidden>
+                            <span id="profilPhotoFallback">—</span>
+                        </div>
+                        <div class="profil-photo-actions">
+                            <label class="btn btn-secondary btn-sm" for="inputProfilPhoto">{% ico 'photo' %}Changer la photo</label>
+                            <input type="file" id="inputProfilPhoto" accept="image/*" hidden>
+                        </div>
+                    </section>
 
-                <form id="formProfil" novalidate>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>Identifiant</label>
-                            <input id="profilUsername" readonly>
+                    <form id="formProfil" novalidate>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>Identifiant</label>
+                                <input id="profilUsername" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label>Rôle</label>
+                                <input id="profilRole" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label>Prénom</label>
+                                <input name="first_name" id="profilFirstName" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label>Nom</label>
+                                <input name="last_name" id="profilLastName" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label>E-mail</label>
+                                <input name="email" id="profilEmail" type="email" autocomplete="email">
+                            </div>
+                            <div class="form-group">
+                                <label>Téléphone</label>
+                                <input name="telephone" id="profilTelephone" type="tel" autocomplete="tel">
+                            </div>
+                            <div class="form-group" id="groupeProfilEcole" hidden>
+                                <label>École</label>
+                                <input id="profilEcole" readonly>
+                            </div>
+                            <div class="form-group" id="groupeProfilClasse" hidden>
+                                <label>Classe</label>
+                                <input id="profilClasse" readonly>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label>Rôle</label>
-                            <input id="profilRole" readonly>
+                        <div class="modal-actions profil-actions">
+                            <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer le profil</button>
                         </div>
-                        <div class="form-group">
-                            <label>Prénom</label>
-                            <input name="first_name" id="profilFirstName" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label>Nom</label>
-                            <input name="last_name" id="profilLastName" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label>E-mail</label>
-                            <input name="email" id="profilEmail" type="email" autocomplete="email">
-                        </div>
-                        <div class="form-group">
-                            <label>Téléphone</label>
-                            <input name="telephone" id="profilTelephone" type="tel" autocomplete="tel">
-                        </div>
-                        <div class="form-group" id="groupeProfilEcole" hidden>
-                            <label>École</label>
-                            <input id="profilEcole" readonly>
-                        </div>
-                        <div class="form-group" id="groupeProfilClasse" hidden>
-                            <label>Classe</label>
-                            <input id="profilClasse" readonly>
-                        </div>
-                    </div>
-                    <div class="modal-actions" style="padding-left:0;padding-right:0">
-                        <button type="submit" class="btn btn-primary">{% ico 'save' %}Enregistrer le profil</button>
-                    </div>
-                </form>
+                    </form>
+                </div>
 
-                <hr class="profil-sep">
+                <div class="profil-col profil-col-securite">
+                    <form id="formProfilPassword" novalidate>
+                        <h4 class="form-section-title">Mot de passe</h4>
+                        <div class="form-grid form-grid-1">
+                            <div class="form-group">
+                                <label>Mot de passe actuel <span class="req">*</span></label>
+                                <input name="mot_de_passe_actuel" type="password" required autocomplete="current-password">
+                            </div>
+                            <div class="form-group">
+                                <label>Nouveau mot de passe <span class="req">*</span></label>
+                                <input name="nouveau_mot_de_passe" type="password" required autocomplete="new-password">
+                            </div>
+                            <div class="form-group">
+                                <label>Confirmation <span class="req">*</span></label>
+                                <input name="confirmation" type="password" required autocomplete="new-password">
+                            </div>
+                        </div>
+                        <div class="modal-actions profil-actions">
+                            <button type="submit" class="btn btn-secondary">{% ico 'save' %}Mettre à jour le mot de passe</button>
+                        </div>
+                    </form>
 
-                <form id="formProfilPassword" novalidate>
-                    <h4 class="form-section-title">Changer le mot de passe</h4>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label>Mot de passe actuel <span class="req">*</span></label>
-                            <input name="mot_de_passe_actuel" type="password" required autocomplete="current-password">
+                    <section class="profil-biometrie-block" id="profilBiometrieBlock">
+                        <h4 class="form-section-title">Connexion biométrique</h4>
+                        <p class="form-hint profil-biometrie-hint">
+                            Empreinte, Face ID ou Windows Hello pour cet appareil.
+                        </p>
+                        <ul class="profil-biometrie-list" id="listeProfilBiometrie"></ul>
+                        <div class="modal-actions profil-actions">
+                            <button type="button" class="btn btn-primary" id="btnEnregistrerBiometrie">
+                                {% ico 'fingerprint' %}Activer sur cet appareil
+                            </button>
                         </div>
-                        <div class="form-group">
-                            <label>Nouveau mot de passe <span class="req">*</span></label>
-                            <input name="nouveau_mot_de_passe" type="password" required autocomplete="new-password">
-                        </div>
-                        <div class="form-group">
-                            <label>Confirmation <span class="req">*</span></label>
-                            <input name="confirmation" type="password" required autocomplete="new-password">
-                        </div>
-                    </div>
-                    <div class="modal-actions" style="padding-left:0;padding-right:0">
-                        <button type="submit" class="btn btn-secondary">{% ico 'save' %}Mettre à jour le mot de passe</button>
-                    </div>
-                </form>
+                        <p class="form-hint" id="hintProfilBiometrie" hidden></p>
+                    </section>
+                </div>
             </div>
         </div>
     </div>
 
-    <script src="{% static 'js/app.js' %}?v=20260814an"></script>
+    <script src="{% static 'js/app.js' %}?v=20260816k"></script>
 
 
 

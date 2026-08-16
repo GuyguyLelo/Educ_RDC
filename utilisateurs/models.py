@@ -73,6 +73,11 @@ class Utilisateur(AbstractUser):
         null=True,
         verbose_name='Photo de profil',
     )
+    connexion_biometrique = models.BooleanField(
+        default=False,
+        verbose_name='Connexion biométrique autorisée',
+        help_text='Permet à l’utilisateur d’enregistrer et d’utiliser l’empreinte / Face ID / Windows Hello.',
+    )
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
 
     class Meta:
@@ -155,3 +160,42 @@ class Utilisateur(AbstractUser):
             self.Role.AGENT_PROVINCIAL,
             self.Role.AGENT_ANTENNE,
         )
+
+
+class CredentialBiometrique(models.Model):
+    """Clé publique WebAuthn (empreinte / visage) pour connexion plateforme."""
+
+    utilisateur = models.ForeignKey(
+        'Utilisateur',
+        on_delete=models.CASCADE,
+        related_name='credentials_biometriques',
+        verbose_name='Utilisateur',
+    )
+    credential_id = models.CharField(
+        max_length=512,
+        unique=True,
+        verbose_name='ID credential (base64url)',
+    )
+    public_key = models.BinaryField(verbose_name='Clé publique')
+    sign_count = models.PositiveIntegerField(default=0, verbose_name='Compteur de signatures')
+    transports = models.JSONField(default=list, blank=True, verbose_name='Transports')
+    nom_appareil = models.CharField(
+        max_length=120,
+        blank=True,
+        default='Appareil biométrique',
+        verbose_name='Nom de l’appareil',
+    )
+    date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date d’enregistrement')
+    date_dernier_usage = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Dernière utilisation',
+    )
+
+    class Meta:
+        verbose_name = 'Identifiant biométrique'
+        verbose_name_plural = 'Identifiants biométriques'
+        ordering = ['-date_creation']
+
+    def __str__(self):
+        return f'{self.utilisateur} — {self.nom_appareil}'

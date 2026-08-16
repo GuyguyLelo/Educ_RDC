@@ -41,6 +41,7 @@ from .services import (
     ids_periodes_verrouillees,
     maximum_periode,
     periode_est_verrouillee,
+    verrouiller_periode,
     verrouiller_periodes_anterieures,
 )
 
@@ -49,7 +50,12 @@ class GestionEvaluation(BasePermission):
     """
     Module Évaluation réservé à l'école (admin_ecole, enseignant).
     National et agents territoriaux : aucun accès.
+    Saisie des notes : enseignant titulaire uniquement.
     """
+
+    _ACTIONS_SAISIE_NOTES = {
+        'create', 'update', 'partial_update', 'destroy', 'saisie_bulk',
+    }
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
@@ -62,12 +68,18 @@ class GestionEvaluation(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         if user.role == 'admin_ecole':
+            # Config / bulletins OK — pas de saisie de notes
+            if (
+                view.__class__.__name__ == 'NoteViewSet'
+                and getattr(view, 'action', None) in self._ACTIONS_SAISIE_NOTES
+            ):
+                return False
             return True
         if getattr(user, 'est_enseignant', False):
             # Notes et décisions de sa classe uniquement (vérifié dans perform_*)
             return view.action in (
                 'create', 'update', 'partial_update', 'saisie_bulk',
-                'destroy', 'classer', 'decision', 'ouvrir',
+                'destroy', 'classer', 'decision', 'ouvrir', 'cloturer',
             )
         return False
 
@@ -120,11 +132,25 @@ def _scope_ecole_ids(user):
 
 
 def _peut_saisir_classe(user, classe: Classe) -> bool:
-    if user.role == 'admin_ecole' and user.ecole_id == classe.ecole_id:
+    """Saisie des notes : enseignant titulaire de la classe uniquement."""
+    return bool(
+        getattr(user, 'est_enseignant', False)
+        and user.classe_id
+        and classe
+        and user.classe_id == classe.id
+    )
+
+
+def _peut_piloter_classe(user, classe: Classe) -> bool:
+    """Programme, classement, décisions : titulaire ou administratif de l'école."""
+    if _peut_saisir_classe(user, classe):
         return True
-    if getattr(user, 'est_enseignant', False) and user.classe_id == classe.id:
-        return True
-    return False
+    return bool(
+        user.role == 'admin_ecole'
+        and user.ecole_id
+        and classe
+        and classe.ecole_id == user.ecole_id
+    )
 
 
 class PermissionAnneesScolaires(BasePermission):
@@ -258,9 +284,52 @@ class PeriodeEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
             'periode': PeriodeEvaluationSerializer(periode).data,
         })
 
+    @action(detail=True, methods=['post'], url_path='cloturer')
+    def cloturer(self, request, pk=None):
+        """
+        Clôture / valide la saisie de la période pour une classe.
+        Porte sur tous les cours (matières) de la période — pas un seul cours.
+        Après validation : notes en consultation uniquement.
+        Autorisé : enseignant titulaire ou administratif école.
+        """
+        periode = self.get_object()
+        classe_id = request.data.get('classe')
+        user = request.user
+        if getattr(user, 'est_enseignant', False):
+            classe_id = user.classe_id
+        if not classe_id:
+            return Response({'detail': 'classe requise.'}, status=status.HTTP_400_BAD_REQUEST)
+        classe = get_object_or_404(Classe, pk=classe_id)
+        if not _peut_piloter_classe(user, classe):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied(
+                'Seul le titulaire ou l\'administratif de l\'école peut clôturer la saisie.'
+            )
+        if periode_est_verrouillee(periode.annee_id, classe.id, periode.id):
+            return Response({
+                'detail': (
+                    f'La période « {periode.libelle} » est déjà clôturée '
+                    '(tous les cours).'
+                ),
+                'verrouillee': True,
+                'created': False,
+            })
+        created = verrouiller_periode(
+            periode.annee, classe.id, periode, user=user,
+        )
+        return Response({
+            'detail': (
+                f'Période « {periode.libelle} » clôturée et validée '
+                'pour tous les cours. Les notes sont désormais en consultation uniquement.'
+            ),
+            'verrouillee': True,
+            'created': created,
+            'periode': PeriodeEvaluationSerializer(periode).data,
+        })
+
     @action(detail=True, methods=['post'], url_path='deverrouiller')
     def deverrouiller(self, request, pk=None):
-        """Déverrouille une période (admin école / admin uniquement)."""
+        """Rouvre une période clôturée (administratif école uniquement)."""
         user = request.user
         if not (user.role == 'admin_ecole'):
             from rest_framework.exceptions import PermissionDenied
@@ -269,11 +338,18 @@ class PeriodeEvaluationViewSet(viewsets.ReadOnlyModelViewSet):
         classe_id = request.data.get('classe')
         if not classe_id:
             return Response({'detail': 'classe requise.'}, status=status.HTTP_400_BAD_REQUEST)
+        classe = get_object_or_404(Classe, pk=classe_id)
+        if not user.ecole_id or classe.ecole_id != user.ecole_id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Classe hors de votre école.')
         deleted, _ = VerrouillagePeriode.objects.filter(
             annee_id=periode.annee_id, classe_id=classe_id, periode=periode,
         ).delete()
         return Response({
-            'detail': 'Période déverrouillée.' if deleted else 'Période déjà ouverte.',
+            'detail': (
+                'Période rouverte : la saisie est à nouveau possible.'
+                if deleted else 'Période déjà ouverte.'
+            ),
             'verrouillee': False,
         })
 
@@ -432,7 +508,7 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         classe = serializer.validated_data['classe']
-        if not _peut_saisir_classe(self.request.user, classe):
+        if not _peut_piloter_classe(self.request.user, classe):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Accès refusé pour cette classe.')
         serializer.save()
@@ -621,7 +697,7 @@ class NoteViewSet(viewsets.ModelViewSet):
         )
         if not _peut_saisir_classe(request.user, programme.classe):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('Seul le titulaire ou l\'administratif peut saisir.')
+            raise PermissionDenied('Seul le titulaire de classe peut saisir les notes.')
 
         # Une seule période autorisée par lot ; refus si verrouillée
         periode_ids = {item['periode'] for item in ser.validated_data['notes']}
@@ -786,7 +862,7 @@ class BulletinViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         classe = get_object_or_404(Classe, pk=classe_id)
-        if not _peut_saisir_classe(user, classe):
+        if not _peut_piloter_classe(user, classe):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Accès refusé.')
         annee = get_object_or_404(AnneeScolaire, pk=annee_id)
@@ -797,7 +873,7 @@ class BulletinViewSet(viewsets.ViewSet):
     def decision(self, request, eleve_id=None):
         annee_id = request.data.get('annee')
         eleve = get_object_or_404(Eleve, pk=eleve_id)
-        if not eleve.classe_id or not _peut_saisir_classe(
+        if not eleve.classe_id or not _peut_piloter_classe(
             request.user, eleve.classe,
         ):
             from rest_framework.exceptions import PermissionDenied

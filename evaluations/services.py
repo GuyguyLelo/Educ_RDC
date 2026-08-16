@@ -218,6 +218,26 @@ def periode_est_verrouillee(annee_id: int, classe_id: int, periode_id: int) -> b
     ).exists()
 
 
+def verrouiller_periode(
+    annee: AnneeScolaire,
+    classe_id: int,
+    periode: PeriodeEvaluation,
+    user=None,
+) -> bool:
+    """
+    Clôture / valide la saisie d'une période pour une classe
+    (tous les cours / matières de la période).
+    Retourne True si le verrouillage vient d'être créé.
+    """
+    _, created = VerrouillagePeriode.objects.get_or_create(
+        annee=annee,
+        classe_id=classe_id,
+        periode=periode,
+        defaults={'verrouille_par': user},
+    )
+    return created
+
+
 def verrouiller_periodes_anterieures(
     annee: AnneeScolaire,
     classe_id: int,
@@ -234,13 +254,7 @@ def verrouiller_periodes_anterieures(
     )
     created = 0
     for p in anterieures:
-        _, was = VerrouillagePeriode.objects.get_or_create(
-            annee=annee,
-            classe_id=classe_id,
-            periode=p,
-            defaults={'verrouille_par': user},
-        )
-        if was:
+        if verrouiller_periode(annee, classe_id, p, user=user):
             created += 1
     return created
 

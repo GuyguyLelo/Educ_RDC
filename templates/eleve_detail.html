@@ -63,7 +63,7 @@
                 <h3 class="detail-card-title">Adresse</h3>
                 <dl class="detail-list compact" id="blocAdresse"></dl>
             </div>
-            {% if request.user.role != 'admin_ecole' %}
+            {% if not request.user.est_enseignant and request.user.role != 'admin_ecole' %}
             <div>
                 <h3 class="detail-card-title">Biométrie</h3>
                 <dl class="detail-list compact" id="blocBiometrie"></dl>
@@ -76,7 +76,6 @@
     <section class="detail-card" id="sectionQrEleve">
         <div class="detail-card-head">
             <h3 class="detail-card-title" style="margin:0;border:0;padding:0">QR code unique</h3>
-            <button type="button" class="btn btn-ghost btn-sm" id="btnRegenererQrEleve">{% ico 'qr' %}Régénérer</button>
         </div>
         <div class="eleve-qr-panel">
             <div class="eleve-qr-preview">
@@ -86,7 +85,7 @@
             <div class="eleve-qr-meta">
                 <dl class="detail-list compact">
                     <div><dt>Code unique</dt><dd id="detailCodeUnique">—</dd></div>
-                    <div><dt>Usage</dt><dd>Identification de l’élève (fiche, contrôle, badge)</dd></div>
+                    <div><dt>Usage</dt><dd>Identification permanente de l’élève (fiche, contrôle, badge)</dd></div>
                 </dl>
                 <div class="actions-inline" style="margin-top:0.75rem">
                     <a class="btn btn-secondary btn-sm" id="lienQrEleve" href="#" target="_blank" rel="noopener" hidden>{% ico 'qr' %}Ouvrir le QR</a>
@@ -458,6 +457,7 @@
         </div>
     </div>
 </div>
+
 {% endblock %}
 
 {% block extra_js %}

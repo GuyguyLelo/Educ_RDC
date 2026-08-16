@@ -9,40 +9,70 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260816b">
 </head>
 <body class="login-page">
     {% include 'partials/icon_sprite.html' %}
     <section class="login-hero">
         <div class="login-hero-brand">
-            <div class="brand-mark large">RDC</div>
+            <img
+                class="login-armoirie"
+                src="{% static 'img/armoirie-rdc.png' %}"
+                alt="Armoiries de la République Démocratique du Congo"
+                width="192"
+                height="192"
+                decoding="async"
+            >
             <h1 class="brand-wordmark">Educ_<span>RDC</span></h1>
-            <p>La plateforme nationale d'identification des écoles, d'enrôlement des élèves et de production des cartes scolaires.</p>
-            <div class="login-hero-stats">
-                <div>
-                    <strong>National</strong>
-                    <span>Couverture RDC</span>
-                </div>
-                <div>
-                    <strong>Sécurisé</strong>
-                    <span>Accès par rôle</span>
-                </div>
-                <div>
-                    <strong>Opérationnel</strong>
-                    <span>Province & antenne</span>
-                </div>
-            </div>
+            <p class="login-hero-lead">
+                <span class="login-hero-lead-accent" aria-hidden="true"></span>
+                Système Intégré de Gestion de l’Éducation National de la République Démocratique du Congo
+            </p>
+            <ul class="login-hero-stats" aria-label="Points forts de la plateforme">
+                <li class="login-hero-stat login-hero-stat--bleu">
+                    <span class="login-hero-stat-ico" aria-hidden="true">{% ico 'school' %}</span>
+                    <div>
+                        <strong>National</strong>
+                        <span>Couverture RDC</span>
+                    </div>
+                </li>
+                <li class="login-hero-stat login-hero-stat--jaune">
+                    <span class="login-hero-stat-ico" aria-hidden="true">{% ico 'lock' %}</span>
+                    <div>
+                        <strong>Sécurisé</strong>
+                        <span>Accès par rôle</span>
+                    </div>
+                </li>
+                <li class="login-hero-stat login-hero-stat--rouge">
+                    <span class="login-hero-stat-ico" aria-hidden="true">{% ico 'users' %}</span>
+                    <div>
+                        <strong>Opérationnel</strong>
+                        <span>Province &amp; antenne</span>
+                    </div>
+                </li>
+            </ul>
         </div>
-        <div class="login-hero-footer">
+        <p class="login-hero-footer login-hero-lead">
+            <span class="login-hero-lead-accent" aria-hidden="true"></span>
             Ministère de l’Éducation Nationale et de Nouvelle Citoyenneté
-        </div>
+        </p>
     </section>
 
     <aside class="login-aside">
         <div class="login-panel">
+            <div class="login-panel-accent" aria-hidden="true"></div>
             <div class="login-panel-header">
+                <img
+                    class="login-logo-mineduc"
+                    src="{% static 'img/logo_MINEDUC1.jpg' %}"
+                    alt="Logo du Ministère de l’Éducation Nationale et de Nouvelle Citoyenneté"
+                    width="120"
+                    height="120"
+                    decoding="async"
+                >
+                <p class="login-panel-eyebrow">Espace sécurisé</p>
                 <h2>Connexion</h2>
-                <p>Accédez à votre espace de travail Educ_RDC.</p>
+                <p>Accédez à votre espace de travail <strong>Educ_RDC</strong>.</p>
             </div>
 
             {% if messages %}
@@ -55,17 +85,197 @@
                 {% csrf_token %}
                 <div class="form-group">
                     <label for="username">Identifiant</label>
-                    <input type="text" id="username" name="username" required autocomplete="username" placeholder="Votre identifiant">
+                    <div class="login-input-wrap">
+                        <span class="login-input-ico" aria-hidden="true">{% ico 'user' %}</span>
+                        <input type="text" id="username" name="username" required autocomplete="username" placeholder="Votre identifiant">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="password">Mot de passe</label>
-                    <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+                    <div class="login-input-wrap">
+                        <span class="login-input-ico" aria-hidden="true">{% ico 'lock' %}</span>
+                        <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="••••••••">
+                    </div>
                 </div>
-                <button type="submit" class="btn btn-primary btn-block">{% ico 'login' %}Accéder à la plateforme</button>
+                <button type="submit" class="btn btn-primary btn-block login-submit">{% ico 'login' %}Accéder à la plateforme</button>
             </form>
 
-            <p class="login-hint">Compte démo : <strong>admin</strong> / <strong>admin123</strong></p>
+            <div class="login-divider" role="separator" aria-label="Ou">
+                <span>ou</span>
+            </div>
+
+            <button
+                type="button"
+                class="btn btn-block login-biometrie"
+                id="btnLoginBiometrie"
+                aria-describedby="loginBiometrieHint"
+            >
+                <span class="login-biometrie-ico" aria-hidden="true">{% ico 'fingerprint' %}</span>
+                <span class="login-biometrie-copy">
+                    <strong>Connexion biométrique</strong>
+                    <small id="loginBiometrieHint">Empreinte, Face ID ou Windows Hello — saisissez d’abord votre identifiant</small>
+                </span>
+            </button>
         </div>
     </aside>
+    <script>
+    (function () {
+        function csrfToken() {
+            const m = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+            return m ? decodeURIComponent(m[1]) : '';
+        }
+        function b64urlToBuf(value) {
+            if (!value) return new ArrayBuffer(0);
+            if (value instanceof ArrayBuffer) return value;
+            if (ArrayBuffer.isView(value)) return value.buffer;
+            const s = String(value).replace(/-/g, '+').replace(/_/g, '/');
+            const pad = '='.repeat((4 - (s.length % 4)) % 4);
+            const raw = atob(s + pad);
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+            return out.buffer;
+        }
+        function bufToB64url(buf) {
+            const bytes = new Uint8Array(buf);
+            let bin = '';
+            bytes.forEach((b) => { bin += String.fromCharCode(b); });
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+        }
+        function preparePublicKey(options) {
+            if (!options || !options.challenge) {
+                throw new Error('Challenge biométrique manquant. Réessayez.');
+            }
+            const pk = { ...options };
+            pk.challenge = new Uint8Array(b64urlToBuf(pk.challenge));
+            if (pk.user && pk.user.id) {
+                pk.user = { ...pk.user, id: new Uint8Array(b64urlToBuf(pk.user.id)) };
+            }
+            if (Array.isArray(pk.allowCredentials)) {
+                pk.allowCredentials = pk.allowCredentials.map((c) => ({
+                    ...c,
+                    id: new Uint8Array(b64urlToBuf(c.id)),
+                }));
+            }
+            if (Array.isArray(pk.excludeCredentials)) {
+                pk.excludeCredentials = pk.excludeCredentials.map((c) => ({
+                    ...c,
+                    id: new Uint8Array(b64urlToBuf(c.id)),
+                }));
+            }
+            return pk;
+        }
+        function webauthnErreur(err) {
+            const name = err && err.name;
+            const msg = (err && err.message) ? String(err.message) : '';
+            if (name === 'SecurityError' || /operation is insecure/i.test(msg)) {
+                const host = window.location.hostname;
+                return (
+                    'Opération non sécurisée pour la biométrie. '
+                    + 'Ouvrez Educ_RDC via http://localhost'
+                    + (window.location.port ? `:${window.location.port}` : '')
+                    + ' ou https:// — pas via une IP / nom réseau'
+                    + (host && host !== 'localhost' && host !== '127.0.0.1' ? ` (actuel : ${host})` : '')
+                    + '.'
+                );
+            }
+            if (name === 'NotAllowedError') {
+                return 'Biométrie annulée ou indisponible sur cet appareil.';
+            }
+            if (name === 'InvalidStateError') {
+                return 'Cet appareil est déjà enregistré pour ce compte.';
+            }
+            return msg || 'Échec de la connexion biométrique.';
+        }
+        function credentialToJSON(cred) {
+            const response = cred.response;
+            const json = {
+                id: cred.id,
+                rawId: bufToB64url(cred.rawId),
+                type: cred.type,
+                response: {},
+            };
+            if (response.clientDataJSON) {
+                json.response.clientDataJSON = bufToB64url(response.clientDataJSON);
+            }
+            if (response.attestationObject) {
+                json.response.attestationObject = bufToB64url(response.attestationObject);
+            }
+            if (response.authenticatorData) {
+                json.response.authenticatorData = bufToB64url(response.authenticatorData);
+            }
+            if (response.signature) {
+                json.response.signature = bufToB64url(response.signature);
+            }
+            if (response.userHandle) {
+                json.response.userHandle = bufToB64url(response.userHandle);
+            }
+            if (cred.getClientExtensionResults) {
+                json.clientExtensionResults = cred.getClientExtensionResults();
+            }
+            if (response.getTransports) {
+                json.transports = response.getTransports();
+            }
+            return json;
+        }
+        async function api(url, body) {
+            const res = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken(),
+                },
+                body: JSON.stringify(body || {}),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.ok === false) {
+                throw new Error(data.detail || 'Erreur biométrique.');
+            }
+            return data;
+        }
+        function setHint(text, isError) {
+            const hint = document.getElementById('loginBiometrieHint');
+            if (!hint) return;
+            hint.textContent = text;
+            hint.style.color = isError ? '#CE1126' : '';
+        }
+
+        document.getElementById('btnLoginBiometrie')?.addEventListener('click', async () => {
+            const btn = document.getElementById('btnLoginBiometrie');
+            if (!window.PublicKeyCredential) {
+                setHint('Biométrie non supportée par ce navigateur / appareil.', true);
+                return;
+            }
+            if (!window.isSecureContext) {
+                setHint(webauthnErreur({ name: 'SecurityError', message: 'The operation is insecure.' }), true);
+                return;
+            }
+            const username = (document.getElementById('username')?.value || '').trim();
+            if (!username) {
+                setHint('Saisissez votre identifiant, puis réessayez.', true);
+                document.getElementById('username')?.focus();
+                return;
+            }
+            btn.disabled = true;
+            setHint('Vérification biométrique…');
+            try {
+                const begin = await api('/api/auth/webauthn/login/begin/', { username });
+                const assertion = await navigator.credentials.get({
+                    publicKey: preparePublicKey(begin.options),
+                });
+                if (!assertion) throw new Error('Authentification annulée.');
+                const done = await api('/api/auth/webauthn/login/complete/', {
+                    credential: credentialToJSON(assertion),
+                });
+                setHint(done.detail || 'Connexion réussie.');
+                window.location.href = done.redirect || '/dashboard/';
+            } catch (err) {
+                setHint(webauthnErreur(err), true);
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    })();
+    </script>
 </body>
 </html>

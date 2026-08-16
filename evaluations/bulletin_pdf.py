@@ -181,10 +181,10 @@ def _sum_cols(lignes, code_map) -> tuple[list, list]:
         notes = ligne['notes']
 
         def nv(code):
-            pid = code_map.get(code)
-            if pid is None:
+            # notes indexées par code de période (p1, exam1, …)
+            if code_map and code not in code_map:
                 return None
-            return notes.get(pid)
+            return notes.get(code)
 
         vals = [
             nv('p1'), nv('p2'), nv('exam1'), ligne.get('tot1'),
@@ -411,10 +411,10 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
         code_map = {p.code: p.id for p in periodes}
 
         def note_val(notes, code):
-            pid = code_map.get(code)
-            if pid is None:
+            # notes = {code_periode: valeur} (voir calculer_ligne_matiere)
+            if code not in code_map:
                 return ''
-            v = notes.get(pid)
+            v = notes.get(code)
             return _fmt(v) if v is not None else ''
 
         last_max = None
@@ -518,10 +518,9 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
             notes = ligne['notes']
 
             def nv(code):
-                pid = code_map.get(code)
-                if pid is None:
+                if code not in code_map:
                     return ''
-                v = notes.get(pid)
+                v = notes.get(code)
                 return _fmt(v) if v is not None else ''
 
             table_data.append([

@@ -9,6 +9,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from utilisateurs.views import UtilisateurViewSet, CustomTokenObtainPairView
+from utilisateurs import webauthn_views
 from ecoles.views import (
     ProvinceAdministrativeViewSet,
     ProvinceEducationnelleViewSet,
@@ -73,6 +74,12 @@ urlpatterns = [
     # Authentification pages
     path('', admin_views.vue_login, name='login'),
     path('logout/', admin_views.vue_logout, name='logout'),
+    path('api/auth/webauthn/status/', webauthn_views.webauthn_status, name='webauthn_status'),
+    path('api/auth/webauthn/register/begin/', webauthn_views.webauthn_register_begin, name='webauthn_register_begin'),
+    path('api/auth/webauthn/register/complete/', webauthn_views.webauthn_register_complete, name='webauthn_register_complete'),
+    path('api/auth/webauthn/login/begin/', webauthn_views.webauthn_login_begin, name='webauthn_login_begin'),
+    path('api/auth/webauthn/login/complete/', webauthn_views.webauthn_login_complete, name='webauthn_login_complete'),
+    path('api/auth/webauthn/delete/', webauthn_views.webauthn_delete, name='webauthn_delete'),
     path('dashboard/', admin_views.vue_dashboard, name='dashboard'),
     path('ecoles/', admin_views.vue_ecoles, name='ecoles'),
     path('ecoles/<int:ecole_id>/', admin_views.vue_ecole_detail, name='ecole_detail'),
@@ -113,6 +120,11 @@ urlpatterns = [
         'utilisateurs/permissions/',
         admin_views.vue_gestion_permissions,
         name='gestion_permissions',
+    ),
+    path(
+        'utilisateurs/permissions/pdf/',
+        admin_views.vue_gestion_permissions_pdf,
+        name='gestion_permissions_pdf',
     ),
     path(
         'utilisateurs/<int:utilisateur_id>/',

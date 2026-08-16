@@ -1653,9 +1653,13 @@ const EducRDC = (() => {
             form.role.value = user.role || 'enseignant';
             const actif = document.getElementById('userEcoleActif');
             if (actif) actif.checked = user.is_active !== false;
+            const bio = document.getElementById('userEcoleBiometrie');
+            if (bio) bio.checked = Boolean(user.connexion_biometrique);
         } else {
             const actif = document.getElementById('userEcoleActif');
             if (actif) actif.checked = true;
+            const bio = document.getElementById('userEcoleBiometrie');
+            if (bio) bio.checked = false;
         }
         if (!user) {
             const rolePrefer = form.dataset.rolePrefer || 'enseignant';
@@ -2478,6 +2482,7 @@ const EducRDC = (() => {
                 role,
                 ecole: Number(ecoleId),
                 is_active: document.getElementById('userEcoleActif')?.checked !== false,
+                connexion_biometrique: document.getElementById('userEcoleBiometrie')?.checked === true,
             };
             if (role === 'enseignant') {
                 payload.classe = Number(form.classe.value);
@@ -4042,22 +4047,6 @@ const EducRDC = (() => {
             });
         }
 
-        document.getElementById('btnRegenererQrEleve')?.addEventListener('click', async () => {
-            if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
-                toast('Votre rôle ne permet pas cette action.', 'error');
-                return;
-            }
-            const id = document.getElementById('eleveDetail')?.dataset.eleveId;
-            if (!id || !confirm('Régénérer le QR code de cet élève ?')) return;
-            try {
-                await api(`${API}/eleves/${id}/regenerer-qr/`, { method: 'POST', body: '{}' });
-                toast('QR code régénéré.', 'success');
-                await chargerEleveDetail();
-            } catch (err) {
-                toast(err.message, 'error');
-            }
-        });
-
         document.getElementById('btnSupprimerEleve')?.addEventListener('click', async () => {
             if (estAgentTerritorial(document.getElementById('eleveDetail')?.dataset.role)) {
                 toast('Votre rôle ne permet pas cette action.', 'error');
@@ -5206,6 +5195,8 @@ const EducRDC = (() => {
             form.telephone.value = user.telephone || '';
             form.role.value = user.role || 'agent_antenne';
             document.getElementById('utilisateurActif').checked = user.is_active !== false;
+            const bio = document.getElementById('utilisateurBiometrie');
+            if (bio) bio.checked = Boolean(user.connexion_biometrique);
             syncSelectsUtilisateur({
                 province_administrative: user.province_administrative || '',
                 province_educationnelle: user.province_educationnelle || '',
@@ -5215,6 +5206,8 @@ const EducRDC = (() => {
         } else {
             titre.textContent = 'Nouvel utilisateur';
             document.getElementById('utilisateurActif').checked = true;
+            const bio = document.getElementById('utilisateurBiometrie');
+            if (bio) bio.checked = false;
             syncSelectsUtilisateur({});
         }
         syncRoleUtilisateurUI();
@@ -5713,6 +5706,7 @@ const EducRDC = (() => {
                 telephone: form.telephone.value.trim(),
                 role,
                 is_active: document.getElementById('utilisateurActif')?.checked !== false,
+                connexion_biometrique: document.getElementById('utilisateurBiometrie')?.checked === true,
                 province_administrative: form.province_administrative.value || null,
                 province_educationnelle: form.province_educationnelle.value || null,
                 antenne: form.antenne.value || null,
@@ -5835,6 +5829,7 @@ const EducRDC = (() => {
         fillDetailList('blocUserCompte', [
             ['Rôle', u.role_display || u.role],
             ['Statut', u.is_active ? 'Actif' : 'Inactif'],
+            ['Connexion biométrique', u.connexion_biometrique ? 'Autorisée' : 'Non autorisée'],
             ['Créé le', formatDateFr(u.date_creation) || '—'],
         ]);
         fillDetailList('blocUserRattachement', [
@@ -5923,6 +5918,7 @@ const EducRDC = (() => {
                 telephone: form.telephone.value.trim(),
                 role,
                 is_active: document.getElementById('utilisateurActif')?.checked !== false,
+                connexion_biometrique: document.getElementById('utilisateurBiometrie')?.checked === true,
                 province_administrative: form.province_administrative.value || null,
                 province_educationnelle: form.province_educationnelle.value || null,
                 antenne: form.antenne.value || null,
@@ -5995,6 +5991,7 @@ const EducRDC = (() => {
         const classeFixe = root.dataset.classeId || '';
         const ecoleId = root.dataset.ecoleId || '';
         const peutConfigurer = root.dataset.peutConfigurer === '1';
+        const peutSaisir = root.dataset.peutSaisir === '1';
         let cacheGrille = null;
         let periodeVerrouillee = false;
 
@@ -6008,19 +6005,30 @@ const EducRDC = (() => {
             const banner = document.getElementById('bannerPeriodeEval');
             const txt = document.getElementById('txtPeriodeEval');
             const btnUnlock = document.getElementById('btnDeverrouillerPeriode');
+            const btnCloture = document.getElementById('btnCloturerPeriode');
             const periodeSel = document.getElementById('selectPeriodeEval');
+            const classeOk = !!document.getElementById('selectClasseEval')?.value;
             if (!banner || !txt || !periodeSel?.value) {
                 if (banner) banner.hidden = true;
                 if (btnUnlock) btnUnlock.hidden = true;
+                if (btnCloture) btnCloture.hidden = true;
                 return;
             }
             banner.hidden = false;
             banner.classList.toggle('is-locked', periodeVerrouillee);
-            const lab = selectedLabel(periodeSel).replace(/\s*[—-]\s*Verrouillée\s*$/i, '');
+            const lab = selectedLabel(periodeSel).replace(/\s*[—-]\s*(Verrouillée|Clôturée)\s*$/i, '');
             txt.textContent = periodeVerrouillee
-                ? `${lab} — verrouillée (lecture seule). Les notes ne sont plus modifiables.`
-                : `${lab} — saisie ouverte. En passant à la période suivante, celle-ci sera verrouillée.`;
-            if (btnUnlock) btnUnlock.hidden = !(peutConfigurer && periodeVerrouillee);
+                ? `${lab} — clôturée pour tous les cours (consultation uniquement).`
+                : `${lab} — saisie ouverte. La clôture fige les notes de tous les cours de cette période.`;
+            if (btnUnlock) btnUnlock.hidden = !(peutConfigurer && periodeVerrouillee && classeOk);
+            if (btnCloture) {
+                btnCloture.hidden = !(
+                    (peutSaisir || peutConfigurer)
+                    && !periodeVerrouillee
+                    && classeOk
+                    && periodeSel.value
+                );
+            }
         }
 
         function majResumeSession() {
@@ -6048,28 +6056,13 @@ const EducRDC = (() => {
             if (chipP) {
                 const lab = selectedLabel(periodeSel);
                 chipP.textContent = lab && !lab.startsWith('—')
-                    ? lab.replace(/\s*[—-]\s*Verrouillée\s*$/i, '')
+                    ? lab.replace(/\s*[—-]\s*(Verrouillée|Clôturée)\s*$/i, '')
                     : 'Période —';
             }
             if (chipM) {
                 const lab = selectedLabel(progSel);
                 chipM.textContent = lab && !lab.startsWith('—') ? lab.replace(/\s*\(max.*\)$/, '') : 'Matière —';
             }
-            const step1 = !!anneeSel?.value && !!classeSel?.value;
-            const step2 = !!periodeSel?.value && !!progSel?.value;
-            const tabBulletins = document.querySelector('[data-eval-tab="bulletins"]')?.classList.contains('active');
-            document.querySelectorAll('[data-eval-step]').forEach((el) => {
-                const n = el.dataset.evalStep;
-                el.classList.remove('is-active', 'is-done');
-                if (n === '1') {
-                    el.classList.add(step1 ? 'is-done' : 'is-active');
-                } else if (n === '2') {
-                    if (step2) el.classList.add(tabBulletins ? 'is-done' : 'is-active');
-                    else if (step1) el.classList.add('is-active');
-                } else if (n === '3' && tabBulletins) {
-                    el.classList.add('is-active');
-                }
-            });
             majBannerPeriode();
         }
 
@@ -6195,7 +6188,7 @@ const EducRDC = (() => {
             const rows = data.results || data;
             sel.innerHTML = rows.length
                 ? rows.map((p) => {
-                    const lock = p.verrouillee ? ' — Verrouillée' : '';
+                    const lock = p.verrouillee ? ' — Clôturée' : '';
                     return `<option value="${p.id}" data-verrouillee="${p.verrouillee ? '1' : '0'}">${escapeHtml(p.libelle)}${lock}</option>`;
                 }).join('')
                 : '<option value="">— Aucune période —</option>';
@@ -6261,15 +6254,17 @@ const EducRDC = (() => {
             cacheGrille = data;
             periodeVerrouillee = !!data.verrouillee;
             const pLib = data.periode?.libelle || 'Période';
-            hint.textContent = periodeVerrouillee
-                ? `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · verrouillée`
+            hint.textContent = !peutSaisir
+                ? `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · consultation seule`
+                : periodeVerrouillee
+                ? `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · clôturée (consultation)`
                 : `${data.programme.matiere_nom} · ${pLib} · ${data.eleves.length} élève(s) · max ${data.maximum}`;
             thead.innerHTML = `<tr>
                 <th>Élève</th>
                 <th>Matricule</th>
                 <th>${escapeHtml(pLib)}<br><span class="form-hint">max ${escapeHtml(data.maximum || '')}</span></th>
             </tr>`;
-            const lockedAttr = periodeVerrouillee ? 'disabled' : '';
+            const lockedAttr = (periodeVerrouillee || !peutSaisir) ? 'disabled' : '';
             tbody.innerHTML = data.eleves.length ? data.eleves.map((el) => `
                 <tr data-eleve="${el.eleve_id}">
                     <td data-label="Élève"><strong>${escapeHtml(el.eleve_nom)}</strong></td>
@@ -6285,7 +6280,7 @@ const EducRDC = (() => {
                     </td>
                 </tr>
             `).join('') : emptyRow(3, 'Aucun élève', 'Aucun élève actif dans cette classe.');
-            if (btn) btn.disabled = !data.eleves.length || periodeVerrouillee;
+            if (btn) btn.disabled = !peutSaisir || !data.eleves.length || periodeVerrouillee;
             majResumeSession();
         }
 
@@ -6455,8 +6450,8 @@ const EducRDC = (() => {
             const opt = document.getElementById('selectPeriodeEval')?.selectedOptions?.[0];
             periodeVerrouillee = opt?.dataset?.verrouillee === '1';
             majResumeSession();
-            // Ouvrir la période = verrouiller les périodes antérieures
-            if (!periodeVerrouillee) {
+            // Ouvrir la période = verrouiller les périodes antérieures (titulaire uniquement)
+            if (peutSaisir && !periodeVerrouillee) {
                 await chargerPeriodes({ ouvrir: true });
             }
             await chargerGrille().catch((e) => toast(e.message, 'error'));
@@ -6470,12 +6465,13 @@ const EducRDC = (() => {
             const periode = document.getElementById('selectPeriodeEval')?.value;
             const classe = document.getElementById('selectClasseEval')?.value;
             if (!periode || !classe) return;
+            if (!confirm('Rouvrir cette période pour tous les cours (saisie à nouveau possible) ?')) return;
             try {
                 await api(`${API}/periodes-evaluation/${periode}/deverrouiller/`, {
                     method: 'POST',
                     body: JSON.stringify({ classe: Number(classe) }),
                 });
-                toast('Période déverrouillée.', 'success');
+                toast('Période rouverte.', 'success');
                 await chargerPeriodes({ ouvrir: false });
                 await chargerGrille();
             } catch (err) {
@@ -6483,12 +6479,48 @@ const EducRDC = (() => {
             }
         });
 
+        document.getElementById('btnCloturerPeriode')?.addEventListener('click', async () => {
+            const periode = document.getElementById('selectPeriodeEval')?.value;
+            const classe = document.getElementById('selectClasseEval')?.value;
+            const lab = selectedLabel(document.getElementById('selectPeriodeEval'))
+                .replace(/\s*[—-]\s*(Verrouillée|Clôturée)\s*$/i, '');
+            if (!periode || !classe) {
+                toast('Sélectionnez une classe et une période.', 'warning');
+                return;
+            }
+            if (periodeVerrouillee) {
+                toast('Cette période est déjà clôturée.', 'info');
+                return;
+            }
+            if (!confirm(
+                `Clôturer et valider « ${lab} » pour toute la classe ?\n\n`
+                + 'Cette action concerne TOUS les cours de la période (pas seulement la matière affichée).\n'
+                + 'Après validation, les notes de cette période seront en consultation uniquement.',
+            )) return;
+            try {
+                const res = await api(`${API}/periodes-evaluation/${periode}/cloturer/`, {
+                    method: 'POST',
+                    body: JSON.stringify({ classe: Number(classe) }),
+                });
+                toast(res.detail || 'Période clôturée pour tous les cours.', 'success');
+                periodeVerrouillee = true;
+                await chargerPeriodes({ ouvrir: false });
+                await chargerGrille().catch((e) => toast(e.message, 'error'));
+            } catch (err) {
+                toast(err.message, 'error');
+            }
+        });
+
         document.getElementById('btnEnregistrerNotes')?.addEventListener('click', async () => {
+            if (!peutSaisir) {
+                toast('La saisie des notes est réservée à l’enseignant titulaire.', 'warning');
+                return;
+            }
             const programme = document.getElementById('selectProgrammeEval')?.value;
             const periode = document.getElementById('selectPeriodeEval')?.value;
             if (!programme || !periode || !cacheGrille) return;
             if (periodeVerrouillee || cacheGrille.verrouillee) {
-                toast('Cette période est verrouillée.', 'error');
+                toast('Cette période est clôturée — consultation uniquement.', 'error');
                 return;
             }
             const notes = [];
@@ -8465,13 +8497,243 @@ const EducRDC = (() => {
             return user;
         }
 
+        function b64urlToBuf(value) {
+            if (!value) return new ArrayBuffer(0);
+            if (value instanceof ArrayBuffer) return value;
+            if (ArrayBuffer.isView(value)) return value.buffer;
+            const s = String(value).replace(/-/g, '+').replace(/_/g, '/');
+            const pad = '='.repeat((4 - (s.length % 4)) % 4);
+            const raw = atob(s + pad);
+            const out = new Uint8Array(raw.length);
+            for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+            return out.buffer;
+        }
+
+        function bufToB64url(buf) {
+            const bytes = new Uint8Array(buf);
+            let bin = '';
+            bytes.forEach((b) => { bin += String.fromCharCode(b); });
+            return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+        }
+
+        function preparePublicKey(options) {
+            if (!options || !options.challenge) {
+                throw new Error('Challenge biométrique manquant. Réessayez.');
+            }
+            const pk = { ...options };
+            pk.challenge = new Uint8Array(b64urlToBuf(pk.challenge));
+            if (pk.user && pk.user.id) {
+                pk.user = { ...pk.user, id: new Uint8Array(b64urlToBuf(pk.user.id)) };
+            }
+            if (Array.isArray(pk.allowCredentials)) {
+                pk.allowCredentials = pk.allowCredentials.map((c) => ({
+                    ...c,
+                    id: new Uint8Array(b64urlToBuf(c.id)),
+                }));
+            }
+            if (Array.isArray(pk.excludeCredentials)) {
+                pk.excludeCredentials = pk.excludeCredentials.map((c) => ({
+                    ...c,
+                    id: new Uint8Array(b64urlToBuf(c.id)),
+                }));
+            }
+            return pk;
+        }
+
+        function webauthnErreur(err) {
+            const name = err && err.name;
+            const msg = (err && err.message) ? String(err.message) : '';
+            if (name === 'SecurityError' || /operation is insecure/i.test(msg)) {
+                const host = window.location.hostname;
+                return (
+                    'Opération non sécurisée pour la biométrie. '
+                    + 'Ouvrez Educ_RDC via http://localhost'
+                    + (window.location.port ? `:${window.location.port}` : '')
+                    + ' ou https:// — pas via une IP / nom réseau'
+                    + (host && host !== 'localhost' && host !== '127.0.0.1' ? ` (actuel : ${host})` : '')
+                    + '.'
+                );
+            }
+            if (name === 'NotAllowedError') {
+                return 'Biométrie annulée ou indisponible sur cet appareil.';
+            }
+            if (name === 'InvalidStateError') {
+                return 'Cet appareil est déjà enregistré pour ce compte.';
+            }
+            return msg || 'Échec de l’enregistrement biométrique.';
+        }
+
+        function credentialToJSON(cred) {
+            const response = cred.response;
+            const json = {
+                id: cred.id,
+                rawId: bufToB64url(cred.rawId),
+                type: cred.type,
+                response: {},
+            };
+            if (response.clientDataJSON) {
+                json.response.clientDataJSON = bufToB64url(response.clientDataJSON);
+            }
+            if (response.attestationObject) {
+                json.response.attestationObject = bufToB64url(response.attestationObject);
+            }
+            if (response.authenticatorData) {
+                json.response.authenticatorData = bufToB64url(response.authenticatorData);
+            }
+            if (response.signature) {
+                json.response.signature = bufToB64url(response.signature);
+            }
+            if (response.userHandle) {
+                json.response.userHandle = bufToB64url(response.userHandle);
+            }
+            if (cred.getClientExtensionResults) {
+                json.clientExtensionResults = cred.getClientExtensionResults();
+            }
+            const transports = response.getTransports ? response.getTransports() : null;
+            if (transports) json.transports = transports;
+            return json;
+        }
+
+        function fmtDateBiometrie(iso) {
+            if (!iso) return '';
+            try {
+                return new Date(iso).toLocaleString('fr-FR', {
+                    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+                });
+            } catch (_) {
+                return iso;
+            }
+        }
+
+        async function chargerBiometrie() {
+            const list = document.getElementById('listeProfilBiometrie');
+            const hint = document.getElementById('hintProfilBiometrie');
+            const btnBio = document.getElementById('btnEnregistrerBiometrie');
+            const block = document.getElementById('profilBiometrieBlock');
+            if (!list) return;
+            try {
+                const data = await api('/api/auth/webauthn/status/');
+                const autorise = data.autorise === true;
+                if (block) block.hidden = false;
+                if (btnBio) {
+                    btnBio.disabled = !autorise;
+                    btnBio.hidden = !autorise;
+                }
+                list.innerHTML = '';
+                if (!autorise) {
+                    if (hint) {
+                        hint.hidden = false;
+                        hint.textContent = 'La connexion biométrique n’est pas autorisée pour votre compte. Contactez un administrateur.';
+                    }
+                    return;
+                }
+                (data.credentials || []).forEach((c) => {
+                    const li = document.createElement('li');
+                    li.className = 'profil-biometrie-item';
+                    const meta = document.createElement('div');
+                    meta.innerHTML = `<strong>${escapeHtml(c.nom_appareil || 'Appareil')}</strong>`
+                        + `<small>Enregistré le ${escapeHtml(fmtDateBiometrie(c.date_creation))}`
+                        + (c.date_dernier_usage
+                            ? ` · Dernier usage ${escapeHtml(fmtDateBiometrie(c.date_dernier_usage))}`
+                            : '')
+                        + `</small>`;
+                    const btnDel = document.createElement('button');
+                    btnDel.type = 'button';
+                    btnDel.className = 'btn btn-ghost btn-sm';
+                    btnDel.textContent = 'Retirer';
+                    btnDel.addEventListener('click', async () => {
+                        if (!window.confirm('Retirer cet appareil biométrique ?')) return;
+                        try {
+                            await api('/api/auth/webauthn/delete/', {
+                                method: 'POST',
+                                body: JSON.stringify({ id: c.id }),
+                            });
+                            toast('Biométrie retirée.', 'success');
+                            await chargerBiometrie();
+                        } catch (err) {
+                            toast(err.message || 'Suppression impossible.', 'error');
+                        }
+                    });
+                    li.appendChild(meta);
+                    li.appendChild(btnDel);
+                    list.appendChild(li);
+                });
+                if (hint) {
+                    hint.hidden = true;
+                    hint.textContent = '';
+                }
+            } catch (err) {
+                if (hint) {
+                    hint.hidden = false;
+                    hint.textContent = err.message || 'Impossible de charger la biométrie.';
+                }
+            }
+        }
+
         btn.addEventListener('click', async () => {
             try {
                 await chargerProfil();
                 document.getElementById('formProfilPassword')?.reset();
+                await chargerBiometrie();
                 openModal('modalProfil');
             } catch (err) {
                 toast(err.message || 'Impossible de charger le profil.', 'error');
+            }
+        });
+
+        document.getElementById('btnEnregistrerBiometrie')?.addEventListener('click', async () => {
+            const btnBio = document.getElementById('btnEnregistrerBiometrie');
+            const hint = document.getElementById('hintProfilBiometrie');
+            if (!window.PublicKeyCredential) {
+                toast('Biométrie non supportée par ce navigateur / appareil.', 'warning');
+                return;
+            }
+            if (!window.isSecureContext) {
+                toast(webauthnErreur({ name: 'SecurityError', message: 'The operation is insecure.' }), 'error');
+                return;
+            }
+            if (btnBio?.disabled) {
+                toast('La connexion biométrique n’est pas autorisée pour votre compte.', 'warning');
+                return;
+            }
+            btnBio.disabled = true;
+            if (hint) {
+                hint.hidden = false;
+                hint.textContent = 'Suivez l’invite de votre appareil…';
+            }
+            try {
+                const begin = await api('/api/auth/webauthn/register/begin/', {
+                    method: 'POST',
+                    body: JSON.stringify({}),
+                });
+                const credential = await navigator.credentials.create({
+                    publicKey: preparePublicKey(begin.options),
+                });
+                if (!credential) throw new Error('Enregistrement annulé.');
+                const payload = credentialToJSON(credential);
+                const nom = window.prompt(
+                    'Nom de cet appareil (ex. PC bureau, téléphone) :',
+                    'Cet appareil',
+                ) || 'Cet appareil';
+                await api('/api/auth/webauthn/register/complete/', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        credential: payload,
+                        nom_appareil: nom,
+                        transports: payload.transports || [],
+                    }),
+                });
+                toast('Biométrie activée sur cet appareil.', 'success');
+                await chargerBiometrie();
+            } catch (err) {
+                const msg = webauthnErreur(err);
+                toast(msg, 'error');
+                if (hint) {
+                    hint.hidden = false;
+                    hint.textContent = msg;
+                }
+            } finally {
+                btnBio.disabled = false;
             }
         });
 
