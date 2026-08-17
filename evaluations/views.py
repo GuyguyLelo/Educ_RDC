@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from ecoles.models import Classe
 from eleves.models import Eleve
 from .defaults import (
+    assurer_programme_classe,
     creer_periodes_pour_annee,
     matieres_queryset_pour_classe,
     synchroniser_matieres_ecole,
@@ -379,16 +380,18 @@ class MatiereViewSet(viewsets.ModelViewSet):
             if not user.classe_id:
                 return qs.none()
             classe_id = str(user.classe_id)
-        # scope=hierarchie (défaut si classe fournie) : classe + option (+ section)
+        # scope=hierarchie : cette classe + catalogue (sans les autres classes)
         scope = (self.request.query_params.get('scope') or '').lower()
-        use_hierarchie = scope in ('hierarchie', '1', 'true') or (
-            bool(classe_id) and scope not in ('exact', 'strict')
+        use_hierarchie = scope in ('hierarchie', '1', 'true')
+        use_strict = scope in ('exact', 'strict') or (
+            bool(classe_id) and scope not in ('hierarchie', '1', 'true')
         )
 
-        if classe_id and use_hierarchie:
+        if classe_id and (use_hierarchie or use_strict):
             classe = Classe.objects.select_related('section', 'option').filter(pk=classe_id).first()
             if classe:
-                qs = matieres_queryset_pour_classe(qs, classe, mode='liste')
+                mode = 'strict' if use_strict else 'programme'
+                qs = matieres_queryset_pour_classe(qs, classe, mode=mode)
             else:
                 qs = qs.none()
         else:
@@ -494,17 +497,43 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
         classe = self.request.query_params.get('classe')
         user = self.request.user
         if getattr(user, 'est_enseignant', False):
-            # Uniquement le programme de sa classe titulaire (section/option via la classe)
+            # Uniquement le programme de sa classe titulaire
             if not user.classe_id:
                 return qs.none()
-            qs = qs.filter(classe_id=user.classe_id)
+            classe = str(user.classe_id)
         elif user.role == 'admin_ecole' and user.ecole_id:
             qs = qs.filter(classe__ecole_id=user.ecole_id)
         if annee:
             qs = qs.filter(annee_id=annee)
-        if classe and not getattr(user, 'est_enseignant', False):
+        if classe:
             qs = qs.filter(classe_id=classe)
         return qs
+
+    def list(self, request, *args, **kwargs):
+        """Si le programme de la classe est vide, l'installer depuis le catalogue d'option."""
+        annee_id = request.query_params.get('annee')
+        classe_id = request.query_params.get('classe')
+        user = request.user
+        if getattr(user, 'est_enseignant', False):
+            classe_id = str(user.classe_id) if user.classe_id else None
+        if annee_id and classe_id:
+            classe = Classe.objects.select_related(
+                'ecole', 'option', 'section',
+            ).filter(pk=classe_id).first()
+            if classe and (
+                getattr(user, 'est_national', False)
+                or _peut_saisir_classe(user, classe)
+                or _peut_piloter_classe(user, classe)
+            ):
+                deja = ProgrammeClasse.objects.filter(
+                    annee_id=annee_id, classe_id=classe.id,
+                ).exists()
+                if not deja:
+                    try:
+                        assurer_programme_classe(int(annee_id), classe)
+                    except (TypeError, ValueError):
+                        pass
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         classe = serializer.validated_data['classe']
@@ -576,7 +605,7 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         classe = get_object_or_404(
-            Classe.objects.select_related('section', 'option'),
+            Classe.objects.select_related('section', 'option', 'ecole'),
             pk=classe_id,
         )
         if not (
@@ -585,40 +614,27 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Réservé à l\'administratif de l\'école.')
 
-        # Si aucune matière pour cette option/classe → l'admin école ne peut pas en créer
-        matieres = matieres_queryset_pour_classe(
-            Matiere.objects.filter(ecole_id=classe.ecole_id, active=True),
-            classe,
-        )
-        if not matieres.exists():
+        result = assurer_programme_classe(int(annee_id), classe)
+        if not result['matieres']:
             return Response(
                 {
                     'detail': (
-                        "Aucune matière n'est définie pour cette section / option. "
-                        "Demandez à l'administration nationale de configurer le catalogue."
+                        "Aucune matière n'a pu être créée pour cette classe. "
+                        "Vérifiez la section / option, puis rechargez le catalogue."
                     ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        created = 0
-        for m in matieres.order_by('ordre', 'nom'):
-            _, was = ProgrammeClasse.objects.get_or_create(
-                annee_id=annee_id,
-                classe=classe,
-                matiere=m,
-                defaults={'ordre': m.ordre, 'maximum': m.maximum},
-            )
-            if was:
-                created += 1
         opt = classe.option.nom if classe.option_id else ''
         sec = classe.section.nom if classe.section_id else ''
         scope = ' · '.join(p for p in (sec, opt, classe.nom) if p)
-        detail = f'{created} matière(s) programmée(s) pour {scope or "la classe"}.'
+        detail = (
+            f"{result['created']} matière(s) programmée(s) pour {scope or 'la classe'}."
+        )
         return Response({
             'detail': detail,
-            'created': created,
-            'matieres': matieres.count(),
+            'created': result['created'],
+            'matieres': result['matieres'],
         })
 
 

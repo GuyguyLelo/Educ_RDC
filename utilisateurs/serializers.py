@@ -4,6 +4,18 @@ from django.contrib.auth.password_validation import validate_password
 from .models import Utilisateur
 
 
+def _titulaire_existant(classe, instance=None):
+    if not classe:
+        return None
+    qs = Utilisateur.objects.filter(
+        role=Utilisateur.Role.ENSEIGNANT,
+        classe=classe,
+    )
+    if instance is not None and getattr(instance, 'pk', None):
+        qs = qs.exclude(pk=instance.pk)
+    return qs.select_related().first()
+
+
 def _valider_rattachement_scolaire(attrs, instance=None):
     role = attrs.get('role', getattr(instance, 'role', None))
     ecole = attrs.get('ecole', getattr(instance, 'ecole', None))
@@ -24,6 +36,15 @@ def _valider_rattachement_scolaire(attrs, instance=None):
         if not getattr(classe, 'section_id', None):
             raise serializers.ValidationError({
                 'classe': "La classe de l'enseignant doit être rattachée à une section (et option si applicable).",
+            })
+        autre = _titulaire_existant(classe, instance)
+        if autre:
+            nom = autre.get_full_name() or autre.username
+            raise serializers.ValidationError({
+                'classe': (
+                    f'Cette classe a déjà un titulaire ({nom}). '
+                    'Choisissez une autre classe.'
+                ),
             })
     return attrs
 
@@ -117,7 +138,15 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         if password:
             instance.set_password(password)
-        instance.save()
+        try:
+            instance.save()
+        except Exception as exc:
+            from django.db import IntegrityError
+            if isinstance(exc, IntegrityError):
+                raise serializers.ValidationError({
+                    'classe': 'Cette classe a déjà un titulaire. Choisissez une autre classe.',
+                })
+            raise
         return instance
 
 
@@ -246,7 +275,15 @@ class UtilisateurCreateSerializer(serializers.ModelSerializer):
                 validated_data['telephone'] = personnel.telephone
         user = Utilisateur(**validated_data)
         user.set_password(password)
-        user.save()
+        try:
+            user.save()
+        except Exception as exc:
+            from django.db import IntegrityError
+            if isinstance(exc, IntegrityError):
+                raise serializers.ValidationError({
+                    'classe': 'Cette classe a déjà un titulaire. Choisissez une autre classe.',
+                })
+            raise
         if personnel is not None:
             from ecoles.services_personnel import lier_personnel_a_utilisateur
             lier_personnel_a_utilisateur(personnel, user)

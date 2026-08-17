@@ -84,6 +84,13 @@ class Utilisateur(AbstractUser):
         verbose_name = 'Utilisateur'
         verbose_name_plural = 'Utilisateurs'
         ordering = ['username']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['classe'],
+                condition=models.Q(role='enseignant', classe__isnull=False),
+                name='uniq_enseignant_titulaire_par_classe',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.get_full_name() or self.username} ({self.get_role_display()})'

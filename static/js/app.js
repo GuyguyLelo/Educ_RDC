@@ -37,7 +37,7 @@ const EducRDC = (() => {
                 const text = Array.isArray(msgs) ? msgs.join(' ') : String(msgs);
                 if (field === 'non_field_errors') return text;
                 // Message déjà autonome (ex. unicité) : pas de préfixe technique
-                if (/existe déjà|obligatoire|postérieure/i.test(text)) return text;
+                if (/existe déjà|a déjà un titulaire|obligatoire|postérieure/i.test(text)) return text;
                 const label = labels[field] || field;
                 return label ? `${label} : ${text}` : text;
             });
@@ -1657,6 +1657,7 @@ const EducRDC = (() => {
         if (!selCla) return;
         const sectionId = selSec?.value || '';
         const optionId = selOpt?.value || '';
+        const currentUserId = document.getElementById('userEcoleId')?.value || '';
         selCla.innerHTML = '<option value="">— Sélectionner —</option>';
         if (!ecoleId || !sectionId) return;
         let url = `${API}/classes/?ecole=${ecoleId}&actif=1&section=${sectionId}&page_size=200&ordering=nom`;
@@ -1666,7 +1667,13 @@ const EducRDC = (() => {
             const rows = data.results || data;
             selCla.innerHTML = '<option value="">— Sélectionner —</option>' + rows.map((c) => {
                 const parts = [c.section_nom, c.option_nom, c.nom].filter(Boolean);
-                return `<option value="${c.id}" data-section="${c.section || ''}" data-option="${c.option || ''}">${escapeHtml(parts.join(' · '))}</option>`;
+                const libelle = parts.join(' · ');
+                const occupee = c.titulaire_id && String(c.titulaire_id) !== String(currentUserId);
+                const suffix = occupee
+                    ? ` — titulaire : ${c.titulaire_nom || 'déjà attribué'}`
+                    : '';
+                const disabled = occupee ? ' disabled' : '';
+                return `<option value="${c.id}" data-section="${c.section || ''}" data-option="${c.option || ''}"${disabled}>${escapeHtml(libelle + suffix)}</option>`;
             }).join('');
             if (selectedClasseId) selCla.value = String(selectedClasseId);
         } catch (err) {
@@ -6296,7 +6303,10 @@ const EducRDC = (() => {
                 return;
             }
             const data = await api(`${API}/programmes-classe/?annee=${annee}&classe=${classe}&page_size=200`);
-            const rows = data.results || data;
+            const rows = (data.results || data).filter((p) => {
+                if (p.classe == null) return true;
+                return String(p.classe) === String(classe);
+            });
             sel.innerHTML = rows.length
                 ? rows.map((p) => `<option value="${p.id}">${escapeHtml(p.matiere_nom)} (max ${p.maximum_effectif})</option>`).join('')
                 : `<option value="">— ${estEnseignant
@@ -6390,15 +6400,14 @@ const EducRDC = (() => {
             const hint = document.getElementById('hintMatieresEval');
             const meta = classeSessionMeta();
             if (!meta) {
-                if (hint) hint.textContent = 'Sélectionnez une classe — les matières de sa section / option s’affichent';
+                if (hint) hint.textContent = 'Sélectionnez une classe — les matières de cette classe s’affichent';
                 tbody.innerHTML = emptyRow(8, 'Classe requise', 'Choisissez une classe dans la barre de session.');
                 return;
             }
             if (hint) {
-                const scope = [meta.sectionNom, meta.optionNom].filter(Boolean).join(' · ') || meta.label;
-                hint.textContent = `Catalogue pour ${scope} — maximum = note d’une période TJ`;
+                hint.textContent = `Matières de ${meta.label} — maximum = note d’une période TJ`;
             }
-            let url = `${API}/matieres/?page_size=300&actif=1&scope=hierarchie&classe=${meta.id}`;
+            let url = `${API}/matieres/?page_size=300&actif=1&scope=exact&classe=${meta.id}`;
             if (meta.ecole) url += `&ecole=${meta.ecole}`;
             else if (ecoleId) url += `&ecole=${ecoleId}`;
             const data = await api(url);

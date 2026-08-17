@@ -103,6 +103,20 @@ class ProgrammeClasseSerializer(serializers.ModelSerializer):
             'maximum', 'maximum_effectif', 'ordre',
         ]
 
+    def validate(self, attrs):
+        classe = attrs.get('classe') or getattr(self.instance, 'classe', None)
+        matiere = attrs.get('matiere') or getattr(self.instance, 'matiere', None)
+        if classe and matiere:
+            if matiere.classe_id and matiere.classe_id != classe.id:
+                raise serializers.ValidationError({
+                    'matiere': 'Cette matière appartient à une autre classe.',
+                })
+            if matiere.ecole_id and classe.ecole_id and matiere.ecole_id != classe.ecole_id:
+                raise serializers.ValidationError({
+                    'matiere': "Cette matière n'appartient pas à l'école de la classe.",
+                })
+        return attrs
+
 
 class NoteSerializer(serializers.ModelSerializer):
     eleve_nom = serializers.CharField(source='eleve.nom_complet', read_only=True)

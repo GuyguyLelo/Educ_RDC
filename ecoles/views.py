@@ -6,6 +6,9 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from django.db.models import Prefetch
+
+from utilisateurs.models import Utilisateur
 from utilisateurs.permissions import LecturePourTousEcritureAdmin, GestionClassesEcole
 from .models import (
     ProvinceAdministrative,
@@ -694,7 +697,12 @@ class OptionScolaireViewSet(viewsets.ModelViewSet):
 class ClasseViewSet(viewsets.ModelViewSet):
     """Classes scolaires — créées par l'administratif de l'école."""
 
-    queryset = Classe.objects.select_related('ecole', 'section', 'option').all()
+    queryset = Classe.objects.select_related('ecole', 'section', 'option').prefetch_related(
+        Prefetch(
+            'enseignants',
+            queryset=Utilisateur.objects.filter(role=Utilisateur.Role.ENSEIGNANT),
+        ),
+    ).all()
     serializer_class = ClasseSerializer
     permission_classes = [IsAuthenticated, GestionClassesEcole]
     search_fields = ['nom', 'code', 'ecole__nom', 'ecole__code']

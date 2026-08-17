@@ -45,6 +45,68 @@ MATIERES_SECONDAIRE = [
     ('Couture artisanale', 'CART', '50', 30),
 ]
 
+# Humanités générales (hors métier technique) — fallback secondaire
+MATIERES_HUMANITES = [
+    ('Religion', 'REL', '10', 1),
+    ('Ed. civ. & morale', 'ECM', '10', 2),
+    ('Education à la Vie', 'EV', '10', 3),
+    ('Français', 'FR', '40', 10),
+    ('Anglais', 'ANG', '20', 11),
+    ('Mathématiques', 'MATH', '20', 12),
+    ('Histoire', 'HIST', '20', 13),
+    ('Géographie', 'GEO', '20', 14),
+    ('Sciences', 'SCI', '20', 15),
+    ('Informatique', 'INFO', '20', 16),
+    ('Education phys. & sportive', 'EPS', '20', 17),
+]
+
+# Section Littéraire · Latin-Philosophie (1ère–4ème humanités)
+MATIERES_LATIN_PHILO = [
+    ('Religion', 'REL', '10', 1),
+    ('Ed. civ. & morale', 'ECM', '10', 2),
+    ('Education à la Vie', 'EV', '10', 3),
+    ('Français', 'FR', '40', 10),
+    ('Latin', 'LAT', '40', 11),
+    ('Philosophie', 'PHILO', '20', 12),
+    ('Anglais', 'ANG', '20', 13),
+    ('Histoire', 'HIST', '20', 14),
+    ('Géographie', 'GEO', '20', 15),
+    ('Mathématiques', 'MATH', '20', 16),
+    ('Sciences', 'SCI', '20', 17),
+    ('Informatique', 'INFO', '20', 18),
+    ('Education phys. & sportive', 'EPS', '20', 19),
+]
+
+MATIERES_LATIN_GREC = [
+    ('Religion', 'REL', '10', 1),
+    ('Ed. civ. & morale', 'ECM', '10', 2),
+    ('Education à la Vie', 'EV', '10', 3),
+    ('Français', 'FR', '40', 10),
+    ('Latin', 'LAT', '40', 11),
+    ('Grec', 'GREC', '40', 12),
+    ('Anglais', 'ANG', '20', 13),
+    ('Histoire', 'HIST', '20', 14),
+    ('Géographie', 'GEO', '20', 15),
+    ('Mathématiques', 'MATH', '20', 16),
+    ('Sciences', 'SCI', '20', 17),
+    ('Informatique', 'INFO', '20', 18),
+    ('Education phys. & sportive', 'EPS', '20', 19),
+]
+
+_CATALOGUE_PAR_CODE_OPTION = {
+    'COUPE': MATIERES_SECONDAIRE,
+    'LP': MATIERES_LATIN_PHILO,
+    'LG': MATIERES_LATIN_GREC,
+}
+
+_CATALOGUE_PAR_NOM_OPTION = {
+    'coupe et couture': MATIERES_SECONDAIRE,
+    'latin-philosophie': MATIERES_LATIN_PHILO,
+    'latin philosophie': MATIERES_LATIN_PHILO,
+    'latin-grec': MATIERES_LATIN_GREC,
+    'latin grec': MATIERES_LATIN_GREC,
+}
+
 MATIERES_PRIMAIRE = [
     ('Langue congolaise', 'LC', '10', 1),
     ('Français', 'FR', '20', 2),
@@ -92,32 +154,46 @@ def creer_periodes_pour_annee(annee: AnneeScolaire) -> int:
     return created
 
 
-def matieres_catalogue(regime: str):
+def matieres_catalogue(regime: str, option=None):
+    """Catalogue de branches selon le régime et l'option (pas Coupe par défaut)."""
     if regime == AnneeScolaire.Regime.PRIMAIRE:
         return MATIERES_PRIMAIRE
-    return MATIERES_SECONDAIRE
+    if option is not None:
+        code = (getattr(option, 'code', None) or '').strip().upper().replace(' ', '-')
+        if code and code in _CATALOGUE_PAR_CODE_OPTION:
+            return _CATALOGUE_PAR_CODE_OPTION[code]
+        nom = (getattr(option, 'nom', None) or '').strip().lower()
+        nom = nom.replace('—', '-').replace('–', '-').replace('_', '-')
+        if nom in _CATALOGUE_PAR_NOM_OPTION:
+            return _CATALOGUE_PAR_NOM_OPTION[nom]
+        if 'latin' in nom and 'philo' in nom:
+            return MATIERES_LATIN_PHILO
+        if 'latin' in nom and 'grec' in nom:
+            return MATIERES_LATIN_GREC
+        if 'coupe' in nom and 'couture' in nom:
+            return MATIERES_SECONDAIRE
+    return MATIERES_HUMANITES
 
 
 def matieres_queryset_pour_classe(qs, classe, *, mode='programme'):
     """
     Filtre les matières pertinentes pour une classe.
 
-    mode='programme' : classe exacte + catalogue option/section (classe non précisée)
-    mode='liste'     : idem + toutes les matières de la même option (ou section)
+    mode='strict'    : uniquement les matières rattachées à cette classe
+    mode='programme' : cette classe + catalogue option/section (classe non précisée)
+    mode='liste'     : identique à programme (jamais les matières d’une autre classe)
     """
     from django.db.models import Q
 
     if not classe:
         return qs.none()
+    if mode == 'strict':
+        return qs.filter(classe_id=classe.id)
     q = Q(classe_id=classe.id)
     if classe.option_id:
         q |= Q(option_id=classe.option_id, classe__isnull=True)
-        if mode == 'liste':
-            q |= Q(option_id=classe.option_id)
     elif classe.section_id:
         q |= Q(section_id=classe.section_id, option__isnull=True, classe__isnull=True)
-        if mode == 'liste':
-            q |= Q(section_id=classe.section_id)
     return qs.filter(q).distinct()
 
 
@@ -226,7 +302,7 @@ def synchroniser_matieres_ecole(
 
     created = 0
     updated = 0
-    for nom, code, maximum, ordre in matieres_catalogue(regime):
+    for nom, code, maximum, ordre in matieres_catalogue(regime, option=option):
         obj, was_created = Matiere.objects.get_or_create(
             ecole_id=ecole_id,
             nom=nom,
@@ -264,3 +340,75 @@ def synchroniser_matieres_ecole(
         'option_id': option.id if option else None,
         'classe_id': classe.id if classe else None,
     }
+
+
+def _regime_pour_classe(classe, annee_id=None):
+    if annee_id:
+        annee = AnneeScolaire.objects.filter(pk=annee_id).first()
+        if annee and annee.regime:
+            return annee.regime
+    from ecoles.models import Ecole
+    ecole = getattr(classe, 'ecole', None)
+    if ecole and getattr(ecole, 'niveau', None) == Ecole.Niveau.PRIMAIRE:
+        return AnneeScolaire.Regime.PRIMAIRE
+    return AnneeScolaire.Regime.SECONDAIRE
+
+
+def assurer_programme_classe(annee_id, classe) -> dict:
+    """
+    Garantit un programme de notes pour la classe / année :
+    rattache les matières existantes, sinon copie le catalogue d'option,
+    sinon installe le catalogue officiel de cette option sur la classe.
+    """
+    from .models import Matiere, ProgrammeClasse
+
+    if not annee_id or not classe:
+        return {'created': 0, 'matieres': 0}
+
+    ecole_id = classe.ecole_id
+    regime = _regime_pour_classe(classe, annee_id)
+
+    matieres = Matiere.objects.filter(
+        ecole_id=ecole_id, active=True, classe_id=classe.id,
+    )
+    if not matieres.exists():
+        sources = matieres_queryset_pour_classe(
+            Matiere.objects.filter(ecole_id=ecole_id, active=True),
+            classe,
+            mode='programme',
+        )
+        ids = []
+        for src in sources.order_by('ordre', 'nom'):
+            obj, _ = Matiere.objects.get_or_create(
+                ecole_id=ecole_id,
+                nom=src.nom,
+                section_id=classe.section_id,
+                option_id=classe.option_id,
+                classe=classe,
+                defaults={
+                    'code': src.code,
+                    'maximum': src.maximum,
+                    'ordre': src.ordre,
+                    'active': True,
+                },
+            )
+            ids.append(obj.id)
+        matieres = Matiere.objects.filter(pk__in=ids) if ids else matieres
+
+    if not matieres.exists():
+        synchroniser_matieres_ecole(ecole_id, regime, classe_id=classe.id)
+        matieres = Matiere.objects.filter(
+            ecole_id=ecole_id, active=True, classe_id=classe.id,
+        )
+
+    created = 0
+    for m in matieres.order_by('ordre', 'nom'):
+        _, was = ProgrammeClasse.objects.get_or_create(
+            annee_id=annee_id,
+            classe=classe,
+            matiere=m,
+            defaults={'ordre': m.ordre, 'maximum': m.maximum},
+        )
+        if was:
+            created += 1
+    return {'created': created, 'matieres': matieres.count()}

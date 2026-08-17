@@ -303,15 +303,29 @@ class ClasseSerializer(serializers.ModelSerializer):
     section_nom = serializers.SerializerMethodField()
     option_nom = serializers.SerializerMethodField()
     nb_eleves = serializers.SerializerMethodField()
+    titulaire_id = serializers.SerializerMethodField()
+    titulaire_nom = serializers.SerializerMethodField()
 
     class Meta:
         model = Classe
         fields = [
             'id', 'ecole', 'ecole_nom', 'ecole_code',
             'section', 'section_nom', 'option', 'option_nom',
-            'nom', 'code', 'active', 'nb_eleves', 'date_creation',
+            'nom', 'code', 'active', 'nb_eleves',
+            'titulaire_id', 'titulaire_nom',
+            'date_creation',
         ]
-        read_only_fields = ['date_creation']
+        read_only_fields = ['date_creation', 'titulaire_id', 'titulaire_nom']
+
+    def _titulaire(self, obj):
+        ens = getattr(obj, 'enseignants', None)
+        if ens is None:
+            return None
+        titulaires = list(ens.all()) if hasattr(ens, 'all') else []
+        for u in titulaires:
+            if getattr(u, 'role', None) == 'enseignant':
+                return u
+        return None
 
     def get_section_nom(self, obj):
         return obj.section.nom if obj.section_id else ''
@@ -321,6 +335,17 @@ class ClasseSerializer(serializers.ModelSerializer):
 
     def get_nb_eleves(self, obj):
         return obj.eleves.filter(actif=True).count()
+
+    def get_titulaire_id(self, obj):
+        t = self._titulaire(obj)
+        return t.id if t else None
+
+    def get_titulaire_nom(self, obj):
+        t = self._titulaire(obj)
+        if not t:
+            return None
+        nom = ' '.join(p for p in [t.first_name, t.last_name] if p).strip()
+        return nom or t.username
 
     def validate(self, attrs):
         ecole = attrs.get('ecole') or getattr(self.instance, 'ecole', None)
