@@ -102,7 +102,7 @@ TIME_ZONE = 'Africa/Kinshasa'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = '/educ/static/'
+STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
@@ -149,6 +149,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000',
     'http://localhost:8002',
     'http://127.0.0.1:8002',
+    'http://educrdc.eits.cd'
 ]
 
 # WebAuthn / connexion biométrique (empreinte, Face ID, Windows Hello)
