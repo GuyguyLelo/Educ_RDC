@@ -1808,8 +1808,10 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     color: var(--ink-soft);
 }
 
-.filters-row > .filter-field,
-.filters-row > select.filter-field {
+.filters-row > .filter-field[hidden],
+.filters-row > select.filter-field[hidden] {
+    display: none !important;
+}
     width: auto;
     flex: 0 1 138px;
     min-width: 118px;

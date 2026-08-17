@@ -804,6 +804,40 @@ const EducRDC = (() => {
     let cacheEcolesPE = [];
     let cacheEcolesAntennes = [];
 
+    function perimetreFiltresEcoles() {
+        const root = document.getElementById('ecolesApp');
+        return {
+            role: root?.dataset.role || '',
+            pa: root?.dataset.paId || '',
+            pe: root?.dataset.peId || '',
+            antenne: root?.dataset.antenneId || '',
+        };
+    }
+
+    function figerSelectFiltre(el, value) {
+        if (!el) return;
+        if (value) el.value = String(value);
+        el.disabled = true;
+        el.hidden = true;
+    }
+
+    function appliquerPerimetreFiltresEcoles() {
+        const p = perimetreFiltresEcoles();
+        const fPA = document.getElementById('filtreEcolePA');
+        const fPE = document.getElementById('filtreEcolePE');
+        const fAnt = document.getElementById('filtreEcoleAntenne');
+        if (p.role === 'agent_province_admin') {
+            figerSelectFiltre(fPA, p.pa);
+        } else if (p.role === 'agent_provincial') {
+            figerSelectFiltre(fPA, p.pa);
+            figerSelectFiltre(fPE, p.pe);
+        } else if (p.role === 'agent_antenne') {
+            figerSelectFiltre(fPA, p.pa);
+            figerSelectFiltre(fPE, p.pe);
+            figerSelectFiltre(fAnt, p.antenne);
+        }
+    }
+
     async function chargerHierarchieEcole() {
         const [pas, pes, antennes] = await Promise.all([
             api(`${API}/provinces-administratives/?page_size=200`),
@@ -816,16 +850,22 @@ const EducRDC = (() => {
 
         // Filtres liste
         const fPA = document.getElementById('filtreEcolePA');
-        const fPE = document.getElementById('filtreEcolePE');
-        const fAnt = document.getElementById('filtreEcoleAntenne');
-        if (fPA) {
+        const p = perimetreFiltresEcoles();
+        if (fPA && !fPA.hidden) {
             const cur = fPA.value;
             fPA.innerHTML = `<option value="">Toutes les prov. admin.</option>` +
-                cacheEcolesPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+                cacheEcolesPA.map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('');
             if (cur) fPA.value = cur;
+        } else if (fPA && p.pa) {
+            fPA.innerHTML = cacheEcolesPA
+                .filter((x) => String(x.id) === String(p.pa))
+                .map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('')
+                || `<option value="${escapeHtml(p.pa)}"></option>`;
+            fPA.value = p.pa;
         }
         syncFiltresEcolesPE();
         syncFiltresEcolesAntenne();
+        appliquerPerimetreFiltresEcoles();
 
         // Formulaire modal création
         const selPA = document.getElementById('selectProvinceAdmin');
@@ -833,12 +873,12 @@ const EducRDC = (() => {
         const selA = document.getElementById('selectAntenne');
         if (!selPA || !selPE || !selA) return;
 
-        selPA.innerHTML = cacheEcolesPA.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+        selPA.innerHTML = cacheEcolesPA.map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('');
 
         const fillPE = () => {
             const paId = selPA.value;
-            const filtered = cacheEcolesPE.filter((p) => String(p.province_administrative) === String(paId));
-            selPE.innerHTML = filtered.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
+            const filtered = cacheEcolesPE.filter((x) => String(x.province_administrative) === String(paId));
+            selPE.innerHTML = filtered.map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('');
             fillAntennes();
         };
         const fillAntennes = () => {
@@ -856,14 +896,24 @@ const EducRDC = (() => {
         const fPA = document.getElementById('filtreEcolePA');
         const fPE = document.getElementById('filtreEcolePE');
         if (!fPE) return;
-        const paId = fPA?.value || '';
-        const cur = fPE.value;
-        const list = paId
-            ? cacheEcolesPE.filter((p) => String(p.province_administrative) === String(paId))
+        const p = perimetreFiltresEcoles();
+        const paId = fPA?.value || p.pa || '';
+        const cur = fPE.value || p.pe || '';
+        let list = paId
+            ? cacheEcolesPE.filter((x) => String(x.province_administrative) === String(paId))
             : cacheEcolesPE;
-        fPE.innerHTML = `<option value="">Toutes les prov. éduc.</option>` +
-            list.map((p) => `<option value="${p.id}">${escapeHtml(p.nom)}</option>`).join('');
-        if (cur && list.some((p) => String(p.id) === String(cur))) fPE.value = cur;
+        if (p.pe) {
+            list = list.filter((x) => String(x.id) === String(p.pe));
+        }
+        if (fPE.hidden || fPE.disabled) {
+            fPE.innerHTML = list.map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('')
+                || (p.pe ? `<option value="${escapeHtml(p.pe)}"></option>` : `<option value="">Toutes les prov. éduc.</option>`);
+            if (p.pe) fPE.value = p.pe;
+        } else {
+            fPE.innerHTML = `<option value="">Toutes les prov. éduc.</option>` +
+                list.map((x) => `<option value="${x.id}">${escapeHtml(x.nom)}</option>`).join('');
+            if (cur && list.some((x) => String(x.id) === String(cur))) fPE.value = cur;
+        }
         syncFiltresEcolesAntenne();
     }
 
@@ -872,19 +922,28 @@ const EducRDC = (() => {
         const fPA = document.getElementById('filtreEcolePA');
         const fAnt = document.getElementById('filtreEcoleAntenne');
         if (!fAnt) return;
-        const peId = fPE?.value || '';
-        const paId = fPA?.value || '';
-        const cur = fAnt.value;
+        const p = perimetreFiltresEcoles();
+        const peId = fPE?.value || p.pe || '';
+        const paId = fPA?.value || p.pa || '';
+        const cur = fAnt.value || p.antenne || '';
         let list = cacheEcolesAntennes;
-        if (peId) {
+        if (p.antenne) {
+            list = list.filter((a) => String(a.id) === String(p.antenne));
+        } else if (peId) {
             list = list.filter((a) => String(a.province_educationnelle) === String(peId));
         } else if (paId) {
             const peIds = new Set(
                 cacheEcolesPE
-                    .filter((p) => String(p.province_administrative) === String(paId))
-                    .map((p) => String(p.id)),
+                    .filter((x) => String(x.province_administrative) === String(paId))
+                    .map((x) => String(x.id)),
             );
             list = list.filter((a) => peIds.has(String(a.province_educationnelle)));
+        }
+        if (fAnt.hidden || fAnt.disabled) {
+            fAnt.innerHTML = list.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)}</option>`).join('')
+                || (p.antenne ? `<option value="${escapeHtml(p.antenne)}"></option>` : `<option value="">Toutes les antennes</option>`);
+            if (p.antenne) fAnt.value = p.antenne;
+            return;
         }
         fAnt.innerHTML = `<option value="">Toutes les antennes</option>` +
             list.map((a) => `<option value="${a.id}">${escapeHtml(a.nom)}</option>`).join('');
@@ -990,12 +1049,27 @@ const EducRDC = (() => {
         document.getElementById('btnResetFiltresEcoles')?.addEventListener('click', () => {
             const search = document.getElementById('searchEcoles');
             if (search) search.value = '';
+            const p = perimetreFiltresEcoles();
             ['filtreEcolePA', 'filtreEcolePE', 'filtreEcoleAntenne', 'filtreEcoleType', 'filtreEcoleNiveau']
                 .forEach((id) => {
                     const el = document.getElementById(id);
-                    if (el) el.value = '';
+                    if (!el || el.disabled) return;
+                    el.value = '';
                 });
+            if (p.role === 'agent_province_admin' && p.pa) {
+                const fPA = document.getElementById('filtreEcolePA');
+                if (fPA) fPA.value = p.pa;
+            }
+            if ((p.role === 'agent_provincial' || p.role === 'agent_antenne') && p.pe) {
+                const fPE = document.getElementById('filtreEcolePE');
+                if (fPE) fPE.value = p.pe;
+            }
+            if (p.role === 'agent_antenne' && p.antenne) {
+                const fAnt = document.getElementById('filtreEcoleAntenne');
+                if (fAnt) fAnt.value = p.antenne;
+            }
             syncFiltresEcolesPE();
+            appliquerPerimetreFiltresEcoles();
             chargerEcoles(1).catch((e) => toast(e.message, 'error'));
         });
 

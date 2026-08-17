@@ -82,12 +82,48 @@ class ArreteViewSet(viewsets.ModelViewSet):
         return qs
 
 
+def _restreindre_hierarchie(qs, user, *, niveau):
+    """Limite PA / PE / antennes au périmètre de l’agent territorial."""
+    if user.role == 'agent_province_admin' and user.province_administrative_id:
+        if niveau == 'pa':
+            return qs.filter(id=user.province_administrative_id)
+        if niveau == 'pe':
+            return qs.filter(province_administrative_id=user.province_administrative_id)
+        return qs.filter(
+            province_educationnelle__province_administrative_id=user.province_administrative_id,
+        )
+    if user.role == 'agent_provincial' and user.province_educationnelle_id:
+        if niveau == 'pa':
+            pe = getattr(user, 'province_educationnelle', None)
+            pa_id = getattr(pe, 'province_administrative_id', None)
+            return qs.filter(id=pa_id) if pa_id else qs.none()
+        if niveau == 'pe':
+            return qs.filter(id=user.province_educationnelle_id)
+        return qs.filter(province_educationnelle_id=user.province_educationnelle_id)
+    if user.role == 'agent_antenne':
+        if not user.antenne_id:
+            return qs.none()
+        antenne = getattr(user, 'antenne', None)
+        if niveau == 'pa':
+            pe = getattr(antenne, 'province_educationnelle', None)
+            pa_id = getattr(pe, 'province_administrative_id', None)
+            return qs.filter(id=pa_id) if pa_id else qs.none()
+        if niveau == 'pe':
+            pe_id = getattr(antenne, 'province_educationnelle_id', None)
+            return qs.filter(id=pe_id) if pe_id else qs.none()
+        return qs.filter(id=user.antenne_id)
+    return qs
+
+
 class ProvinceAdministrativeViewSet(viewsets.ModelViewSet):
     queryset = ProvinceAdministrative.objects.all()
     serializer_class = ProvinceAdministrativeSerializer
     permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
     search_fields = ['nom', 'code']
     ordering_fields = ['nom', 'code']
+
+    def get_queryset(self):
+        return _restreindre_hierarchie(super().get_queryset(), self.request.user, niveau='pa')
 
 
 class ProvinceEducationnelleViewSet(viewsets.ModelViewSet):
@@ -98,7 +134,7 @@ class ProvinceEducationnelleViewSet(viewsets.ModelViewSet):
     ordering_fields = ['nom', 'code']
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = _restreindre_hierarchie(super().get_queryset(), self.request.user, niveau='pe')
         pa = self.request.query_params.get('province_administrative')
         if pa:
             qs = qs.filter(province_administrative_id=pa)
@@ -116,7 +152,7 @@ class AntenneViewSet(viewsets.ModelViewSet):
     ordering_fields = ['nom']
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = _restreindre_hierarchie(super().get_queryset(), self.request.user, niveau='antenne')
         pe = self.request.query_params.get('province_educationnelle')
         pa = self.request.query_params.get('province_administrative')
         # Alias historique
@@ -203,8 +239,11 @@ class EcoleViewSet(viewsets.ModelViewSet):
             )
         elif user.role == 'agent_provincial' and user.province_educationnelle_id:
             qs = qs.filter(province_educationnelle_id=user.province_educationnelle_id)
-        elif user.role == 'agent_antenne' and user.antenne_id:
-            qs = qs.filter(antenne_id=user.antenne_id)
+        elif user.role == 'agent_antenne':
+            if user.antenne_id:
+                qs = qs.filter(antenne_id=user.antenne_id)
+            else:
+                qs = qs.none()
         elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
             qs = qs.filter(id=user.ecole_id)
         return qs

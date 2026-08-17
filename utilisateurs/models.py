@@ -102,6 +102,20 @@ class Utilisateur(AbstractUser):
             # Les agents ministériels ne sont pas rattachés à une école
             self.ecole = None
 
+        # Agent antenne : rattacher PE / PA depuis l’antenne
+        if self.role == self.Role.AGENT_ANTENNE and self.antenne_id:
+            antenne = self.antenne
+            if antenne is not None:
+                self.province_educationnelle_id = antenne.province_educationnelle_id
+                pe = antenne.province_educationnelle
+                if pe is not None:
+                    self.province_administrative_id = pe.province_administrative_id
+        elif self.role == self.Role.AGENT_PROVINCIAL and self.province_educationnelle_id:
+            pe = self.province_educationnelle
+            if pe is not None:
+                self.province_administrative_id = pe.province_administrative_id
+                self.antenne = None
+
         # Agent PA : chef des PE — rattachement PA uniquement
         if self.role == self.Role.AGENT_PROVINCE_ADMIN:
             self.province_educationnelle = None

@@ -6,20 +6,31 @@
 {% block page_subtitle %}Identification et suivi des établissements scolaires{% endblock %}
 
 {% block content %}
-<div class="list-shell">
+<div class="list-shell" id="ecolesApp"
+     data-role="{{ request.user.role }}"
+     data-pa-id="{% if request.user.province_administrative_id %}{{ request.user.province_administrative_id }}{% endif %}"
+     data-pe-id="{% if request.user.province_educationnelle_id %}{{ request.user.province_educationnelle_id }}{% endif %}"
+     data-antenne-id="{% if request.user.antenne_id %}{{ request.user.antenne_id }}{% endif %}">
     <section class="toolbar">
         <div class="search-box filters-row">
             <div class="search-field">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
                 <input type="search" id="searchEcoles" placeholder="Rechercher par nom, code, n° agrément, directeur…">
             </div>
-            <select id="filtreEcolePA" class="filter-field" aria-label="Province administrative">
+            {% if request.user.role == 'agent_province_admin' and request.user.province_administrative %}
+            <span class="badge badge-info" title="Périmètre figé">{{ request.user.province_administrative.nom }}</span>
+            {% elif request.user.role == 'agent_provincial' and request.user.province_educationnelle %}
+            <span class="badge badge-info" title="Périmètre figé">{{ request.user.province_educationnelle.nom }}</span>
+            {% elif request.user.role == 'agent_antenne' and request.user.antenne %}
+            <span class="badge badge-info" title="Périmètre figé">{{ request.user.antenne.nom }}</span>
+            {% endif %}
+            <select id="filtreEcolePA" class="filter-field" aria-label="Province administrative"{% if request.user.role == 'agent_province_admin' or request.user.role == 'agent_provincial' or request.user.role == 'agent_antenne' %} hidden disabled{% endif %}>
                 <option value="">Toutes les prov. admin.</option>
             </select>
-            <select id="filtreEcolePE" class="filter-field" aria-label="Province éducationnelle">
+            <select id="filtreEcolePE" class="filter-field" aria-label="Province éducationnelle"{% if request.user.role == 'agent_provincial' or request.user.role == 'agent_antenne' %} hidden disabled{% endif %}>
                 <option value="">Toutes les prov. éduc.</option>
             </select>
-            <select id="filtreEcoleAntenne" class="filter-field" aria-label="Antenne">
+            <select id="filtreEcoleAntenne" class="filter-field" aria-label="Antenne"{% if request.user.role == 'agent_antenne' %} hidden disabled{% endif %}>
                 <option value="">Toutes les antennes</option>
             </select>
             <select id="filtreEcoleType" class="filter-field" aria-label="Type d'école">
@@ -75,7 +86,7 @@
             </table>
         </div>
         <div class="list-footer">
-            <span class="list-footer-info">Filtres : province, antenne, type, niveau</span>
+            <span class="list-footer-info" id="ecolesFiltresInfo">{% if request.user.role == 'agent_provincial' %}Filtres : antenne, type, niveau{% elif request.user.role == 'agent_antenne' %}Filtres : type, niveau{% elif request.user.role == 'agent_province_admin' %}Filtres : province éduc., antenne, type, niveau{% else %}Filtres : province, antenne, type, niveau{% endif %}</span>
             <div class="pagination" id="paginationEcoles"></div>
         </div>
     </section>
