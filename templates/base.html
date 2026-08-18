@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260817a">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20260818c">
     {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -284,7 +284,22 @@
         </div>
     </div>
 
-    <script src="{% static 'js/app.js' %}?v=20260817d"></script>
+    <div class="onglet-inactif-overlay" id="overlayOngletInactif" hidden>
+        <div class="onglet-inactif-card" role="dialog" aria-labelledby="titreOngletInactif" aria-modal="true">
+            <h2 id="titreOngletInactif">Page inactive</h2>
+            <p>
+                Educ_RDC n’autorise qu’<strong>une seule page active</strong>.
+                Cette fenêtre est en pause parce qu’une autre est déjà ouverte.
+            </p>
+            <div class="onglet-inactif-actions">
+                <button type="button" class="btn btn-primary" id="btnActiverOnglet">Activer cette page</button>
+                <a href="{% url 'logout' %}" class="btn btn-ghost">Déconnexion</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="{% static 'js/onglet-unique.js' %}?v=20260818a"></script>
+    <script src="{% static 'js/app.js' %}?v=20260818d"></script>
 
 
 

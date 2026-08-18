@@ -73,6 +73,9 @@ const EducRDC = (() => {
     }
 
     async function api(url, options = {}) {
+        if (window.__educOngletActif === false) {
+            throw new Error('Cette page n’est plus active. Utilisez l’autre fenêtre Educ_RDC, ou cliquez sur « Activer cette page ».');
+        }
         const headers = { ...(options.headers || {}) };
         const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
         if (isFormData) {
@@ -5298,6 +5301,9 @@ const EducRDC = (() => {
     /* ---------- Monitoring utilisateurs connectés (admin) ---------- */
     let cacheMonitoringSessions = [];
     let monitoringTimer = null;
+    let historiqueMonitoringUserId = null;
+    let historiqueMonitoringPage = 1;
+    let historiqueMonitoringTimer = null;
 
     function formatDateTimeFr(value) {
         if (!value) return '—';
@@ -5337,8 +5343,8 @@ const EducRDC = (() => {
                 ? '<span class="badge badge-neutral">IP</span>'
                 : (source === 'local' ? '<span class="badge badge-warning">Local</span>' : ''));
         let maps = '';
-        if (lat != null && lon != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lon))) {
-            maps = ` <a class="btn btn-ghost btn-sm" href="/monitoring/utilisateurs-connectes/carte/" title="Voir sur la carte interne">Carte</a>`;
+        if (lat != null && lon != null && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lon)) && s.en_ligne) {
+            maps = ` <a class="btn btn-ghost btn-sm" href="/monitoring/utilisateurs-connectes/carte/" title="Voir les utilisateurs en ligne">Carte</a>`;
         }
         return `<div class="entity-meta">
             <strong title="${escapeHtml(label)}">${escapeHtml(label)}</strong>
@@ -5358,9 +5364,11 @@ const EducRDC = (() => {
             const moi = s.est_session_courante
                 ? ' <span class="badge badge-info">Vous</span>'
                 : '';
-            const actions = s.est_session_courante
-                ? '<span class="muted">—</span>'
+            const kick = s.est_session_courante
+                ? ''
                 : `<button type="button" class="btn btn-danger btn-sm" data-kick-session="${escapeHtml(s.session_key)}">${ico('trash')}Déconnecter</button>`;
+            const histo = `<button type="button" class="btn btn-ghost btn-sm" data-historique-user="${s.user_id}">${ico('history')}Historique</button>`;
+            const actions = `<div class="actions-inline">${histo}${kick || '<span class="muted">—</span>'}</div>`;
             return `
             <tr>
                 <td data-label="Utilisateur">
@@ -5376,7 +5384,7 @@ const EducRDC = (() => {
                 <td data-label="Activité">${escapeHtml(formatDateTimeFr(s.presence_at || s.last_login))}</td>
                 <td data-label="Expiration">${escapeHtml(formatDateTimeFr(s.expire_date))}</td>
                 <td data-label="Statut">${statut}</td>
-                <td data-label="Actions"><div class="actions-inline">${actions}</div></td>
+                <td data-label="Actions">${actions}</td>
             </tr>`;
         }).join('') : emptyRow(
             9,
@@ -5399,11 +5407,99 @@ const EducRDC = (() => {
         if (elL) elL.textContent = String(resume.en_ligne ?? '—');
         if (elM) elM.textContent = formatDateTimeFr(new Date().toISOString());
         if (elR) {
-            const parts = Object.entries(resume.par_role || {}).map(([k, v]) => `${k} : ${v}`);
-            elR.textContent = parts.length ? `Répartition : ${parts.join(' · ')}` : '';
+            const parts = Object.entries(resume.par_role || {}).map(([k, v]) => {
+                const sess = (resume.par_role_sessions || {})[k];
+                const extra = (sess && sess > v) ? ` (${sess} sessions)` : '';
+                return `${k} : ${v}${extra}`;
+            });
+            elR.textContent = parts.length
+                ? `Répartition (utilisateurs) : ${parts.join(' · ')}`
+                : '';
         }
         renderMonitoringSessions();
         await chargerAccesExterieur().catch(() => {});
+    }
+
+    function badgeActionHistorique(action) {
+        const a = String(action || '').toLowerCase();
+        if (a.includes('refus') || a.includes('révoqu')) return 'badge-danger';
+        if (a.includes('forcée') || a.includes('hors rdc')) return 'badge-warning';
+        if (a.includes('déconnexion')) return 'badge-neutral';
+        if (a.includes('connexion')) return 'badge-success';
+        return 'badge-info';
+    }
+
+    function renderHistoriqueMonitoring(data) {
+        const tbody = document.querySelector('#tableHistoriqueMonitoring tbody');
+        const titre = document.getElementById('titreHistoriqueMonitoring');
+        const sous = document.getElementById('sousTitreHistoriqueMonitoring');
+        const lien = document.getElementById('lienFicheHistoriqueMonitoring');
+        const u = data.utilisateur || {};
+        if (titre) titre.textContent = u.nom_complet || u.username || 'Historique';
+        if (sous) {
+            const parts = [u.username, u.role_display, u.rattachement].filter(Boolean);
+            sous.textContent = parts.length
+                ? `${parts.join(' · ')} — ${data.count || 0} événement(s)`
+                : 'Connexions et actions enregistrées';
+        }
+        if (lien && u.id) {
+            lien.href = `/utilisateurs/${u.id}/`;
+            lien.hidden = false;
+        } else if (lien) {
+            lien.hidden = true;
+        }
+        if (!tbody) return;
+        const rows = data.results || [];
+        tbody.innerHTML = rows.length ? rows.map((r) => `
+            <tr>
+                <td data-label="Date">${escapeHtml(formatDateTimeFr(r.date_action))}</td>
+                <td data-label="Action"><span class="badge ${badgeActionHistorique(r.action)}">${escapeHtml(r.action || '—')}</span></td>
+                <td data-label="Détails">${escapeHtml(r.details || '—')}</td>
+                <td data-label="IP"><span class="code-chip">${escapeHtml(r.adresse_ip || '—')}</span></td>
+            </tr>
+        `).join('') : emptyRow(
+            4,
+            'Aucun événement',
+            'Aucune connexion ni action enregistrée pour ce compte (ou filtre trop strict).',
+        );
+        const totalPages = Math.max(1, Math.ceil((data.count || 0) / (data.page_size || 40)));
+        renderPagination('pagerHistoriqueMonitoring', data.page || 1, totalPages, (p) => {
+            chargerHistoriqueMonitoring(historiqueMonitoringUserId, p);
+        });
+    }
+
+    async function chargerHistoriqueMonitoring(userId, page = 1) {
+        if (!userId) return;
+        historiqueMonitoringUserId = userId;
+        historiqueMonitoringPage = page;
+        const q = (document.getElementById('searchHistoriqueMonitoring')?.value || '').trim();
+        let url = `${API}/monitoring/utilisateurs/${userId}/historique/?page=${page}&page_size=40`;
+        if (q) url += `&q=${encodeURIComponent(q)}`;
+        const data = await api(url);
+        renderHistoriqueMonitoring(data);
+        return data;
+    }
+
+    async function ouvrirHistoriqueMonitoring(userId) {
+        const tbody = document.querySelector('#tableHistoriqueMonitoring tbody');
+        if (tbody) {
+            tbody.innerHTML = emptyRow(4, 'Chargement…', 'Récupération du journal d’activité.');
+        }
+        const titre = document.getElementById('titreHistoriqueMonitoring');
+        if (titre) titre.textContent = 'Historique';
+        const search = document.getElementById('searchHistoriqueMonitoring');
+        if (search && String(historiqueMonitoringUserId) !== String(userId)) {
+            search.value = '';
+        }
+        openModal('modalHistoriqueMonitoring');
+        try {
+            await chargerHistoriqueMonitoring(userId, 1);
+        } catch (err) {
+            if (tbody) {
+                tbody.innerHTML = emptyRow(4, 'Impossible de charger', err.message || 'Erreur.');
+            }
+            toast(err.message, 'error');
+        }
     }
 
     async function chargerAccesExterieur() {
@@ -5419,14 +5515,16 @@ const EducRDC = (() => {
                 : (r.statut === 'autorise'
                     ? '<span class="badge badge-success">Autorisé</span>'
                     : `<span class="badge badge-danger">${escapeHtml(r.statut_display || r.statut)}</span>`);
-            let actions = '—';
+            let actions = r.user_id
+                ? `<button type="button" class="btn btn-ghost btn-sm" data-historique-user="${r.user_id}">${ico('history')}Historique</button>`
+                : '';
             if (r.statut === 'en_attente') {
-                actions = `
+                actions += `
                     <button type="button" class="btn btn-primary btn-sm" data-acces-action="autoriser" data-acces-id="${r.id}">Autoriser 7j</button>
                     <button type="button" class="btn btn-secondary btn-sm" data-acces-action="autoriser-toutes" data-acces-id="${r.id}">Autoriser (toutes IP)</button>
                     <button type="button" class="btn btn-danger btn-sm" data-acces-action="refuser" data-acces-id="${r.id}">Refuser</button>`;
             } else if (r.statut === 'autorise' && r.est_valide) {
-                actions = `<button type="button" class="btn btn-danger btn-sm" data-acces-action="revoquer" data-acces-id="${r.id}">Révoquer</button>`;
+                actions += `<button type="button" class="btn btn-danger btn-sm" data-acces-action="revoquer" data-acces-id="${r.id}">Révoquer</button>`;
             }
             return `<tr>
                 <td data-label="Utilisateur">
@@ -5482,6 +5580,7 @@ const EducRDC = (() => {
     }
 
     function initMonitoringUtilisateurs() {
+        bindModalClosers();
         chargerMonitoringSessions().catch((e) => toast(e.message, 'error'));
         planifierAutoRefreshMonitoring();
 
@@ -5491,6 +5590,24 @@ const EducRDC = (() => {
         document.getElementById('searchMonitoring')?.addEventListener('input', () => renderMonitoringSessions());
         document.getElementById('filtreStatutMonitoring')?.addEventListener('change', () => renderMonitoringSessions());
         document.getElementById('autoRefreshMonitoring')?.addEventListener('change', planifierAutoRefreshMonitoring);
+
+        document.getElementById('searchHistoriqueMonitoring')?.addEventListener('input', () => {
+            if (!historiqueMonitoringUserId) return;
+            clearTimeout(historiqueMonitoringTimer);
+            historiqueMonitoringTimer = setTimeout(() => {
+                chargerHistoriqueMonitoring(historiqueMonitoringUserId, 1).catch((e) => toast(e.message, 'error'));
+            }, 280);
+        });
+
+        const onHistoriqueClick = async (e) => {
+            const btn = e.target.closest('[data-historique-user]');
+            if (!btn) return;
+            e.preventDefault();
+            const userId = btn.getAttribute('data-historique-user');
+            if (userId) await ouvrirHistoriqueMonitoring(userId);
+        };
+        document.getElementById('tableMonitoring')?.addEventListener('click', onHistoriqueClick);
+        document.getElementById('tableAccesExterieur')?.addEventListener('click', onHistoriqueClick);
 
         document.getElementById('tableMonitoring')?.addEventListener('click', async (e) => {
             const btn = e.target.closest('[data-kick-session]');
@@ -5588,20 +5705,30 @@ const EducRDC = (() => {
 
     function sessionsAvecCoords(rows) {
         return (rows || []).filter((s) => {
+            if (!s.en_ligne) return false;
             const lat = Number(s.geo_lat ?? s.geo?.lat);
             const lon = Number(s.geo_lon ?? s.geo?.lon);
             if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-            // Uniquement les points situés en RDC (emprise)
             return lat >= -13.5 && lat <= 5.5 && lon >= 12.1 && lon <= 31.4;
         });
     }
 
+    function unUtilisateurParPoint(rows) {
+        const parUser = new Map();
+        (rows || []).forEach((s) => {
+            const prev = parUser.get(s.user_id);
+            if (!prev || String(s.presence_at || '') > String(prev.presence_at || '')) {
+                parUser.set(s.user_id, s);
+            }
+        });
+        return [...parUser.values()];
+    }
+
     function popupHtmlMonitoring(s) {
-        const statut = s.en_ligne ? 'En ligne' : 'Session active';
         return `<strong>${escapeHtml(s.nom_complet || s.username)}</strong><br>`
             + `${escapeHtml(s.role_display || s.role || '')}<br>`
             + `${escapeHtml(s.geo_label || '—')}<br>`
-            + `IP ${escapeHtml(s.ip || '—')} · ${escapeHtml(statut)}`;
+            + `IP ${escapeHtml(s.ip || '—')} · En ligne`;
     }
 
     function renderMonitoringCarte() {
@@ -5627,20 +5754,21 @@ const EducRDC = (() => {
             restreindreVueRDC(monitoringCarteMap);
         }
 
-        const localises = sessionsAvecCoords(cacheMonitoringCarte);
-        const horsRdc = (cacheMonitoringCarte || []).filter((s) => {
+        const enLigne = (cacheMonitoringCarte || []).filter((s) => s.en_ligne);
+        const localises = unUtilisateurParPoint(sessionsAvecCoords(enLigne));
+        const horsRdc = enLigne.filter((s) => {
             const lat = Number(s.geo_lat ?? s.geo?.lat);
             const lon = Number(s.geo_lon ?? s.geo?.lon);
             return Number.isFinite(lat) && Number.isFinite(lon)
                 && !(lat >= -13.5 && lat <= 5.5 && lon >= 12.1 && lon <= 31.4);
         }).length;
-        const sansCoords = cacheMonitoringCarte.length - localises.length - horsRdc;
+        const sansCoords = enLigne.length - sessionsAvecCoords(enLigne).length - horsRdc;
         setCount('countMonitoringCarte', localises.length);
         if (hint) {
             let txt = localises.length
-                ? `${localises.length} position(s) en RDC`
-                : 'Aucune position en RDC — carte limitée au territoire national.';
-            if (sansCoords) txt += ` · ${sansCoords} sans coordonnées`;
+                ? `${localises.length} utilisateur(s) en ligne en RDC`
+                : 'Aucun utilisateur en ligne localisé en RDC.';
+            if (sansCoords > 0) txt += ` · ${sansCoords} en ligne sans coordonnées`;
             if (horsRdc) txt += ` · ${horsRdc} hors RDC (masquée)`;
             hint.textContent = txt;
         }
@@ -5654,8 +5782,8 @@ const EducRDC = (() => {
             const lon = Number(s.geo_lon ?? s.geo?.lon);
             const marker = L.circleMarker([lat, lon], {
                 radius: 8,
-                color: s.en_ligne ? '#0a7a32' : '#007fff',
-                fillColor: s.en_ligne ? '#1fbf57' : '#4da3ff',
+                color: '#0a7a32',
+                fillColor: '#1fbf57',
                 fillOpacity: 0.9,
                 weight: 2,
             }).bindPopup(popupHtmlMonitoring(s));
@@ -5668,7 +5796,7 @@ const EducRDC = (() => {
                 btn.className = 'monitoring-map-item';
                 btn.innerHTML = `<strong>${escapeHtml(s.nom_complet || s.username)}</strong>`
                     + `<span>${escapeHtml(s.role_display || '')} · ${escapeHtml(s.geo_label || '')}</span>`
-                    + `<span>${s.en_ligne ? 'En ligne' : 'Session active'} · ${escapeHtml(s.ip || '—')}</span>`;
+                    + `<span>En ligne · ${escapeHtml(s.ip || '—')}</span>`;
                 btn.addEventListener('click', () => {
                     legend.querySelectorAll('.monitoring-map-item').forEach((el) => el.classList.remove('active'));
                     btn.classList.add('active');

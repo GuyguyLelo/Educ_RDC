@@ -4,6 +4,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+
+from utilisateurs.models import Utilisateur
 from utilisateurs.permissions import EstAdmin
 
 from .acces_exterieur import (
@@ -13,7 +17,7 @@ from .acces_exterieur import (
     serialiser_autorisation,
 )
 from .geoip import geo_depuis_navigateur
-from .models import AutorisationAccesExterieur
+from .models import AutorisationAccesExterieur, JournalActivite
 from .monitoring import lister_sessions_actives, resume_sessions, supprimer_session
 from .views import journaliser
 
@@ -91,6 +95,72 @@ class MonitoringSessionDetailView(APIView):
             request=request,
         )
         return Response({'detail': 'Session déconnectée.', 'session_key': session_key})
+
+
+class MonitoringHistoriqueUtilisateurView(APIView):
+    """Journal d'activité d'un utilisateur (admin)."""
+
+    permission_classes = [IsAuthenticated, EstAdmin]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(
+            Utilisateur.objects.select_related(
+                'ecole', 'antenne', 'province_educationnelle',
+            ),
+            pk=user_id,
+        )
+        rattachement = (
+            getattr(user.ecole, 'nom', None)
+            or getattr(user.antenne, 'nom', None)
+            or getattr(user.province_educationnelle, 'nom', None)
+            or '—'
+        )
+        qs = JournalActivite.objects.filter(utilisateur_id=user.pk)
+        q = (request.query_params.get('q') or '').strip()
+        if q:
+            qs = qs.filter(
+                Q(action__icontains=q)
+                | Q(details__icontains=q)
+                | Q(adresse_ip__icontains=q)
+            )
+        try:
+            page = max(1, int(request.query_params.get('page') or 1))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = int(request.query_params.get('page_size') or 40)
+        except (TypeError, ValueError):
+            page_size = 40
+        page_size = min(max(page_size, 1), 200)
+        total = qs.count()
+        start = (page - 1) * page_size
+        rows = list(qs[start:start + page_size])
+        return Response({
+            'utilisateur': {
+                'id': user.pk,
+                'username': user.username,
+                'nom_complet': user.get_full_name() or user.username,
+                'role': user.role,
+                'role_display': user.get_role_display(),
+                'email': user.email or '',
+                'rattachement': rattachement,
+                'is_active': user.is_active,
+                'last_login': user.last_login.isoformat() if user.last_login else None,
+            },
+            'count': total,
+            'page': page,
+            'page_size': page_size,
+            'results': [
+                {
+                    'id': row.id,
+                    'action': row.action,
+                    'details': row.details or '',
+                    'adresse_ip': row.adresse_ip or '',
+                    'date_action': row.date_action.isoformat() if row.date_action else None,
+                }
+                for row in rows
+            ],
+        })
 
 
 class AccesExterieurListView(APIView):

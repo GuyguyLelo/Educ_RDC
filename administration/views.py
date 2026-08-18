@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
+from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
@@ -56,10 +57,28 @@ def vue_login(request):
                 )
                 return render(request, 'login.html')
 
+            from .monitoring import (
+                MSG_DEJA_EN_LIGNE,
+                activer_session_connexion,
+                session_concurrente_en_ligne,
+            )
+            if session_concurrente_en_ligne(
+                user, exclure_session_key=request.session.session_key,
+            ):
+                journaliser(
+                    user,
+                    'Connexion refusée (session déjà en ligne)',
+                    request=request,
+                )
+                messages.error(request, MSG_DEJA_EN_LIGNE)
+                return render(request, 'login.html')
+
             login(request, user)
+            request.session['_presence_at'] = timezone.now().isoformat()
             request.session['_presence_ip'] = ip
             request.session['_presence_geo'] = geo
             request.session.modified = True
+            activer_session_connexion(user, request)
             journaliser(
                 user,
                 'Connexion',
@@ -74,7 +93,9 @@ def vue_login(request):
 
 @login_required
 def vue_logout(request):
+    from .monitoring import liberer_session_connexion
     journaliser(request.user, 'Déconnexion', request=request)
+    liberer_session_connexion(request.user, request.session.session_key)
     logout(request)
     messages.info(request, 'Vous êtes déconnecté.')
     return redirect('login')

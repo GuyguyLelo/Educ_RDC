@@ -78,6 +78,13 @@ class Utilisateur(AbstractUser):
         verbose_name='Connexion biométrique autorisée',
         help_text='Permet à l’utilisateur d’enregistrer et d’utiliser l’empreinte / Face ID / Windows Hello.',
     )
+    session_key_courante = models.CharField(
+        max_length=40,
+        blank=True,
+        default='',
+        verbose_name='Session de connexion',
+        help_text='Clé de la session Django actuellement en ligne (une seule à la fois).',
+    )
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name='Date de création')
 
     class Meta:

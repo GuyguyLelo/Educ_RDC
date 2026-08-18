@@ -320,10 +320,27 @@ def webauthn_login_complete(request):
             403,
         )
 
+    from administration.monitoring import (
+        MSG_DEJA_EN_LIGNE,
+        activer_session_connexion,
+        session_concurrente_en_ligne,
+    )
+    if session_concurrente_en_ligne(
+        user, exclure_session_key=request.session.session_key,
+    ):
+        journaliser(
+            user,
+            'Connexion biométrique refusée (session déjà en ligne)',
+            request=request,
+        )
+        return _json_error(MSG_DEJA_EN_LIGNE, 409)
+
     login(request, user)
+    request.session['_presence_at'] = timezone.now().isoformat()
     request.session['_presence_ip'] = ip
     request.session['_presence_geo'] = geo
     request.session.modified = True
+    activer_session_connexion(user, request)
     journaliser(
         user,
         'Connexion biométrique',

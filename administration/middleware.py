@@ -63,6 +63,8 @@ class AccesExterieurMiddleware:
                 return self.get_response(request)
 
             creer_ou_rafraichir_demande(user, ip, geo)
+            from .monitoring import liberer_session_connexion
+            liberer_session_connexion(user, getattr(request.session, 'session_key', None))
             logout(request)
 
             if path.startswith('/api/'):

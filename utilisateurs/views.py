@@ -37,6 +37,16 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = super().validate(attrs)
         request = self.context.get('request')
+        from administration.monitoring import (
+            MSG_DEJA_EN_LIGNE,
+            session_concurrente_en_ligne,
+        )
+        exclure = None
+        if request is not None:
+            exclure = getattr(request.session, 'session_key', None)
+        if session_concurrente_en_ligne(self.user, exclure_session_key=exclure):
+            from rest_framework_simplejwt.exceptions import AuthenticationFailed
+            raise AuthenticationFailed(MSG_DEJA_EN_LIGNE)
         data['user'] = UtilisateurSerializer(
             self.user, context={'request': request},
         ).data

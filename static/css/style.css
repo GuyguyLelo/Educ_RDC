@@ -3193,6 +3193,63 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 700; letter-spacing:
     max-width: 100%;
 }
 
+.historique-monitoring-table {
+    max-height: 48vh;
+    overflow: auto;
+    padding: 0 1.25rem;
+}
+
+#modalHistoriqueMonitoring .pagination {
+    padding: 0.5rem 1.25rem 0;
+}
+
+.onglet-inactif-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(6, 25, 48, 0.78);
+    backdrop-filter: blur(4px);
+}
+
+.onglet-inactif-overlay[hidden] {
+    display: none !important;
+}
+
+.onglet-inactif-card {
+    width: min(440px, 100%);
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 1.5rem 1.4rem 1.25rem;
+    box-shadow: 0 24px 48px rgba(6, 25, 48, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.onglet-inactif-card h2 {
+    margin: 0 0 0.6rem;
+    font-size: 1.2rem;
+}
+
+.onglet-inactif-card p {
+    margin: 0 0 1.1rem;
+    color: var(--muted, #5b6b7c);
+    line-height: 1.45;
+}
+
+.onglet-inactif-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+body.onglet-inactif .app-shell {
+    pointer-events: none;
+    filter: grayscale(0.35) saturate(0.7);
+}
+
 /* Wizard — nouvel élève */
 .wizard-steps {
     display: flex;

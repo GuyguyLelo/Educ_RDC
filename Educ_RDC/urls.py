@@ -29,6 +29,7 @@ from rapports.views import statistiques_dashboard, export_rapport_pdf
 from administration.api_monitoring import (
     MonitoringSessionsView,
     MonitoringSessionDetailView,
+    MonitoringHistoriqueUtilisateurView,
     PresenceGeoView,
     AccesExterieurListView,
     AccesExterieurDecisionView,
@@ -159,6 +160,11 @@ urlpatterns = [
         'api/monitoring/sessions/<str:session_key>/',
         MonitoringSessionDetailView.as_view(),
         name='api_monitoring_session_detail',
+    ),
+    path(
+        'api/monitoring/utilisateurs/<int:user_id>/historique/',
+        MonitoringHistoriqueUtilisateurView.as_view(),
+        name='api_monitoring_historique_utilisateur',
     ),
     path(
         'api/monitoring/presence-geo/',
