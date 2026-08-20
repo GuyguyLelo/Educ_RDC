@@ -557,7 +557,35 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
     # Filigrane derrière le tableau
     _draw_watermark(c, width / 2, table_bottom + th / 2, size=min(48 * mm, th * 0.5))
 
-    table.drawOn(c, content_x, table_bottom)
+
+
+    if table and hasattr(table, '_rowHeights'):
+        # Filtrer les rowHeights None
+        if hasattr(table, '_rowHeights'):
+            clean_heights = [h for h in table._rowHeights if h is not None]
+            if clean_heights:
+                table._rowHeights = clean_heights
+                # Recalculer les positions
+                table._calc()
+        
+        try:
+            table.drawOn(c, content_x, table_bottom)
+        except (IndexError, ValueError, TypeError) as e:
+            c.setFont('Helvetica-Bold', 12)
+            c.setFillColor(colors.red)
+            c.drawString(content_x + 20, table_bottom + 100, 
+                        "⚠️ Données incomplètes pour le bulletin")
+            c.setFont('Helvetica', 10)
+            c.setFillColor(colors.black)
+            c.drawString(content_x + 20, table_bottom + 75, 
+                        "Veuillez vérifier que l'élève a des notes")
+    else:
+        c.setFont('Helvetica-Bold', 12)
+        c.setFillColor(colors.red)
+        c.drawString(content_x + 20, table_bottom + 100, 
+                    "⚠️ Aucune donnée disponible")
+    
+    
 
     # Motifs APPLICATION / CONDUITE + cadre PASSE / DOUBLE
     if secondaire and app_idx is not None and row_heights:
