@@ -559,32 +559,42 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
 
 
 
-    if table and hasattr(table, '_rowHeights'):
-        # Filtrer les rowHeights None
-        if hasattr(table, '_rowHeights'):
-            clean_heights = [h for h in table._rowHeights if h is not None]
-            if clean_heights:
+    # --- Génération du tableau PDF ---
+    try:
+        # Vérifier que le tableau a des données valides
+        if not table or not hasattr(table, '_rowHeights') or not table._rowHeights:
+            raise ValueError("Tableau vide")
+
+        # Nettoyer les rowHeights
+        original_heights = table._rowHeights
+        if original_heights:
+            clean_heights = []
+            for h in original_heights:
+                if h is not None:
+                    clean_heights.append(h)
+                else:
+                    break
+            if clean_heights and len(clean_heights) < len(original_heights):
                 table._rowHeights = clean_heights
-                # Recalculer les positions
-                table._calc()
+                # Forcer le recalcul
+                if hasattr(table, '_calc'):
+                    table._calc()
+
+        # Essayer de dessiner
+        table.drawOn(c, content_x, table_bottom)
         
-        try:
-            table.drawOn(c, content_x, table_bottom)
-        except (IndexError, ValueError, TypeError) as e:
-            c.setFont('Helvetica-Bold', 12)
-            c.setFillColor(colors.red)
-            c.drawString(content_x + 20, table_bottom + 100, 
-                        "⚠️ Données incomplètes pour le bulletin")
-            c.setFont('Helvetica', 10)
-            c.setFillColor(colors.black)
-            c.drawString(content_x + 20, table_bottom + 75, 
-                        "Veuillez vérifier que l'élève a des notes")
-    else:
+    except (IndexError, ValueError, TypeError, AttributeError) as e:
+        # Message d'erreur dans le PDF
         c.setFont('Helvetica-Bold', 12)
         c.setFillColor(colors.red)
         c.drawString(content_x + 20, table_bottom + 100, 
-                    "⚠️ Aucune donnée disponible")
-    
+                    "⚠️ Données incomplètes pour le bulletin")
+        c.setFont('Helvetica', 10)
+        c.setFillColor(colors.black)
+        c.drawString(content_x + 20, table_bottom + 75, 
+                    f"Élève: {eleve.nom_complet}")
+        c.drawString(content_x + 20, table_bottom + 55, 
+                    "Veuillez vérifier que toutes les notes sont saisies")
     
 
     # Motifs APPLICATION / CONDUITE + cadre PASSE / DOUBLE
