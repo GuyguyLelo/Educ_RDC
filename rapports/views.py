@@ -272,21 +272,21 @@ def _workflow_for_role(role):
             'Exploiter les rapports de la province',
         ],
         'agent_antenne': [
-            'Gérer les écoles de l\'antenne',
-            'Enregistrer les élèves',
-            'Capturer les biométries',
-            'Générer les cartes scolaires',
+            'Consulter les écoles de l\'antenne',
+            'Suivre les effectifs élèves',
+            'Consulter le personnel des écoles',
+            'Exploiter les rapports de l\'antenne',
         ],
         'admin_ecole': [
             'Mettre à jour la fiche de l\'école',
             'Gérer les élèves et le personnel',
             'Créer les comptes enseignants',
-            'Suivre cartes et biométries',
+            'Configurer le programme d\'évaluation',
         ],
         'enseignant': [
             'Consulter les élèves de sa classe',
             'Vérifier les fiches élèves',
-            'Suivre l\'état des biométries de la classe',
+            'Saisir les notes de la classe',
             'Mettre à jour la photo des élèves',
         ],
     }

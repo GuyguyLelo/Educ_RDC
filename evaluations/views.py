@@ -542,6 +542,12 @@ class ProgrammeClasseViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('Accès refusé pour cette classe.')
         serializer.save()
 
+    def perform_destroy(self, instance):
+        if not _peut_piloter_classe(self.request.user, instance.classe):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Accès refusé pour cette classe.')
+        instance.delete()
+
     @action(detail=False, methods=['get'], url_path='liste-pdf')
     def liste_pdf(self, request):
         """PDF de la liste des cours du programme (enseignant : sa classe)."""
@@ -809,7 +815,7 @@ class NoteViewSet(viewsets.ModelViewSet):
 
 
 class BulletinViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, GestionEvaluation]
 
     def list(self, request):
         annee_id = request.query_params.get('annee')
@@ -822,6 +828,10 @@ class BulletinViewSet(viewsets.ViewSet):
                 {'detail': 'annee et classe sont requis.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        classe = get_object_or_404(Classe, pk=classe_id)
+        if not _peut_piloter_classe(user, classe):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Accès refusé.')
         annee = get_object_or_404(AnneeScolaire, pk=annee_id)
         eleves = Eleve.objects.filter(classe_id=classe_id, actif=True).order_by(
             'nom', 'postnom', 'prenom',
@@ -852,12 +862,9 @@ class BulletinViewSet(viewsets.ViewSet):
             return Response({'detail': 'annee requis.'}, status=status.HTTP_400_BAD_REQUEST)
         eleve = get_object_or_404(Eleve.objects.select_related('ecole', 'classe'), pk=eleve_id)
         user = request.user
-        if getattr(user, 'est_enseignant', False) and user.classe_id != eleve.classe_id:
+        if not eleve.classe_id or not _peut_piloter_classe(user, eleve.classe):
             from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('Bulletin hors de votre classe.')
-        if user.role == 'admin_ecole' and user.ecole_id != eleve.ecole_id:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied('Bulletin hors de votre école.')
+            raise PermissionDenied('Accès refusé.')
         annee = get_object_or_404(AnneeScolaire, pk=annee_id)
         pdf = generer_pdf_bulletin(eleve, annee)
         response = HttpResponse(pdf, content_type='application/pdf')

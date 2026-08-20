@@ -284,18 +284,19 @@ class EcoleViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(ser.data)
         return Response(ser.data)
 
-    def _peut_gerer_programme_ecole(self, user, ecole):
-        if user.role == 'admin_ecole' and user.ecole_id != ecole.id:
+    def _peut_gerer_structure_ecole(self, user, ecole):
+        """Sections / options / classes : réservé à l'administration nationale."""
+        if not (user.est_admin or getattr(user, 'est_national', False)):
             return False
-        return bool(
-            user.est_admin
-            or getattr(user, 'est_national', False)
-            or user.role == 'admin_ecole'
-        )
+        return True
+
+    def _peut_gerer_programme_ecole(self, user, ecole):
+        """Compat : alias historique — structure scolaire = national uniquement."""
+        return self._peut_gerer_structure_ecole(user, ecole)
 
     @action(detail=True, methods=['get'], url_path='referentiel-rdc')
     def referentiel_rdc(self, request, pk=None):
-        """Catalogue EPSP (sections/options) pour sélection par l'école."""
+        """Catalogue EPSP (sections/options) pour sélection nationale."""
         ecole = self.get_object()
         # niveau_programme = catalogue EPSP (prescolaire, primaire…)
         # ne pas confondre avec le filtre liste ?niveau= sur Ecole
@@ -356,9 +357,9 @@ class EcoleViewSet(viewsets.ModelViewSet):
         Body: { options: ['COUPE','MP'], auto_niveau?: true }
         """
         ecole = self.get_object()
-        if not self._peut_gerer_programme_ecole(request.user, ecole):
+        if not self._peut_gerer_structure_ecole(request.user, ecole):
             return Response(
-                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                {'detail': "Réservé à l'administration nationale (structure scolaire)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         niveau = self._niveau_ecole(ecole, request.data)
@@ -392,9 +393,9 @@ class EcoleViewSet(viewsets.ModelViewSet):
         préscolaires EPSP manquantes (sans retirer le reste).
         """
         ecole = self.get_object()
-        if not self._peut_gerer_programme_ecole(request.user, ecole):
+        if not self._peut_gerer_structure_ecole(request.user, ecole):
             return Response(
-                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                {'detail': "Réservé à l'administration nationale (structure scolaire)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         result = assurer_structure_selon_niveau(ecole)
@@ -419,9 +420,9 @@ class EcoleViewSet(viewsets.ModelViewSet):
         Body: { options: ['COUPE','MP'] }
         """
         ecole = self.get_object()
-        if not self._peut_gerer_programme_ecole(request.user, ecole):
+        if not self._peut_gerer_structure_ecole(request.user, ecole):
             return Response(
-                {'detail': 'Réservé à l\'administratif de l\'école.'},
+                {'detail': "Réservé à l'administration nationale (structure scolaire)."},
                 status=status.HTTP_403_FORBIDDEN,
             )
         options = self._codes_liste(request.data, 'options', 'option_codes')
@@ -654,11 +655,7 @@ class SectionScolaireViewSet(viewsets.ModelViewSet):
         return _scope_classes_ecole(qs, self.request.user, self.request)
 
     def perform_create(self, serializer):
-        user = self.request.user
-        if user.role == 'admin_ecole' and user.ecole_id:
-            serializer.save(ecole_id=user.ecole_id)
-        else:
-            serializer.save()
+        serializer.save()
 
 
 class OptionScolaireViewSet(viewsets.ModelViewSet):
@@ -695,7 +692,7 @@ class OptionScolaireViewSet(viewsets.ModelViewSet):
 
 
 class ClasseViewSet(viewsets.ModelViewSet):
-    """Classes scolaires — créées par l'administratif de l'école."""
+    """Classes scolaires — créées par l'administration nationale (structure scolaire)."""
 
     queryset = Classe.objects.select_related('ecole', 'section', 'option').prefetch_related(
         Prefetch(
@@ -726,26 +723,10 @@ class ClasseViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        user = self.request.user
-        ecole = serializer.validated_data.get('ecole')
-        if user.role == 'admin_ecole' and user.ecole_id:
-            if ecole and ecole.id != user.ecole_id:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Vous ne pouvez créer des classes que pour votre école.")
-            serializer.save(ecole_id=user.ecole_id)
-        else:
-            serializer.save()
+        serializer.save()
 
     def perform_update(self, serializer):
-        user = self.request.user
-        if user.role == 'admin_ecole' and user.ecole_id:
-            instance = self.get_object()
-            if instance.ecole_id != user.ecole_id:
-                from rest_framework.exceptions import PermissionDenied
-                raise PermissionDenied("Vous ne pouvez modifier que les classes de votre école.")
-            serializer.save(ecole_id=user.ecole_id)
-        else:
-            serializer.save()
+        serializer.save()
 
     @action(detail=False, methods=['get'], url_path='modele-import')
     def modele_import(self, request):
@@ -759,7 +740,7 @@ class ClasseViewSet(viewsets.ModelViewSet):
         parser_classes=[MultiPartParser, FormParser],
     )
     def import_fichier(self, request):
-        """Importe des classes depuis Excel (.xlsx) ou CSV."""
+        """Importe des classes depuis Excel (.xlsx) ou CSV (national uniquement)."""
         fichier = request.FILES.get('fichier') or request.FILES.get('file')
         if not fichier:
             return Response(
@@ -783,10 +764,6 @@ class ClasseViewSet(viewsets.ModelViewSet):
                     {'detail': 'Identifiant école invalide.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-
-        user = request.user
-        if user.role == 'admin_ecole' and user.ecole_id:
-            ecole_id = user.ecole_id
 
         update_existing = str(request.data.get('update_existing', '1')).lower() not in (
             '0', 'false', 'non', 'no',

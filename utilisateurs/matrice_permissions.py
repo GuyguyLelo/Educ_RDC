@@ -66,7 +66,8 @@ ROLES = [
         'scope': 'École rattachée',
         'resume': (
             'Gère sa fiche école, ses élèves, le programme d’évaluation et les comptes '
-            'admin_ecole / enseignant de son établissement (sans saisie des notes).'
+            'admin_ecole / enseignant de son établissement (sans saisie des notes, '
+            'sans création de classes — structure scolaire nationale).'
         ),
     },
     {

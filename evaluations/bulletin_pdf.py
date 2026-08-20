@@ -151,6 +151,41 @@ def _checkbox_dash(c, x, y, label, checked=False):
     c.drawString(bx + 4.2 * mm, y + 0.4 * mm, label)
 
 
+NCOLS_SEC = 12
+NCOLS_PRIM = 6
+
+
+def _cells(row, n: int) -> list:
+    """Aligne une ligne sur exactement n colonnes."""
+    row = list(row or [])
+    if len(row) < n:
+        row.extend([''] * (n - len(row)))
+    return row[:n]
+
+
+def _make_fitted_table(data, col_w, style_cmds, usable_w, max_h, repeat_rows=0):
+    """Mesure la table entière puis la réduit si elle dépasse la page.
+
+    ReportLab (longTableOptimize) peut laisser des hauteurs à ``None`` quand
+    ``wrap(h)`` est trop petit : additions / fond de cellules plantent ensuite.
+    """
+    kwargs = dict(
+        colWidths=col_w,
+        repeatRows=repeat_rows,
+        longTableOptimize=0,
+    )
+    table = Table(data, **kwargs)
+    table.setStyle(TableStyle(style_cmds))
+    tw, th = table.wrap(usable_w, 1e8)
+    if max_h > 0 and th > max_h:
+        scale = max_h / th
+        rh = [max(3.0, float(h or 0) * scale) for h in (table._rowHeights or [])]
+        table = Table(data, rowHeights=rh, **kwargs)
+        table.setStyle(TableStyle(style_cmds))
+        tw, th = table.wrap(usable_w, 1e8)
+    return table, tw, th
+
+
 def _maxima_cells(base: Decimal) -> list[str]:
     """P1 P2 Exam Tot | P3 P4 Exam Tot | TG | % | Sign."""
     p = base
@@ -369,6 +404,11 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
     )
     y -= 2.2 * mm
 
+    # Espace réservé au pied de page officiel (calculé avant le tableau)
+    footer_h = 40 * mm
+    max_table_h = y - (margin + inner + footer_h)
+    usable_w = content_w
+
     # ——— Tableau ———
     if secondaire:
         h1 = [
@@ -392,7 +432,7 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
             '',
             '', '',
         ]
-        table_data = [h1, h2, h3]
+        table_data = [_cells(h1, NCOLS_SEC), _cells(h2, NCOLS_SEC), _cells(h3, NCOLS_SEC)]
         spans = [
             ('SPAN', (1, 0), (4, 0)),
             ('SPAN', (5, 0), (8, 0)),
@@ -421,10 +461,10 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
         for ligne in data['lignes']:
             base = ligne['maximum_base']
             if last_max != base:
-                table_data.append(['MAXIMA'] + _maxima_cells(base))
+                table_data.append(_cells(['MAXIMA'] + _maxima_cells(base), NCOLS_SEC))
                 last_max = base
             notes = ligne['notes']
-            table_data.append([
+            table_data.append(_cells([
                 ligne['matiere'],
                 note_val(notes, 'p1'),
                 note_val(notes, 'p2'),
@@ -437,21 +477,21 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
                 _fmt(ligne['total']) if ligne['total'] is not None else '',
                 '',
                 '',
-            ])
+            ], NCOLS_SEC))
 
         # Lignes vides pour densifier comme le formulaire imprimé
         for _ in range(max(0, 18 - len(data['lignes']))):
-            table_data.append([''] + [''] * 11)
+            table_data.append(_cells([], NCOLS_SEC))
 
         mx_fmt, tot_fmt, pct_fmt = _sum_cols(data['lignes'], code_map)
-        table_data.append(['MAXIMA GENERAUX'] + mx_fmt + ['', ''])
-        table_data.append(['TOTAUX'] + tot_fmt + ['', ''])
+        table_data.append(_cells(['MAXIMA GENERAUX'] + mx_fmt + ['', ''], NCOLS_SEC))
+        table_data.append(_cells(['TOTAUX'] + tot_fmt + ['', ''], NCOLS_SEC))
         if not any(pct_fmt):
             pct_row = [''] * 9
             pct_row[8] = _fmt(data['pourcentage'], 2) if data['pourcentage'] is not None else ''
         else:
             pct_row = pct_fmt
-        table_data.append(['POURCENTAGE'] + pct_row + ['', ''])
+        table_data.append(_cells(['POURCENTAGE'] + pct_row + ['', ''], NCOLS_SEC))
         place = f'{decision.place or ""} / {data["effectif"] or ""}'.strip()
         if place == '/':
             place = ' / '
@@ -459,13 +499,13 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
         place_row[8] = place
         # Cadre PASSE/DOUBLE : 4 lignes (PLACE → Signature), colonnes % + SIGN.
         place_idx = len(table_data)
-        table_data.append(["PLACE/NBRE D'ELEVES"] + place_row + ['', ''])
-        table_data.append(['APPLICATION', decision.appreciation or '', '', '', '', '', '', '', '', '', '', ''])
-        table_data.append(['CONDUITE', decision.conduite or '', '', '', '', '', '', '', '', '', '', ''])
-        table_data.append(['Signature du responsable', '', '', '', '', '', '', '', '', '', '', ''])
+        table_data.append(_cells(["PLACE/NBRE D'ELEVES"] + place_row + ['', ''], NCOLS_SEC))
+        table_data.append(_cells(['APPLICATION', decision.appreciation or ''], NCOLS_SEC))
+        table_data.append(_cells(['CONDUITE', decision.conduite or ''], NCOLS_SEC))
+        table_data.append(_cells(['Signature du responsable'], NCOLS_SEC))
         app_idx = place_idx
+        last_row = len(table_data) - 1
 
-        usable_w = content_w
         col_w = [
             usable_w * 0.205,
             usable_w * 0.060, usable_w * 0.060, usable_w * 0.058, usable_w * 0.058,
@@ -498,7 +538,7 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
                 "PLACE/NBRE D'ELEVES",
             ):
                 style_cmds.append(('FONTNAME', (0, i), (-1, i), 'Helvetica-Bold'))
-            if row and row[0] == "PLACE/NBRE D'ELEVES":
+            if row and row[0] == "PLACE/NBRE D'ELEVES" and i + 3 <= last_row:
                 style_cmds.append(('SPAN', (10, i), (11, i + 3)))  # cadre décision
             if row and row[0] in (
                 "PLACE/NBRE D'ELEVES", 'APPLICATION', 'CONDUITE', 'Signature du responsable',
@@ -508,11 +548,12 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
                     style_cmds.append(('SPAN', (1, i), (9, i)))
                     style_cmds.append(('ALIGN', (1, i), (1, i), 'LEFT'))
 
-        table = Table(table_data, colWidths=col_w, repeatRows=3)
-        table.setStyle(TableStyle(style_cmds))
+        table, tw, th = _make_fitted_table(
+            table_data, col_w, style_cmds, usable_w, max_table_h, repeat_rows=3,
+        )
     else:
         headers = ['BRANCHES', '1er Trimestre', '2ème Trimestre', '3ème Trimestre', 'T.G.', '%']
-        table_data = [headers]
+        table_data = [_cells(headers, NCOLS_PRIM)]
         code_map = {p.code: p.id for p in periodes}
         for ligne in data['lignes']:
             notes = ligne['notes']
@@ -523,20 +564,18 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
                 v = notes.get(code)
                 return _fmt(v) if v is not None else ''
 
-            table_data.append([
+            table_data.append(_cells([
                 ligne['matiere'], nv('t1'), nv('t2'), nv('t3'),
                 _fmt(ligne['total']) if ligne['total'] is not None else '',
                 _fmt(ligne['pourcentage'], 2) if ligne['pourcentage'] is not None else '',
-            ])
-        table_data.append([
+            ], NCOLS_PRIM))
+        table_data.append(_cells([
             'TOTAUX', '', '', '',
             _fmt(data['total_obtenu']) if data['total_obtenu'] is not None else '',
             _fmt(data['pourcentage'], 2) if data['pourcentage'] is not None else '',
-        ])
-        usable_w = content_w
+        ], NCOLS_PRIM))
         col_w = [usable_w * 0.35] + [usable_w * 0.13] * 5
-        table = Table(table_data, colWidths=col_w, repeatRows=1)
-        table.setStyle(TableStyle([
+        style_cmds = [
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 7),
             ('BACKGROUND', (0, 0), (-1, 0), FOND_HEAD),
@@ -544,15 +583,14 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
             ('BOX', (0, 0), (-1, -1), 0.8, NOIR),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ]))
+        ]
+        table, tw, th = _make_fitted_table(
+            table_data, col_w, style_cmds, usable_w, max_table_h, repeat_rows=1,
+        )
         app_idx = None
 
-    # Espace réservé au pied de page officiel
-    footer_h = 40 * mm
-    max_table_h = y - (margin + inner + footer_h)
-    tw, th = table.wrap(usable_w, max_table_h)
     table_bottom = y - th
-    row_heights = list(getattr(table, '_rowHeights', []) or [])
+    row_heights = [float(h or 0) for h in (getattr(table, '_rowHeights', []) or [])]
 
     # Filigrane derrière le tableau
     _draw_watermark(c, width / 2, table_bottom + th / 2, size=min(48 * mm, th * 0.5))
@@ -598,7 +636,7 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
     
 
     # Motifs APPLICATION / CONDUITE + cadre PASSE / DOUBLE
-    if secondaire and app_idx is not None and row_heights:
+    if secondaire and app_idx is not None and len(row_heights) >= 4:
         # 4 dernières lignes = PLACE → Signature (cadre décision officiel)
         block_h = sum(row_heights[-4:])
         h_sig = row_heights[-1]
@@ -636,7 +674,6 @@ def generer_pdf_bulletin_officiel(eleve: Eleve, annee: AnneeScolaire) -> bytes:
             checked=decision.decision == BulletinDecision.Decision.DOUBLE,
         )
         c.setFillColor(NOIR)
-        c.setFont('Helvetica', 5.5)
         c.setFont('Helvetica', 5.5)
         if decision.date_decision:
             c.drawString(

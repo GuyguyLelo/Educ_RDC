@@ -7,7 +7,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from utilisateurs.permissions import LecturePourTousEcritureAdmin
+from rest_framework.exceptions import PermissionDenied
+from utilisateurs.permissions import GestionCartesBiometrie
 from .models import Biometrie
 from .serializers import BiometrieSerializer
 
@@ -15,21 +16,15 @@ from .serializers import BiometrieSerializer
 class BiometrieViewSet(viewsets.ModelViewSet):
     queryset = Biometrie.objects.select_related('eleve', 'eleve__ecole').all()
     serializer_class = BiometrieSerializer
-    permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
+    permission_classes = [IsAuthenticated, GestionCartesBiometrie]
     search_fields = ['eleve__matricule', 'eleve__nom']
 
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if getattr(user, 'est_enseignant', False):
-            if not user.classe_id:
-                return qs.none()
-            qs = qs.filter(eleve__classe_id=user.classe_id)
-            if user.ecole_id:
-                qs = qs.filter(eleve__ecole_id=user.ecole_id)
-        elif getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
-            qs = qs.filter(eleve__ecole_id=user.ecole_id)
-        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+        if getattr(user, 'est_enseignant', False) or getattr(user, 'est_utilisateur_ecole', False):
+            return qs.none()
+        if user.role == 'agent_province_admin' and user.province_administrative_id:
             qs = qs.filter(
                 eleve__ecole__province_educationnelle__province_administrative_id=(
                     user.province_administrative_id
@@ -50,6 +45,8 @@ class BiometrieViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def valider(self, request, pk=None):
+        if not request.user.est_national:
+            raise PermissionDenied('Validation biométrique réservée à l’administration nationale.')
         bio = self.get_object()
         bio.validee = True
         bio.save(update_fields=['validee'])

@@ -1322,7 +1322,7 @@ const EducRDC = (() => {
             container.innerHTML = `
                 <div class="empty-state">
                     <strong>Aucune classe</strong>
-                    <span>Créez une section, une option puis une classe — ou chargez le programme RDC.</span>
+                    <span>La structure (sections / options / classes) est définie au niveau national.</span>
                 </div>`;
             return;
         }

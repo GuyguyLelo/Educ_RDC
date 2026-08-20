@@ -12,6 +12,7 @@ from openpyxl import Workbook
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from utilisateurs.permissions import EstNationalOuAdmin
 
 from eleves.import_utils import generer_modele_xlsx as generer_modele_eleves
 from ecoles.import_personnel import generer_modele_xlsx as generer_modele_personnel
@@ -293,14 +294,14 @@ def reponse_modele(cle: str) -> HttpResponse | None:
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, EstNationalOuAdmin])
 def api_liste_modeles_import(request):
     """Catalogue des modèles Excel disponibles."""
     return Response({'count': len(MODELES), 'results': catalogue_modeles()})
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, EstNationalOuAdmin])
 def api_telecharger_modele_import(request, cle: str):
     """Télécharge un modèle Excel par clé."""
     response = reponse_modele(cle)

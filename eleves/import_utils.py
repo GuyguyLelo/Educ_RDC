@@ -36,7 +36,7 @@ def _resoudre_classe(ecole, nom_classe: str) -> Classe:
     if not existante:
         raise ValueError(
             f'Classe inconnue « {nom} » pour cette école. '
-            'Créez-la d\'abord (fiche école ou import Classes).'
+            'Créez-la d\'abord (Paramètres → Structure scolaire / import Classes — national).'
         )
     return existante
 

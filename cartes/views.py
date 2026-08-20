@@ -5,7 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from utilisateurs.permissions import LecturePourTousEcritureAdmin
+from rest_framework.exceptions import PermissionDenied
+from utilisateurs.permissions import GestionCartesBiometrie
 from .models import Carte
 from .serializers import CarteSerializer
 from .services import generer_qr_code, generer_pdf_carte
@@ -14,7 +15,7 @@ from .services import generer_qr_code, generer_pdf_carte
 class CarteViewSet(viewsets.ModelViewSet):
     queryset = Carte.objects.select_related('eleve', 'eleve__ecole').all()
     serializer_class = CarteSerializer
-    permission_classes = [IsAuthenticated, LecturePourTousEcritureAdmin]
+    permission_classes = [IsAuthenticated, GestionCartesBiometrie]
     search_fields = ['numero_carte', 'eleve__matricule', 'eleve__nom']
     ordering_fields = ['date_emission', 'numero_carte']
 
@@ -24,12 +25,9 @@ class CarteViewSet(viewsets.ModelViewSet):
         if statut:
             qs = qs.filter(statut=statut)
         user = self.request.user
-        # Enseignant : pas d'accès aux cartes scolaires
-        if getattr(user, 'est_enseignant', False):
+        if getattr(user, 'est_enseignant', False) or getattr(user, 'est_utilisateur_ecole', False):
             return qs.none()
-        if getattr(user, 'est_utilisateur_ecole', False) and user.ecole_id:
-            qs = qs.filter(eleve__ecole_id=user.ecole_id)
-        elif user.role == 'agent_province_admin' and user.province_administrative_id:
+        if user.role == 'agent_province_admin' and user.province_administrative_id:
             qs = qs.filter(
                 eleve__ecole__province_educationnelle__province_administrative_id=(
                     user.province_administrative_id
@@ -58,6 +56,10 @@ class CarteViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def regenerer_qr(self, request, pk=None):
+        if not request.user.est_national:
+            raise PermissionDenied(
+                'Le QR code des cartes est immuable (régénération réservée au national).'
+            )
         carte = self.get_object()
         generer_qr_code(carte)
         carte.save(update_fields=['qr_code'])

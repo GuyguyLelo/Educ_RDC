@@ -34,21 +34,17 @@ class EstNationalOuAdmin(BasePermission):
 
 
 class LecturePourTousEcritureAdmin(BasePermission):
-    """Lecture pour tous les authentifiés, écriture pour rôles opérationnels."""
+    """Lecture pour tous les authentifiés, écriture admin national ou admin école."""
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
             return False
         if request.method in SAFE_METHODS:
             return True
-        # Enseignant : lecture seule (élèves de sa classe ; pas de cartes)
-        return request.user.est_national or request.user.role in (
-            'agent_province_admin',
-            'agent_provincial',
-            'agent_antenne',
-            'admin',
-            'admin_ecole',
-        )
+        user = request.user
+        if getattr(user, 'est_agent_territorial', False):
+            return False
+        return user.est_national or user.role in ('admin', 'admin_ecole')
 
 
 class EcriturePhotoEleve(BasePermission):
@@ -63,20 +59,56 @@ class EcriturePhotoEleve(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         user = request.user
+        if getattr(user, 'est_agent_territorial', False):
+            return False
         return bool(
             getattr(user, 'est_enseignant', False)
             or getattr(user, 'est_national', False)
-            or user.role in (
-                'agent_province_admin',
-                'agent_provincial',
-                'admin',
-                'admin_ecole',
-            )
+            or user.role in ('admin', 'admin_ecole')
         )
 
 
+class GestionCartesBiometrie(BasePermission):
+    """
+    Cartes et biométrie : lecture agents territoriaux (périmètre via queryset),
+    écriture réservée à l'administration nationale.
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        user = request.user
+        if user.est_national:
+            return True
+        if request.method in SAFE_METHODS:
+            return getattr(user, 'est_agent_territorial', False)
+        return False
+
+
+class GestionPaiements(BasePermission):
+    """
+    Paiements : national CRUD ; admin école CRUD sur son établissement ;
+    agents territoriaux lecture seule (périmètre via queryset).
+    """
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        user = request.user
+        if user.est_national:
+            return True
+        if getattr(user, 'est_agent_territorial', False):
+            return request.method in SAFE_METHODS
+        if user.role == 'admin_ecole' and user.ecole_id:
+            return True
+        return False
+
+
 class GestionClassesEcole(BasePermission):
-    """Lecture pour authentifiés ; écriture réservée à l'administration nationale."""
+    """
+    Sections / options / classes : lecture pour authentifiés ;
+    écriture réservée à l'administration nationale (pas admin_ecole).
+    """
 
     def has_permission(self, request, view):
         if not (request.user and request.user.is_authenticated):
